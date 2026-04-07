@@ -18,6 +18,10 @@ import {
   gitBranchesQueryOptions,
   invalidateGitQueries,
 } from "@/lib/git/queries";
+import {
+  Card,
+  CardContent,
+} from "@/components/ui/card";
 import { runStackedAction, type StackedAction } from "@/lib/git/stacked";
 import { pull } from "@/lib/git/remote";
 import { checkoutBranch, deleteBranch } from "@/lib/git/branches";
@@ -75,7 +79,7 @@ function StatusCard({
   loading?: boolean;
 }) {
   return (
-    <div className="flex items-start gap-2.5 rounded-lg border bg-card/50 px-3 py-2.5">
+    <div className="flex items-start gap-2.5 rounded-xl border bg-card/50 px-3 py-2.5">
       {loading ? (
         <Spinner className="mt-0.5 size-3.5" />
       ) : (
@@ -479,83 +483,7 @@ export function GitPanel() {
   return (
     <div className="flex h-full flex-col">
       <ScrollArea className="flex-1">
-        <div className="flex flex-col gap-3 p-3">
-          {/* Branch header */}
-          <div className="flex flex-col gap-2.5 rounded-lg border bg-card/40 p-3">
-            <div className="flex items-center gap-2">
-              <div className="flex size-6 items-center justify-center rounded-md bg-muted/60">
-                <HugeiconsIcon icon={GitBranchIcon} className="size-3.5 text-muted-foreground" />
-              </div>
-              <span className="truncate text-sm font-semibold">
-                {gitStatus?.branch ?? "(detached HEAD)"}
-              </span>
-              {isStatusLoading && <Spinner className="ml-auto size-3" />}
-            </div>
-            {(branchBadges.length > 0 || isDefaultBranch) && (
-              <div className="flex flex-wrap items-center gap-1.5 pl-8">
-                {branchBadges.map((badge) => (
-                  <Badge key={badge.label} variant={badge.variant} className="text-[10px]">
-                    {badge.label}
-                  </Badge>
-                ))}
-                {isDefaultBranch && (
-                  <Badge variant="secondary" className="text-[10px] text-amber-500">
-                    Default branch
-                  </Badge>
-                )}
-              </div>
-            )}
-          </div>
-
-          {/* Primary action */}
-          <div className="flex flex-col gap-2">
-            {quickAction.kind !== "show_hint" && (
-              <Button
-                size="lg"
-                variant={quickAction.disabled ? "outline" : "default"}
-                disabled={isBusy || quickAction.disabled}
-                onClick={runQuickAction}
-                className="w-full justify-center gap-2"
-              >
-                <QuickActionIcon quickAction={quickAction} />
-                {quickAction.label}
-              </Button>
-            )}
-
-            {/* Secondary actions */}
-            {menuItems.filter((i) => !i.disabled).length > 0 && (
-              <div className="grid grid-cols-3 gap-1.5">
-                {menuItems.map((item) => (
-                  <Button
-                    key={item.id}
-                    size="sm"
-                    variant="outline"
-                    disabled={isBusy || item.disabled}
-                    onClick={() => handleMenuItem(item)}
-                    className="justify-center gap-1.5"
-                  >
-                    <ActionIcon icon={item.icon} />
-                    {item.label}
-                  </Button>
-                ))}
-              </div>
-            )}
-          </div>
-
-          {/* Release PR — only on pre-release branch */}
-          {isPreReleaseBranch && !hasExistingReleasePr && !gitStatus?.hasWorkingTreeChanges && (
-            <Button
-              size="lg"
-              variant="outline"
-              disabled={isBusy}
-              onClick={handleCreateReleasePr}
-              className="w-full justify-center gap-2 border-purple-500/30 text-purple-400 hover:bg-purple-500/10 hover:text-purple-300"
-            >
-              <HugeiconsIcon icon={GitPullRequestIcon} className="size-3.5" />
-              Create Release PR → main
-            </Button>
-          )}
-
+        <div className="flex flex-col gap-5 p-6">
           {/* Notices */}
           {progressTitle && (
             <StatusCard title={progressTitle} badgeLabel="in progress" badgeVariant="default" loading />
@@ -573,89 +501,158 @@ export function GitPanel() {
             <StatusCard title={quickAction.hint} badgeLabel="info" badgeVariant="secondary" />
           )}
 
-          {/* Branches */}
-          <div className="flex flex-col gap-2">
-            <SectionHeader>Branches</SectionHeader>
-            <div className="grid grid-cols-2 gap-1.5">
+          {/* Actions row */}
+          <div className="grid grid-cols-4 gap-3">
+            {/* Primary action — spans full width or half */}
+            {quickAction.kind !== "show_hint" && (
               <Button
-                size="sm"
-                variant="outline"
-                onClick={() => {
-                  if (!gitStatus?.hasWorkingTreeChanges) {
-                    setNotice({ type: "info", message: "Make local changes first to create a feature branch." });
-                    return;
-                  }
-                  void runAction({ action: "commit_push", featureBranch: true, skipDefaultBranchPrompt: true });
-                }}
-                disabled={isBusy || !gitStatus?.hasWorkingTreeChanges}
-                className="justify-center"
+                variant={quickAction.disabled ? "outline" : "default"}
+                disabled={isBusy || quickAction.disabled}
+                onClick={runQuickAction}
+                className="col-span-4 h-auto justify-center gap-2 py-3"
               >
-                <HugeiconsIcon icon={GitBranchIcon} className="size-3" />
-                New branch
+                <QuickActionIcon quickAction={quickAction} />
+                {quickAction.label}
               </Button>
+            )}
+            {menuItems.map((item) => (
               <Button
-                size="sm"
+                key={item.id}
                 variant="outline"
-                onClick={() => setIsSwitchDialogOpen(true)}
-                disabled={isBusy}
-                className="justify-center"
+                disabled={isBusy || item.disabled}
+                onClick={() => handleMenuItem(item)}
+                className="h-auto flex-col gap-1 py-3"
               >
-                <HugeiconsIcon icon={GitBranchIcon} className="size-3" />
-                Switch
+                <ActionIcon icon={item.icon} />
+                <span className="text-[11px]">{item.label}</span>
               </Button>
-            </div>
+            ))}
+            <Button
+              variant="outline"
+              onClick={() => {
+                if (!gitStatus?.hasWorkingTreeChanges) {
+                  setNotice({ type: "info", message: "Make local changes first to create a feature branch." });
+                  return;
+                }
+                void runAction({ action: "commit_push", featureBranch: true, skipDefaultBranchPrompt: true });
+              }}
+              disabled={isBusy || !gitStatus?.hasWorkingTreeChanges}
+              className="h-auto flex-col gap-1 py-3"
+            >
+              <HugeiconsIcon icon={GitBranchIcon} className="size-3.5" />
+              <span className="text-[11px]">New branch</span>
+            </Button>
           </div>
 
-          {/* PR Stack */}
-          <div className="flex flex-col gap-2">
+          {/* Release PR — only on pre-release branch */}
+          {isPreReleaseBranch && !hasExistingReleasePr && !gitStatus?.hasWorkingTreeChanges && (
+            <Button
+              variant="outline"
+              disabled={isBusy}
+              onClick={handleCreateReleasePr}
+              className="w-full justify-center gap-2 border-purple-500/30 py-3 text-purple-400 hover:bg-purple-500/10 hover:text-purple-300"
+            >
+              <HugeiconsIcon icon={GitPullRequestIcon} className="size-3.5" />
+              Create Release PR → main
+            </Button>
+          )}
+
+          {/* Pull Requests */}
+          <div className="flex flex-col gap-3">
             <SectionHeader count={displayPrStack.length}>Pull Requests</SectionHeader>
             {displayPrStack.length === 0 ? (
-              <div className="flex flex-col items-center justify-center gap-2 rounded-lg border border-dashed py-5 text-muted-foreground/40">
-                <HugeiconsIcon icon={GitPullRequestIcon} className="size-5" />
-                <span className="text-[11px]">No pull requests yet</span>
+              <div className="flex items-center gap-2 rounded-xl border border-dashed py-6 justify-center text-muted-foreground/40">
+                <HugeiconsIcon icon={GitPullRequestIcon} className="size-4" />
+                <span className="text-xs">No pull requests yet</span>
               </div>
             ) : (
-              <div>
-                {displayPrStack.map((pr, index) => {
-                  const isCurrent = pr.number === gitStatus?.pr?.number;
-                  return (
-                    <PrStackCard
-                      key={pr.number}
-                      pr={pr}
-                      isCurrent={isCurrent}
-                      hasConnector={index < displayPrStack.length - 1}
-                      onOpen={() => void window.electronAPI?.shell.openExternal(pr.url)}
-                      mergeActions={
-                        isCurrent && pr.state === "open" ? (
-                          <div className="flex items-center gap-1.5">
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              disabled={isBusy}
-                              onClick={(e) => { e.stopPropagation(); setMergeDialogScope("current"); }}
-                            >
-                              <HugeiconsIcon icon={GitMergeIcon} className="size-2.5" />
-                              Merge
-                            </Button>
-                            {prStack.length > 1 && (
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                disabled={isBusy}
-                                onClick={(e) => { e.stopPropagation(); setMergeDialogScope("stack"); }}
-                              >
-                                <HugeiconsIcon icon={GitMergeIcon} className="size-2.5" />
-                                Merge stack
-                              </Button>
+              <Card>
+                <CardContent className="p-0">
+                  <div className="divide-y">
+                    {displayPrStack.map((pr) => {
+                      const isCurrent = pr.number === gitStatus?.pr?.number;
+                      return (
+                        <button
+                          key={pr.number}
+                          type="button"
+                          className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-accent/30"
+                          onClick={() => void window.electronAPI?.shell.openExternal(pr.url)}
+                        >
+                          <HugeiconsIcon
+                            icon={pr.state === "merged" ? GitMergeIcon : GitPullRequestIcon}
+                            className={cn(
+                              "size-4 shrink-0",
+                              pr.state === "open" ? "text-emerald-500" : pr.state === "merged" ? "text-purple-400" : "text-muted-foreground/40",
                             )}
+                          />
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-2">
+                              <span className="text-xs font-medium text-muted-foreground">#{pr.number}</span>
+                              <span className="truncate text-sm font-medium">{pr.title}</span>
+                            </div>
+                            <div className="mt-0.5 flex items-center gap-1 text-[11px] text-muted-foreground/50">
+                              <span className="font-mono">{pr.headBranch}</span>
+                              <span>&rarr;</span>
+                              <span className="font-mono">{pr.baseBranch}</span>
+                            </div>
                           </div>
-                        ) : undefined
-                      }
-                    />
-                  );
-                })}
+                          {isCurrent && <Badge variant="default" className="shrink-0 text-[10px]">Current</Badge>}
+                          {pr.state === "merged" && (
+                            <Badge variant="secondary" className="shrink-0 text-[10px] text-purple-400">Merged</Badge>
+                          )}
+                          {pr.state === "open" && !isCurrent && (
+                            <Badge variant="default" className="shrink-0 text-[10px]">Open</Badge>
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
+            {/* Merge actions for current PR */}
+            {gitStatus?.pr?.state === "open" && (
+              <div className="flex gap-1.5">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={isBusy}
+                  onClick={() => setMergeDialogScope("current")}
+                  className="gap-1.5"
+                >
+                  <HugeiconsIcon icon={GitMergeIcon} className="size-3" />
+                  Merge PR
+                </Button>
+                {prStack.length > 1 && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={isBusy}
+                    onClick={() => setMergeDialogScope("stack")}
+                    className="gap-1.5"
+                  >
+                    <HugeiconsIcon icon={GitMergeIcon} className="size-3" />
+                    Merge stack
+                  </Button>
+                )}
               </div>
             )}
+          </div>
+
+          {/* Branches */}
+          <div className="flex flex-col gap-3">
+            <SectionHeader>Branches</SectionHeader>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => setIsSwitchDialogOpen(true)}
+              disabled={isBusy}
+              className="w-fit gap-1.5"
+            >
+              <HugeiconsIcon icon={GitBranchIcon} className="size-3" />
+              Switch branch
+            </Button>
           </div>
         </div>
       </ScrollArea>

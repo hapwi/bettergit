@@ -32,9 +32,13 @@ export const useAppStore = create<AppStore>((set, get) => ({
   setRepoCwd: (cwd) => {
     set({ repoCwd: cwd });
     if (cwd) {
-      const recent = [cwd, ...get().recentRepos.filter((r) => r !== cwd)].slice(0, MAX_RECENT);
-      set({ recentRepos: recent });
-      saveRecentRepos(recent);
+      const existing = get().recentRepos;
+      // Only add if not already in the list — don't reorder
+      if (!existing.includes(cwd)) {
+        const recent = [...existing, cwd].slice(0, MAX_RECENT);
+        set({ recentRepos: recent });
+        saveRecentRepos(recent);
+      }
     }
   },
 

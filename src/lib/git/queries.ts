@@ -12,7 +12,7 @@ export const gitQueryKeys = {
 };
 
 export function invalidateGitQueries(queryClient: QueryClient) {
-  return queryClient.invalidateQueries({ queryKey: gitQueryKeys.all });
+  return queryClient.refetchQueries({ queryKey: gitQueryKeys.all });
 }
 
 export function gitStatusQueryOptions(cwd: string | null) {

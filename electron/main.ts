@@ -13,6 +13,15 @@ function createWindow() {
     height: 800,
     minWidth: 800,
     minHeight: 600,
+    show: false,
+    backgroundColor: process.platform === "darwin" ? "#00000000" : "#0a0a0a",
+    ...(process.platform === "darwin"
+      ? {
+          transparent: true,
+          vibrancy: "under-window" as const,
+          visualEffectState: "active" as const,
+        }
+      : {}),
     titleBarStyle: "hiddenInset",
     trafficLightPosition: { x: 16, y: 18 },
     webPreferences: {
@@ -22,9 +31,10 @@ function createWindow() {
     },
   });
 
+  win.once("ready-to-show", () => win.show());
+
   if (isDev) {
     win.loadURL("http://localhost:5173");
-    win.webContents.openDevTools();
   } else {
     win.loadFile(path.join(__dirname, "../dist/index.html"));
   }
