@@ -32,7 +32,7 @@ export function buildMenuItems(
   gitStatus: GitStatus | null,
   isBusy: boolean,
   isDefaultBranch: boolean,
-  hasOriginRemote: boolean,
+  _hasOriginRemote: boolean,
 ): GitActionMenuItem[] {
   if (!gitStatus) return [];
 

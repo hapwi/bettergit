@@ -37,16 +37,17 @@ export const useAppStore = create<AppStore>((set, get) => ({
   gitResultMap: {},
 
   setRepoCwd: (cwd) => {
-    set({ repoCwd: cwd });
     if (cwd) {
       const existing = get().recentRepos;
-      // Only add if not already in the list — don't reorder
       if (!existing.includes(cwd)) {
+        // New project — add to the bottom and select it in one update
         const recent = [...existing, cwd].slice(0, MAX_RECENT);
-        set({ recentRepos: recent });
+        set({ repoCwd: cwd, recentRepos: recent });
         saveRecentRepos(recent);
+        return;
       }
     }
+    set({ repoCwd: cwd });
   },
 
   removeRecentRepo: (cwd) => {
