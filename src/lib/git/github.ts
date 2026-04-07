@@ -2,6 +2,7 @@
  * GitHub CLI operations — PR management via `gh`.
  */
 import { execGh, requireSuccess } from "./exec";
+import { getOriginRepoSlug } from "./remote";
 
 export interface PullRequestSummary {
   number: number;
@@ -16,18 +17,26 @@ export async function listOpenPullRequests(
   cwd: string,
   headBranch: string,
 ): Promise<PullRequestSummary[]> {
-  const result = await execGh(cwd, [
+  // Resolve the origin remote to scope PR queries to the user's repo (not upstream for forks)
+  const repo = await getOriginRepoSlug(cwd);
+
+  const args = [
     "pr",
     "list",
-    "--head",
-    headBranch,
     "--state",
     "open",
     "--json",
     "number,title,url,baseRefName,headRefName,state",
     "--limit",
     "20",
-  ]);
+  ];
+  if (repo) {
+    args.push("--repo", repo);
+  }
+  if (headBranch) {
+    args.push("--head", headBranch);
+  }
+  const result = await execGh(cwd, args);
   if (result.code !== 0) return [];
 
   try {
@@ -93,6 +102,7 @@ export async function createPullRequest(
   title: string,
   body: string,
 ): Promise<PullRequestSummary> {
+  // Create the PR (returns the PR URL on stdout)
   const stdout = requireSuccess(
     await execGh(cwd, [
       "pr",
@@ -103,26 +113,48 @@ export async function createPullRequest(
       title,
       "--body",
       body,
-      "--json",
-      "number,title,url,baseRefName,headRefName,state",
     ]),
     "create PR",
   );
 
-  const pr = JSON.parse(stdout) as {
-    number: number;
-    title: string;
-    url: string;
-    baseRefName: string;
-    headRefName: string;
-    state: string;
-  };
+  const url = stdout.trim();
+
+  // Fetch the created PR details
+  const viewResult = await execGh(cwd, [
+    "pr",
+    "view",
+    url,
+    "--json",
+    "number,title,url,baseRefName,headRefName,state",
+  ]);
+
+  if (viewResult.code === 0) {
+    const pr = JSON.parse(viewResult.stdout) as {
+      number: number;
+      title: string;
+      url: string;
+      baseRefName: string;
+      headRefName: string;
+      state: string;
+    };
+    return {
+      number: pr.number,
+      title: pr.title,
+      url: pr.url,
+      baseBranch: pr.baseRefName,
+      headBranch: pr.headRefName,
+      state: "open",
+    };
+  }
+
+  // Fallback if view fails — parse number from URL
+  const numberMatch = url.match(/\/pull\/(\d+)/);
   return {
-    number: pr.number,
-    title: pr.title,
-    url: pr.url,
-    baseBranch: pr.baseRefName,
-    headBranch: pr.headRefName,
+    number: numberMatch ? parseInt(numberMatch[1], 10) : 0,
+    title,
+    url,
+    baseBranch,
+    headBranch: "",
     state: "open",
   };
 }

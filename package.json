@@ -16,6 +16,7 @@
     "dist": "bun run build && electron-builder"
   },
   "dependencies": {
+    "@anthropic-ai/claude-agent-sdk": "^0.2.92",
     "@fontsource-variable/geist": "^5.2.8",
     "@fontsource-variable/inter": "^5.2.8",
     "@hugeicons/core-free-icons": "^4.1.1",

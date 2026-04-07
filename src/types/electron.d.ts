@@ -63,6 +63,9 @@ interface ElectronAPI {
     generateCommitMessage: (input: CommitMessageInput) => Promise<CommitMessageResult>;
     generatePrContent: (input: PrContentInput) => Promise<PrContentResult>;
     generateBranchName: (input: BranchNameInput) => Promise<BranchNameResult>;
+    setModel: (model: string) => Promise<void>;
+    getModel: () => Promise<string>;
+    checkCli: (cli: string) => Promise<boolean>;
   };
   platform: NodeJS.Platform;
 }

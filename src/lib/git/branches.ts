@@ -12,30 +12,45 @@ export interface Branch {
 }
 
 export async function listBranches(cwd: string): Promise<Branch[]> {
-  const stdout = requireSuccess(
-    await execGit(cwd, [
-      "branch",
-      "-a",
-      "--format=%(HEAD)|%(refname:short)|%(upstream:short)",
-    ]),
-    "list branches",
-  );
+  // List local branches + origin remote branches separately (avoids upstream refs from forks)
+  const [localResult, remoteResult] = await Promise.all([
+    execGit(cwd, ["branch", "--format=%(HEAD)|%(refname:short)|%(upstream:short)"]),
+    execGit(cwd, ["branch", "-r", "--format=%(refname:short)", "--list", "origin/*"]),
+  ]);
 
+  requireSuccess(localResult, "list branches");
   const defaultBranch = await getDefaultBranch(cwd);
   const branches: Branch[] = [];
 
-  for (const line of stdout.split("\n").filter(Boolean)) {
+  // Local branches
+  for (const line of localResult.stdout.split("\n").filter(Boolean)) {
     const [head, name, upstream] = line.split("|");
     if (!name) continue;
-
-    const isRemote = name.startsWith("remotes/") || name.startsWith("origin/");
     branches.push({
-      name: isRemote ? name.replace(/^remotes\//, "") : name,
+      name,
       current: head === "*",
-      isRemote,
+      isRemote: false,
       isDefault: name === defaultBranch,
       upstream: upstream || null,
     });
+  }
+
+  // Origin remote branches (skip HEAD and branches that already exist locally)
+  const localNames = new Set(branches.map((b) => b.name));
+  if (remoteResult.code === 0) {
+    for (const line of remoteResult.stdout.split("\n").filter(Boolean)) {
+      const name = line.trim();
+      if (!name || name.includes("/HEAD")) continue;
+      const localName = name.replace(/^origin\//, "");
+      if (localNames.has(localName)) continue;
+      branches.push({
+        name,
+        current: false,
+        isRemote: true,
+        isDefault: localName === defaultBranch,
+        upstream: null,
+      });
+    }
   }
 
   return branches;

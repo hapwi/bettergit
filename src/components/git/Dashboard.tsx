@@ -25,6 +25,9 @@ import {
 import { HugeiconsIcon } from "@hugeicons/react";
 import { useAppStore } from "@/store";
 import { getRepoStats, getRecentCommits, getOpenPrs, getMergedPrs } from "@/lib/git/stats";
+import { getOriginRepoSlug } from "@/lib/git/remote";
+import { execGh } from "@/lib/git/exec";
+import { GitHubIcon } from "@/components/icons";
 import {
   Card,
   CardContent,
@@ -103,6 +106,22 @@ export function Dashboard() {
     staleTime: 30_000,
     refetchInterval: 60_000,
   });
+  const { data: forkInfo } = useQuery({
+    queryKey: ["git", "fork-info", repoCwd],
+    queryFn: async () => {
+      const repo = await getOriginRepoSlug(repoCwd!);
+      if (!repo) return null;
+      const result = await execGh(repoCwd!, ["repo", "view", repo, "--json", "isFork,parent"]);
+      if (result.code !== 0) return null;
+      const data = JSON.parse(result.stdout) as { isFork: boolean; parent?: { name: string; owner: { login: string } } };
+      if (!data.isFork || !data.parent) return null;
+      return `${data.parent.owner.login}/${data.parent.name}`;
+    },
+    enabled: repoCwd !== null,
+    staleTime: Infinity,
+    gcTime: 10 * 60_000,
+  });
+
   const { data: mergedPrs = [] } = useQuery({
     queryKey: ["git", "merged-prs", repoCwd],
     queryFn: () => getMergedPrs(repoCwd!, 10),
@@ -161,6 +180,18 @@ export function Dashboard() {
   return (
     <ScrollArea className="h-full">
       <div className="flex flex-col gap-5 p-6">
+        {/* Fork indicator */}
+        {forkInfo && (
+          <button
+            type="button"
+            className="flex items-center gap-2 text-xs text-muted-foreground/60 transition-colors hover:text-muted-foreground"
+            onClick={() => void window.electronAPI?.shell.openExternal(`https://github.com/${forkInfo}`)}
+          >
+            <GitHubIcon className="size-3" />
+            <span>Forked from <span className="font-medium">{forkInfo}</span></span>
+          </button>
+        )}
+
         {/* Stat row */}
         <div className="grid grid-cols-4 gap-3">
           {[
@@ -237,6 +268,45 @@ export function Dashboard() {
           </Card>
         </div>
 
+        {/* Open PRs */}
+        <div className="flex flex-col gap-3">
+          <SectionTitle icon={GitPullRequestIcon} title="Open Pull Requests" count={openPrs.length} />
+          {openPrs.length > 0 ? (
+            <Card>
+              <CardContent className="p-0">
+                <div className="divide-y">
+                  {openPrs.map((pr) => (
+                    <div
+                      key={pr.number}
+                      className="flex w-full items-center gap-3 px-4 py-2.5"
+                    >
+                      <HugeiconsIcon icon={GitPullRequestIcon} className="size-4 shrink-0 text-emerald-500" />
+                      <span className="text-xs font-medium text-muted-foreground">#{pr.number}</span>
+                      <span className="truncate text-sm font-medium">{pr.title}</span>
+                      <span className="ml-auto shrink-0 text-[11px] text-muted-foreground/50">
+                        {pr.headBranch} → {pr.baseBranch}
+                      </span>
+                      <Badge variant="default" className="shrink-0 text-[10px]">Open</Badge>
+                      <button
+                        type="button"
+                        className="shrink-0 rounded-md p-1 text-muted-foreground/40 transition-colors hover:bg-accent hover:text-foreground"
+                        onClick={() => void window.electronAPI?.shell.openExternal(pr.url)}
+                      >
+                        <GitHubIcon className="size-3.5" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          ) : (
+            <div className="flex items-center gap-2 rounded-xl border border-dashed py-6 justify-center text-muted-foreground/40">
+              <HugeiconsIcon icon={GitPullRequestIcon} className="size-4" />
+              <span className="text-xs">No open pull requests</span>
+            </div>
+          )}
+        </div>
+
         {/* Recent commits */}
         <div className="flex flex-col gap-3">
           <SectionTitle icon={Clock04Icon} title="Recent Commits" count={recentCommits.length} />
@@ -262,47 +332,6 @@ export function Dashboard() {
           )}
         </div>
 
-        {/* Open PRs */}
-        <div className="flex flex-col gap-3">
-          <SectionTitle icon={GitPullRequestIcon} title="Open Pull Requests" count={openPrs.length} />
-          {openPrs.length > 0 ? (
-            <Card>
-              <CardContent className="p-0">
-                <div className="divide-y">
-                  {openPrs.map((pr) => (
-                    <button
-                      key={pr.number}
-                      type="button"
-                      className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-accent/30"
-                      onClick={() => void window.electronAPI?.shell.openExternal(pr.url)}
-                    >
-                      <HugeiconsIcon icon={GitPullRequestIcon} className="size-4 shrink-0 text-emerald-500" />
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-2">
-                          <span className="text-xs font-medium text-muted-foreground">#{pr.number}</span>
-                          <span className="truncate text-sm font-medium">{pr.title}</span>
-                        </div>
-                        <div className="mt-0.5 flex items-center gap-1 text-[11px] text-muted-foreground/50">
-                          <span className="font-mono">{pr.headBranch}</span>
-                          <HugeiconsIcon icon={ArrowRight01Icon} className="size-2.5" />
-                          <span className="font-mono">{pr.baseBranch}</span>
-                          {pr.author && <span className="ml-2">by {pr.author}</span>}
-                        </div>
-                      </div>
-                      <Badge variant="default" className="shrink-0 text-[10px]">Open</Badge>
-                    </button>
-                  ))}
-                </div>
-              </CardContent>
-            </Card>
-          ) : (
-            <div className="flex items-center gap-2 rounded-xl border border-dashed py-6 justify-center text-muted-foreground/40">
-              <HugeiconsIcon icon={GitPullRequestIcon} className="size-4" />
-              <span className="text-xs">No open pull requests</span>
-            </div>
-          )}
-        </div>
-
         {/* Merged PRs */}
         <div className="flex flex-col gap-3">
           <SectionTitle icon={GitMergeIcon} title="Recently Merged" count={mergedPrs.length} />
@@ -311,27 +340,25 @@ export function Dashboard() {
               <CardContent className="p-0">
                 <div className="divide-y">
                   {mergedPrs.map((pr) => (
-                    <button
+                    <div
                       key={pr.number}
-                      type="button"
-                      className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-accent/30"
-                      onClick={() => void window.electronAPI?.shell.openExternal(pr.url)}
+                      className="flex w-full items-center gap-3 px-4 py-2.5"
                     >
                       <HugeiconsIcon icon={GitMergeIcon} className="size-4 shrink-0 text-purple-400" />
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-2">
-                          <span className="text-xs font-medium text-muted-foreground">#{pr.number}</span>
-                          <span className="truncate text-sm">{pr.title}</span>
-                        </div>
-                        <div className="mt-0.5 flex items-center gap-1 text-[11px] text-muted-foreground/50">
-                          <span className="font-mono">{pr.headBranch}</span>
-                          <HugeiconsIcon icon={ArrowRight01Icon} className="size-2.5" />
-                          <span className="font-mono">{pr.baseBranch}</span>
-                          {pr.author && <span className="ml-2">by {pr.author}</span>}
-                        </div>
-                      </div>
+                      <span className="text-xs font-medium text-muted-foreground">#{pr.number}</span>
+                      <span className="truncate text-sm">{pr.title}</span>
+                      <span className="ml-auto shrink-0 text-[11px] text-muted-foreground/50">
+                        {pr.headBranch} → {pr.baseBranch}
+                      </span>
                       <Badge variant="secondary" className="shrink-0 text-[10px] text-purple-400">Merged</Badge>
-                    </button>
+                      <button
+                        type="button"
+                        className="shrink-0 rounded-md p-1 text-muted-foreground/40 transition-colors hover:bg-accent hover:text-foreground"
+                        onClick={() => void window.electronAPI?.shell.openExternal(pr.url)}
+                      >
+                        <GitHubIcon className="size-3.5" />
+                      </button>
+                    </div>
                   ))}
                 </div>
               </CardContent>

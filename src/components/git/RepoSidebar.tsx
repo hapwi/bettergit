@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { CheckmarkCircle02Icon } from "@hugeicons/core-free-icons";
 import { useQuery } from "@tanstack/react-query";
 import {
   GitBranchIcon,
@@ -7,7 +8,6 @@ import {
   ArrowUp01Icon,
   ArrowDown01Icon,
   ExchangeIcon,
-  SidebarLeftIcon,
   Settings01Icon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
@@ -25,9 +25,9 @@ import {
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
-  useSidebar,
 } from "@/components/ui/sidebar";
 import { Button } from "@/components/ui/button";
+import { Spinner } from "@/components/ui/spinner";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { SettingsDialog } from "@/components/git/SettingsDialog";
 import { useQueryClient } from "@tanstack/react-query";
@@ -38,13 +38,18 @@ function ProjectItem({
   isActive,
   onSelect,
   onRemove,
+  gitBusy,
+  gitResult,
 }: {
   path: string;
   isActive: boolean;
   onSelect: () => void;
   onRemove: () => void;
+  gitBusy: boolean;
+  gitResult: "success" | "error" | null;
 }) {
   const name = path.split("/").pop() ?? "Repository";
+  const showStatus = gitBusy || gitResult !== null;
 
   return (
     <SidebarMenuItem>
@@ -60,20 +65,34 @@ function ProjectItem({
           {name.slice(0, 2)}
         </div>
         <span className="flex-1 truncate text-sm">{name}</span>
-        <span
-          role="button"
-          tabIndex={0}
-          onClick={(e) => {
-            e.stopPropagation();
-            onRemove();
-          }}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") { e.stopPropagation(); onRemove(); }
-          }}
-          className="shrink-0 text-muted-foreground/30 opacity-0 transition-opacity hover:text-destructive group-hover/item:opacity-100"
-        >
-          <HugeiconsIcon icon={Cancel01Icon} className="size-3" />
-        </span>
+        {showStatus ? (
+          <span className="shrink-0">
+            {gitBusy && <Spinner className="size-3.5" />}
+            {!gitBusy && gitResult === "success" && (
+              <HugeiconsIcon icon={CheckmarkCircle02Icon} className="size-3.5 text-emerald-500" />
+            )}
+            {!gitBusy && gitResult === "error" && (
+              <span className="flex size-3.5 items-center justify-center">
+                <span className="size-1.5 rounded-full bg-red-500" />
+              </span>
+            )}
+          </span>
+        ) : (
+          <span
+            role="button"
+            tabIndex={0}
+            onClick={(e) => {
+              e.stopPropagation();
+              onRemove();
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") { e.stopPropagation(); onRemove(); }
+            }}
+            className="shrink-0 text-muted-foreground/30 opacity-0 transition-opacity hover:text-destructive group-hover/item:opacity-100"
+          >
+            <HugeiconsIcon icon={Cancel01Icon} className="size-3" />
+          </span>
+        )}
       </SidebarMenuButton>
     </SidebarMenuItem>
   );
@@ -84,8 +103,9 @@ export function RepoSidebar() {
   const recentRepos = useAppStore((s) => s.recentRepos);
   const setRepoCwd = useAppStore((s) => s.setRepoCwd);
   const removeRecentRepo = useAppStore((s) => s.removeRecentRepo);
+  const gitBusyMap = useAppStore((s) => s.gitBusyMap);
+  const gitResultMap = useAppStore((s) => s.gitResultMap);
   const queryClient = useQueryClient();
-  const { toggleSidebar } = useSidebar();
   const { data: status } = useQuery(gitStatusQueryOptions(repoCwd));
   const { data: branches = [] } = useQuery(gitBranchesQueryOptions(repoCwd));
 
@@ -103,6 +123,7 @@ export function RepoSidebar() {
 
   const [renameDialogOpen, setRenameDialogOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [pendingRemoveRepo, setPendingRemoveRepo] = useState<string | null>(null);
 
   const doRenameMasterToMain = async () => {
     if (!repoCwd || !window.electronAPI) return;
@@ -125,25 +146,7 @@ export function RepoSidebar() {
 
   return (
     <Sidebar className="bg-sidebar">
-      {/* Header — clean, no toggle icon */}
-      <SidebarHeader className="px-3 pb-2 pt-14">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <div className="flex size-7 items-center justify-center rounded-lg bg-primary">
-              <HugeiconsIcon icon={GitBranchIcon} className="size-3.5 text-primary-foreground" />
-            </div>
-            <span className="text-sm font-bold tracking-tight">BetterGit</span>
-          </div>
-          <Button
-            variant="ghost"
-            size="icon-xs"
-            onClick={toggleSidebar}
-            className="text-muted-foreground/40 hover:text-foreground"
-          >
-            <HugeiconsIcon icon={SidebarLeftIcon} className="size-3.5" />
-          </Button>
-        </div>
-      </SidebarHeader>
+      <SidebarHeader className="pt-11" />
 
       <SidebarContent>
         {/* Active project status */}
@@ -219,10 +222,18 @@ export function RepoSidebar() {
                             cwd: repoCwd,
                             args: ["branch", "pre-release"],
                           });
-                          await window.electronAPI.git.exec({
+                          // Push to remote if origin exists
+                          const remoteCheck = await window.electronAPI.git.exec({
                             cwd: repoCwd,
-                            args: ["push", "-u", "origin", "pre-release"],
+                            args: ["remote"],
                           });
+                          const hasOrigin = remoteCheck.stdout.split("\n").some((r: string) => r.trim() === "origin");
+                          if (hasOrigin) {
+                            await window.electronAPI.git.exec({
+                              cwd: repoCwd,
+                              args: ["push", "-u", "origin", "pre-release"],
+                            });
+                          }
                           toast.success("Created pre-release branch");
                           void invalidateGitQueries(queryClient);
                         } catch {
@@ -268,7 +279,9 @@ export function RepoSidebar() {
                   path={repo}
                   isActive={repo === repoCwd}
                   onSelect={() => setRepoCwd(repo)}
-                  onRemove={() => removeRecentRepo(repo)}
+                  onRemove={() => setPendingRemoveRepo(repo)}
+                  gitBusy={gitBusyMap[repo] ?? false}
+                  gitResult={gitResultMap[repo] ?? null}
                 />
               ))}
               {recentRepos.length === 0 && (
@@ -312,6 +325,19 @@ export function RepoSidebar() {
       />
 
       <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
+
+      <ConfirmDialog
+        open={pendingRemoveRepo !== null}
+        onOpenChange={(open) => { if (!open) setPendingRemoveRepo(null); }}
+        title="Remove project"
+        description={`Remove "${pendingRemoveRepo?.split("/").pop()}" from the sidebar? This won't delete any files.`}
+        confirmLabel="Remove"
+        variant="destructive"
+        onConfirm={() => {
+          if (pendingRemoveRepo) removeRecentRepo(pendingRemoveRepo);
+          setPendingRemoveRepo(null);
+        }}
+      />
     </Sidebar>
   );
 }

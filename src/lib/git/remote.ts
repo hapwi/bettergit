@@ -27,3 +27,10 @@ export async function hasOriginRemote(cwd: string): Promise<boolean> {
   const result = await execGit(cwd, ["remote"]);
   return result.stdout.split("\n").some((r) => r.trim() === "origin");
 }
+
+export async function getOriginRepoSlug(cwd: string): Promise<string> {
+  const result = await execGit(cwd, ["remote", "get-url", "origin"]);
+  if (result.code !== 0) return "";
+  const match = result.stdout.trim().match(/github\.com[/:]([^/]+\/[^/.]+)/);
+  return match ? match[1] : "";
+}

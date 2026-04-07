@@ -67,15 +67,38 @@ export async function getStatus(cwd: string): Promise<GitStatus> {
         aheadCount = parseInt(match[1], 10);
         behindCount = parseInt(match[2], 10);
       }
-    } else if (line.startsWith("1 ") || line.startsWith("2 ")) {
+    } else if (line.startsWith("1 ")) {
+      // Ordinary changed entry: "1 XY sub m1 m2 m3 h1 h2 path"
+      const parts = line.split(" ");
+      // Path is everything after the 8th space-separated field
+      if (parts.length >= 9) {
+        const filePath = parts.slice(8).join(" ");
+        if (filePath) changedPaths.push(filePath);
+      }
+    } else if (line.startsWith("2 ")) {
+      // Rename/copy entry: "2 XY sub m1 m2 m3 h1 h2 Xscore\tpath\torigPath"
       const tabIdx = line.indexOf("\t");
       if (tabIdx >= 0) {
         const parts = line.slice(tabIdx + 1).split("\t");
-        const filePath = parts[parts.length - 1];
+        const filePath = parts[0];
         if (filePath) changedPaths.push(filePath);
       }
     } else if (line.startsWith("? ")) {
       changedPaths.push(line.slice(2));
+    }
+  }
+
+  // If no upstream, compute ahead count against default branch (main/master)
+  if (!hasUpstream && branch) {
+    const defaultBranches = ["main", "master"];
+    for (const base of defaultBranches) {
+      if (base === branch) continue;
+      const countResult = await execGit(cwd, ["rev-list", "--count", `${base}..${branch}`]);
+      if (countResult.code === 0) {
+        const count = parseInt(countResult.stdout.trim(), 10);
+        if (count > 0) aheadCount = count;
+        break;
+      }
     }
   }
 
@@ -127,19 +150,20 @@ export async function getStatus(cwd: string): Promise<GitStatus> {
   const totalInsertions = files.reduce((sum, f) => sum + f.insertions, 0);
   const totalDeletions = files.reduce((sum, f) => sum + f.deletions, 0);
 
-  // Fetch PR info if we have a branch
+  // Fetch PR info — current branch PR + all open PRs for the repo
   let pr: PullRequestSummary | null = null;
   const prStack: PullRequestSummary[] = [];
-  if (branch) {
-    try {
-      const prs = await listOpenPullRequests(cwd, branch);
-      if (prs.length > 0) {
-        pr = prs.find((p) => p.headBranch === branch) ?? prs[0];
-        prStack.push(...prs);
+  try {
+    // Fetch all open PRs for the repo
+    const allPrs = await listOpenPullRequests(cwd, "");
+    if (allPrs.length > 0) {
+      prStack.push(...allPrs);
+      if (branch) {
+        pr = allPrs.find((p) => p.headBranch === branch) ?? null;
       }
-    } catch {
-      // gh CLI may not be available — that's fine
     }
+  } catch {
+    // gh CLI may not be available — that's fine
   }
 
   return {

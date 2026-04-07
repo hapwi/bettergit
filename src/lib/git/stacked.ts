@@ -93,6 +93,7 @@ export async function runStackedAction(input: StackedActionInput): Promise<Stack
   };
 
   let currentBranch = await getCurrentBranch(cwd);
+  let parentBranch = currentBranch; // Track the branch we're branching from
 
   // Feature branch creation
   if (input.featureBranch) {
@@ -130,6 +131,10 @@ export async function runStackedAction(input: StackedActionInput): Promise<Stack
 
     // Create and checkout the branch
     requireSuccess(await execGit(cwd, ["checkout", "-b", branchName]), `create branch ${branchName}`);
+    // Store the parent branch so PRs target it instead of main
+    if (parentBranch) {
+      await execGit(cwd, ["config", `branch.${branchName}.gh-merge-base`, parentBranch]);
+    }
     currentBranch = branchName;
     result.branch = { status: "created", name: branchName };
   }
@@ -210,8 +215,11 @@ export async function runStackedAction(input: StackedActionInput): Promise<Stack
 
   // Create PR
   if (action === "commit_push_pr" && currentBranch) {
-    const defaultBranch = await getDefaultBranch(cwd);
-    const baseBranch = defaultBranch;
+    // Use the stored parent branch (for stacked PRs) or fall back to default
+    const configResult = await execGit(cwd, ["config", `branch.${currentBranch}.gh-merge-base`]);
+    const baseBranch = configResult.code === 0 && configResult.stdout.trim()
+      ? configResult.stdout.trim()
+      : await getDefaultBranch(cwd);
 
     // Generate PR content
     let prTitle: string;

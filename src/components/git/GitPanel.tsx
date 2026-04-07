@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   GitBranchIcon,
@@ -13,6 +13,7 @@ import {
 import { HugeiconsIcon } from "@hugeicons/react";
 import { useAppStore } from "@/store";
 import { cn } from "@/lib/utils";
+import { GitHubIcon } from "@/components/icons";
 import {
   gitStatusQueryOptions,
   gitBranchesQueryOptions,
@@ -79,9 +80,9 @@ function StatusCard({
   loading?: boolean;
 }) {
   return (
-    <div className="flex items-start gap-2.5 rounded-xl border bg-card/50 px-3 py-2.5">
+    <div className="flex items-center gap-2.5 rounded-xl border bg-card/50 px-3 py-2.5">
       {loading ? (
-        <Spinner className="mt-0.5 size-3.5" />
+        <Spinner className="size-3.5" />
       ) : (
         <Badge variant={badgeVariant} className="shrink-0">{badgeLabel}</Badge>
       )}
@@ -201,7 +202,14 @@ export function GitPanel() {
   } | null>(null);
   const [progressTitle, setProgressTitle] = useState<string | null>(null);
   const [notice, setNotice] = useState<{ type: "info" | "error" | "success"; message: string } | null>(null);
-  const [isBusy, setIsBusy] = useState(false);
+  const [isBusyLocal, setIsBusyLocal] = useState(false);
+  const setGitBusy = useAppStore((s) => s.setGitBusy);
+  const flashGitResult = useAppStore((s) => s.flashGitResult);
+  const setIsBusy = useCallback((busy: boolean) => {
+    setIsBusyLocal(busy);
+    if (repoCwd) setGitBusy(repoCwd, busy);
+  }, [setGitBusy, repoCwd]);
+  const isBusy = isBusyLocal;
 
   const isDefaultBranch = useMemo(
     () => isDefaultBranchName(gitStatus?.branch ?? null, branches),
@@ -270,6 +278,9 @@ export function GitPanel() {
         featureBranch: input.featureBranch,
       });
 
+      const actionCwd = repoCwd;
+      actionRepoRef.current = actionCwd;
+
       setIsBusy(true);
       setNotice(null);
       setProgressTitle(stages[0] ?? "Running...");
@@ -277,42 +288,45 @@ export function GitPanel() {
       let stageIndex = 0;
       const interval = setInterval(() => {
         stageIndex = Math.min(stageIndex + 1, stages.length - 1);
-        setProgressTitle(stages[stageIndex] ?? "Running...");
+        guardedSetProgressTitle(stages[stageIndex] ?? "Running...");
       }, 1100);
 
       try {
         const result = await runStackedAction({
-          cwd: repoCwd,
+          cwd: actionCwd,
           action: input.action,
           commitMessage: input.commitMessage,
           featureBranch: input.featureBranch,
           filePaths: input.filePaths,
         });
         clearInterval(interval);
-        setProgressTitle(null);
+        guardedSetProgressTitle(null);
 
         const summary = summarizeGitResult(result);
         if (summary.noChanges) {
-          setNotice({ type: "error", message: summary.description ?? summary.title });
+          guardedSetNotice({ type: "error", message: summary.description ?? summary.title });
+          flashGitResult(actionCwd, "error");
         } else {
-          setNotice({
+          guardedSetNotice({
             type: "success",
             message: summary.description ? `${summary.title} · ${summary.description}` : summary.title,
           });
+          flashGitResult(actionCwd, "success");
         }
       } catch (err) {
         clearInterval(interval);
-        setProgressTitle(null);
-        setNotice({
+        guardedSetProgressTitle(null);
+        guardedSetNotice({
           type: "error",
           message: err instanceof Error ? err.message : "Action failed.",
         });
+        flashGitResult(actionCwd, "error");
       } finally {
         setIsBusy(false);
         void invalidateGitQueries(queryClient);
       }
     },
-    [repoCwd, gitStatus, isDefaultBranch, queryClient],
+    [repoCwd, gitStatus, isDefaultBranch, queryClient, flashGitResult],
   );
 
   const runQuickAction = useCallback(() => {
@@ -410,7 +424,9 @@ export function GitPanel() {
     try {
       const ref = gitStatus?.pr?.number?.toString();
       if (!ref) throw new Error("No PR to merge");
-      await mergePullRequest(repoCwd, ref, "squash", true);
+      const branchName = gitStatus?.pr?.headBranch ?? gitStatus?.branch ?? "";
+      const isProtected = ["main", "master", "pre-release"].includes(branchName);
+      await mergePullRequest(repoCwd, ref, "squash", !isProtected);
       setNotice({ type: "success", message: `Merged PR #${ref}` });
     } catch (err) {
       setNotice({ type: "error", message: err instanceof Error ? err.message : "Merge failed." });
@@ -425,6 +441,23 @@ export function GitPanel() {
   const hasExistingReleasePr = prStack.some(
     (pr) => pr.headBranch === "pre-release" && (pr.baseBranch === "main" || pr.baseBranch === "master"),
   );
+
+  // Check if pre-release is ahead of main (has commits to release)
+  const [preReleaseAhead, setPreReleaseAhead] = useState(false);
+  useEffect(() => {
+    if (!isPreReleaseBranch || !repoCwd) {
+      setPreReleaseAhead(false);
+      return;
+    }
+    const mainExists = branches.some((b) => b.name === "main" || b.name === "origin/main");
+    const target = mainExists ? "main" : "master";
+    execGit(repoCwd, ["rev-list", "--count", `${target}..pre-release`])
+      .then((result) => {
+        const count = parseInt(result.stdout.trim(), 10);
+        setPreReleaseAhead(count > 0);
+      })
+      .catch(() => setPreReleaseAhead(false));
+  }, [isPreReleaseBranch, repoCwd, branches]);
 
   const handleCreateReleasePr = useCallback(async () => {
     if (!repoCwd) return;
@@ -463,7 +496,6 @@ export function GitPanel() {
 
       const pr = await createPullRequest(repoCwd, targetBranch, prTitle, prBody);
       setNotice({ type: "success", message: `Created release PR #${pr.number}` });
-      void window.electronAPI?.shell.openExternal(pr.url);
     } catch (err) {
       setNotice({ type: "error", message: err instanceof Error ? err.message : "Failed to create release PR." });
     } finally {
@@ -477,6 +509,29 @@ export function GitPanel() {
   useEffect(() => {
     if (!isBusy) setProgressTitle(null);
   }, [isBusy]);
+
+  // Track which repo owns the current action — guarded setters only apply if repo hasn't changed
+  const actionRepoRef = useRef<string | null>(null);
+  const repoCwdRef = useRef(repoCwd);
+  repoCwdRef.current = repoCwd;
+  const guardedSetNotice = useCallback((v: { type: "info" | "error" | "success"; message: string } | null) => {
+    if (actionRepoRef.current === repoCwdRef.current) setNotice(v);
+  }, []);
+  const guardedSetProgressTitle = useCallback((v: string | null) => {
+    if (actionRepoRef.current === repoCwdRef.current) setProgressTitle(v);
+  }, []);
+
+  // Clear all local state when switching projects
+  useEffect(() => {
+    setNotice(null);
+    setProgressTitle(null);
+    setIsBusyLocal(false);
+    setIsCommitDialogOpen(false);
+    setIsSwitchDialogOpen(false);
+    setMergeDialogScope(null);
+    setPendingDefaultAction(null);
+    setPendingDeleteBranch(null);
+  }, [repoCwd]);
 
   if (!repoCwd) return null;
 
@@ -506,7 +561,7 @@ export function GitPanel() {
             {/* Primary action — spans full width or half */}
             {quickAction.kind !== "show_hint" && (
               <Button
-                variant={quickAction.disabled ? "outline" : "default"}
+                variant={quickAction.disabled || gitStatus?.pr?.state === "open" ? "outline" : "default"}
                 disabled={isBusy || quickAction.disabled}
                 onClick={runQuickAction}
                 className="col-span-4 h-auto justify-center gap-2 py-3"
@@ -528,7 +583,7 @@ export function GitPanel() {
               </Button>
             ))}
             <Button
-              variant="outline"
+              variant={gitStatus?.pr?.state === "open" && gitStatus?.hasWorkingTreeChanges ? "default" : "outline"}
               onClick={() => {
                 if (!gitStatus?.hasWorkingTreeChanges) {
                   setNotice({ type: "info", message: "Make local changes first to create a feature branch." });
@@ -545,7 +600,7 @@ export function GitPanel() {
           </div>
 
           {/* Release PR — only on pre-release branch */}
-          {isPreReleaseBranch && !hasExistingReleasePr && !gitStatus?.hasWorkingTreeChanges && (
+          {isPreReleaseBranch && !hasExistingReleasePr && preReleaseAhead && !gitStatus?.hasWorkingTreeChanges && (
             <Button
               variant="outline"
               disabled={isBusy}
@@ -566,75 +621,78 @@ export function GitPanel() {
                 <span className="text-xs">No pull requests yet</span>
               </div>
             ) : (
-              <Card>
-                <CardContent className="p-0">
-                  <div className="divide-y">
-                    {displayPrStack.map((pr) => {
-                      const isCurrent = pr.number === gitStatus?.pr?.number;
-                      return (
-                        <button
-                          key={pr.number}
-                          type="button"
-                          className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-accent/30"
-                          onClick={() => void window.electronAPI?.shell.openExternal(pr.url)}
-                        >
-                          <HugeiconsIcon
-                            icon={pr.state === "merged" ? GitMergeIcon : GitPullRequestIcon}
-                            className={cn(
-                              "size-4 shrink-0",
-                              pr.state === "open" ? "text-emerald-500" : pr.state === "merged" ? "text-purple-400" : "text-muted-foreground/40",
-                            )}
-                          />
-                          <div className="min-w-0 flex-1">
-                            <div className="flex items-center gap-2">
-                              <span className="text-xs font-medium text-muted-foreground">#{pr.number}</span>
-                              <span className="truncate text-sm font-medium">{pr.title}</span>
-                            </div>
-                            <div className="mt-0.5 flex items-center gap-1 text-[11px] text-muted-foreground/50">
-                              <span className="font-mono">{pr.headBranch}</span>
-                              <span>&rarr;</span>
-                              <span className="font-mono">{pr.baseBranch}</span>
-                            </div>
-                          </div>
-                          {isCurrent && <Badge variant="default" className="shrink-0 text-[10px]">Current</Badge>}
-                          {pr.state === "merged" && (
-                            <Badge variant="secondary" className="shrink-0 text-[10px] text-purple-400">Merged</Badge>
-                          )}
-                          {pr.state === "open" && !isCurrent && (
-                            <Badge variant="default" className="shrink-0 text-[10px]">Open</Badge>
-                          )}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </CardContent>
-              </Card>
+              <div className="divide-y rounded-xl border">
+                {displayPrStack.map((pr) => {
+                  const isCurrent = pr.number === gitStatus?.pr?.number;
+                  return (
+                    <div
+                      key={pr.number}
+                      className="flex w-full items-center gap-2.5 px-3 py-2"
+                    >
+                      <HugeiconsIcon
+                        icon={pr.state === "merged" ? GitMergeIcon : GitPullRequestIcon}
+                        className={cn(
+                          "size-3.5 shrink-0",
+                          pr.state === "open" ? "text-emerald-500" : pr.state === "merged" ? "text-purple-400" : "text-muted-foreground/40",
+                        )}
+                      />
+                      <span className="text-xs text-muted-foreground">#{pr.number}</span>
+                      <span className="truncate text-sm">{pr.title}</span>
+                      <span className="ml-auto shrink-0 text-[11px] text-muted-foreground/40">{pr.headBranch} → {pr.baseBranch}</span>
+                      {isCurrent && <Badge variant="default" className="shrink-0 text-[10px]">Current</Badge>}
+                      {pr.state === "merged" && (
+                        <Badge variant="secondary" className="shrink-0 text-[10px] text-purple-400">Merged</Badge>
+                      )}
+                      <button
+                        type="button"
+                        className="shrink-0 rounded-md p-1 text-muted-foreground/40 transition-colors hover:bg-accent hover:text-foreground"
+                        onClick={() => void window.electronAPI?.shell.openExternal(pr.url)}
+                      >
+                        <GitHubIcon className="size-3.5" />
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
             )}
 
             {/* Merge actions for current PR */}
             {gitStatus?.pr?.state === "open" && (
               <div className="flex gap-1.5">
-                <Button
-                  size="sm"
-                  variant="outline"
-                  disabled={isBusy}
-                  onClick={() => setMergeDialogScope("current")}
-                  className="gap-1.5"
-                >
-                  <HugeiconsIcon icon={GitMergeIcon} className="size-3" />
-                  Merge PR
-                </Button>
-                {prStack.length > 1 && (
+                {prStack.length <= 1 ? (
                   <Button
                     size="sm"
-                    variant="outline"
+                    variant={!gitStatus.hasWorkingTreeChanges && gitStatus.aheadCount === 0 ? "default" : "outline"}
                     disabled={isBusy}
-                    onClick={() => setMergeDialogScope("stack")}
+                    onClick={() => setMergeDialogScope("current")}
                     className="gap-1.5"
                   >
                     <HugeiconsIcon icon={GitMergeIcon} className="size-3" />
-                    Merge stack
+                    Merge PR
                   </Button>
+                ) : (
+                  <>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={isBusy}
+                      onClick={() => setMergeDialogScope("current")}
+                      className="gap-1.5"
+                    >
+                      <HugeiconsIcon icon={GitMergeIcon} className="size-3" />
+                      Merge PR
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant={!gitStatus.hasWorkingTreeChanges && gitStatus.aheadCount === 0 ? "default" : "outline"}
+                      disabled={isBusy}
+                      onClick={() => setMergeDialogScope("stack")}
+                      className="gap-1.5"
+                    >
+                      <HugeiconsIcon icon={GitMergeIcon} className="size-3" />
+                      Merge stack
+                    </Button>
+                  </>
                 )}
               </div>
             )}
