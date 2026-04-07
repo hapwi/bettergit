@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
   GitBranchIcon,
@@ -7,6 +8,7 @@ import {
   ArrowDown01Icon,
   ExchangeIcon,
   SidebarLeftIcon,
+  Settings01Icon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { useAppStore } from "@/store";
@@ -26,6 +28,8 @@ import {
   useSidebar,
 } from "@/components/ui/sidebar";
 import { Button } from "@/components/ui/button";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { SettingsDialog } from "@/components/git/SettingsDialog";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 
@@ -97,9 +101,11 @@ export function RepoSidebar() {
     if (path) setRepoCwd(path);
   };
 
-  const handleRenameMasterToMain = async () => {
+  const [renameDialogOpen, setRenameDialogOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+
+  const doRenameMasterToMain = async () => {
     if (!repoCwd || !window.electronAPI) return;
-    if (!window.confirm("Rename 'master' to 'main' locally and on remote? This will update the default branch.")) return;
 
     try {
       // Rename local branch
@@ -118,7 +124,7 @@ export function RepoSidebar() {
   };
 
   return (
-    <Sidebar className="bg-sidebar backdrop-blur-xl">
+    <Sidebar className="bg-sidebar">
       {/* Header — clean, no toggle icon */}
       <SidebarHeader className="px-3 pb-2 pt-14">
         <div className="flex items-center justify-between">
@@ -239,7 +245,7 @@ export function RepoSidebar() {
                       variant="ghost"
                       size="sm"
                       className="mt-1 h-6 w-full justify-center text-[11px] text-blue-400 hover:text-blue-300"
-                      onClick={handleRenameMasterToMain}
+                      onClick={() => setRenameDialogOpen(true)}
                     >
                       <HugeiconsIcon icon={ExchangeIcon} className="size-3" />
                       Rename to main
@@ -276,15 +282,36 @@ export function RepoSidebar() {
       </SidebarContent>
 
       <SidebarFooter className="p-2">
-        <Button
-          variant="outline"
-          className="w-full justify-center gap-2"
-          onClick={handleOpen}
-        >
-          <HugeiconsIcon icon={Add01Icon} />
-          Open Project
-        </Button>
+        <div className="flex gap-1.5">
+          <Button
+            variant="outline"
+            className="flex-1 justify-center gap-2"
+            onClick={handleOpen}
+          >
+            <HugeiconsIcon icon={Add01Icon} />
+            Open Project
+          </Button>
+          <Button
+            variant="outline"
+            size="icon"
+            onClick={() => setSettingsOpen(true)}
+            className="shrink-0"
+          >
+            <HugeiconsIcon icon={Settings01Icon} className="size-4" />
+          </Button>
+        </div>
       </SidebarFooter>
+
+      <ConfirmDialog
+        open={renameDialogOpen}
+        onOpenChange={setRenameDialogOpen}
+        title="Rename branch"
+        description="Rename 'master' to 'main' locally and on remote? This will update the default branch."
+        confirmLabel="Rename"
+        onConfirm={() => void doRenameMasterToMain()}
+      />
+
+      <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
     </Sidebar>
   );
 }

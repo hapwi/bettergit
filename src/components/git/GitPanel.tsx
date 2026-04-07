@@ -22,6 +22,7 @@ import { runStackedAction, type StackedAction } from "@/lib/git/stacked";
 import { pull } from "@/lib/git/remote";
 import { checkoutBranch, deleteBranch } from "@/lib/git/branches";
 import { mergePullRequest, createPullRequest, type PullRequestSummary } from "@/lib/git/github";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { generatePrContent } from "@/lib/git/ai";
 import { execGit } from "@/lib/git/exec";
 import {
@@ -380,9 +381,11 @@ export function GitPanel() {
     [repoCwd, queryClient],
   );
 
-  const handleDeleteBranch = useCallback(
+  const [pendingDeleteBranch, setPendingDeleteBranch] = useState<string | null>(null);
+
+  const doDeleteBranch = useCallback(
     async (branch: string) => {
-      if (!repoCwd || !window.confirm(`Delete branch "${branch}"?`)) return;
+      if (!repoCwd) return;
       try {
         await deleteBranch(repoCwd, branch, true);
         toast.success(`Deleted ${branch}`);
@@ -687,7 +690,7 @@ export function GitPanel() {
         branches={branches}
         isBusy={isBusy}
         onCheckout={handleCheckout}
-        onDelete={handleDeleteBranch}
+        onDelete={(branch) => setPendingDeleteBranch(branch)}
       />
 
       {mergeDialogScope && (
@@ -729,6 +732,19 @@ export function GitPanel() {
           }}
         />
       )}
+
+      <ConfirmDialog
+        open={pendingDeleteBranch !== null}
+        onOpenChange={(open) => { if (!open) setPendingDeleteBranch(null); }}
+        title="Delete branch"
+        description={`Delete branch "${pendingDeleteBranch}"? This cannot be undone.`}
+        confirmLabel="Delete"
+        variant="destructive"
+        onConfirm={() => {
+          if (pendingDeleteBranch) void doDeleteBranch(pendingDeleteBranch);
+          setPendingDeleteBranch(null);
+        }}
+      />
     </div>
   );
 }

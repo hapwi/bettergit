@@ -160,7 +160,7 @@ export function Dashboard() {
 
   return (
     <ScrollArea className="h-full">
-      <div className="flex flex-col gap-5 px-6 pb-6">
+      <div className="flex flex-col gap-5 p-6">
         {/* Stat row */}
         <div className="grid grid-cols-4 gap-3">
           {[

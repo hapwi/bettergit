@@ -141,8 +141,8 @@ export async function mergePullRequest(
 export async function createGhRepo(
   cwd: string,
   visibility: "public" | "private" = "private",
-): Promise<{ url: string; name: string }> {
-  const stdout = requireSuccess(
+): Promise<void> {
+  requireSuccess(
     await execGh(cwd, [
       "repo",
       "create",
@@ -150,13 +150,9 @@ export async function createGhRepo(
       ".",
       `--${visibility}`,
       "--push",
-      "--json",
-      "url,name",
     ]),
     "create GitHub repo",
   );
-  const data = JSON.parse(stdout) as { url: string; name: string };
-  return data;
 }
 
 export async function getGhDefaultBranch(cwd: string): Promise<string | null> {
