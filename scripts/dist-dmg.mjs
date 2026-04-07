@@ -39,6 +39,7 @@ console.log(`[dist] Staging in ${stageApp}`);
 // 2. Copy built artifacts
 cpSync(join(repoRoot, "dist"), join(stageApp, "dist"), { recursive: true });
 cpSync(join(repoRoot, "dist-electron"), join(stageApp, "dist-electron"), { recursive: true });
+cpSync(join(repoRoot, "dist-server"), join(stageApp, "dist-server"), { recursive: true });
 cpSync(join(repoRoot, "build"), join(stageApp, "build"), { recursive: true });
 
 // 3. Write a minimal package.json for electron-builder
@@ -57,7 +58,9 @@ const stagePackage = {
       output: "dist-out",
       buildResources: "build",
     },
-    files: ["dist/**/*", "dist-electron/**/*", "package.json"],
+    // Don't restrict files — let electron-builder use its defaults so that
+    // node_modules (production deps like the Claude Agent SDK) are included
+    // automatically. Matches hapcode's build config.
     mac: {
       target: [{ target: "dmg", arch: ["arm64"] }],
       icon: "icon.icns",
@@ -68,7 +71,12 @@ const stagePackage = {
       writeUpdateInfo: false,
     },
   },
-  dependencies: {},
+  dependencies: {
+    // The Claude Agent SDK is kept external (not bundled by esbuild) because
+    // it has dynamic requires and subprocess spawning that break when inlined.
+    // Same approach as hapcode's server build.
+    "@anthropic-ai/claude-agent-sdk": pkg.dependencies["@anthropic-ai/claude-agent-sdk"] ?? "*",
+  },
   devDependencies: {
     electron: "41.1.1",
   },

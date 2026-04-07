@@ -1,19 +1,19 @@
 {
   "name": "bettergit",
   "private": true,
-  "version": "0.0.2",
+  "version": "0.0.3",
   "main": "dist-electron/main.js",
   "scripts": {
     "dev": "vite",
     "dev:electron": "bun run build:electron && concurrently \"vite\" \"wait-on http://localhost:5173 && node scripts/dev-electron.mjs\"",
-    "build:electron": "tsc -p electron/tsconfig.json",
+    "build:electron": "node scripts/build-electron.mjs --force",
     "build": "tsc -b && vite build && bun run build:electron",
     "start": "bun run build && electron .",
     "lint": "eslint .",
     "format": "prettier --write \"**/*.{ts,tsx}\"",
     "typecheck": "tsc --noEmit",
     "preview": "vite preview",
-    "dist": "bun run build && electron-builder"
+    "dist": "bun run build && node scripts/dist-dmg.mjs"
   },
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "^0.2.92",

@@ -19,7 +19,6 @@ import {
   Tag01Icon,
   GitPullRequestIcon,
   GitMergeIcon,
-  ArrowRight01Icon,
   Clock04Icon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";

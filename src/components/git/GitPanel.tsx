@@ -19,14 +19,10 @@ import {
   gitBranchesQueryOptions,
   invalidateGitQueries,
 } from "@/lib/git/queries";
-import {
-  Card,
-  CardContent,
-} from "@/components/ui/card";
 import { runStackedAction, type StackedAction } from "@/lib/git/stacked";
 import { pull } from "@/lib/git/remote";
 import { checkoutBranch, deleteBranch } from "@/lib/git/branches";
-import { createPullRequest, type PullRequestSummary } from "@/lib/git/github";
+import { createPullRequest } from "@/lib/git/github";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { generatePrContent } from "@/lib/git/ai";
 import { execGit } from "@/lib/git/exec";
@@ -108,73 +104,6 @@ function ActionIcon({ icon }: { icon: "commit" | "push" | "pr" }) {
   return <HugeiconsIcon icon={GitPullRequestIcon} className="size-3.5" />;
 }
 
-function PrStackCard({
-  pr,
-  isCurrent,
-  hasConnector,
-  onOpen,
-  mergeActions,
-}: {
-  pr: PullRequestSummary;
-  isCurrent: boolean;
-  hasConnector: boolean;
-  onOpen: () => void;
-  mergeActions?: React.ReactNode;
-}) {
-  return (
-    <div className="relative flex items-stretch gap-3">
-      <div className="flex w-4 shrink-0 flex-col items-center">
-        <span
-          className={cn(
-            "mt-1.5 size-2 shrink-0 rounded-full ring-2 ring-background",
-            pr.state === "open" ? "bg-emerald-500" : pr.state === "merged" ? "bg-purple-500" : "bg-muted-foreground/40",
-          )}
-        />
-        {hasConnector && <span className="mt-1 w-px flex-1 bg-border/30" />}
-      </div>
-      <div className={cn("min-w-0 flex-1", hasConnector ? "pb-4" : "pb-0")}>
-        <div className="flex items-center gap-1.5">
-          <HugeiconsIcon
-            icon={GitPullRequestIcon}
-            className={cn(
-              "size-3 shrink-0",
-              pr.state === "open" ? "text-emerald-500" : pr.state === "merged" ? "text-purple-400" : "text-muted-foreground/40",
-            )}
-          />
-          <span className="text-[11px] font-medium tabular-nums text-muted-foreground/60">
-            #{pr.number}
-          </span>
-          {isCurrent && <Badge variant="default" className="text-[10px]">Current</Badge>}
-          {pr.state === "merged" && (
-            <Badge variant="secondary" className="text-purple-400 text-[10px]">
-              <HugeiconsIcon icon={GitMergeIcon} className="size-2.5" />
-              Merged
-            </Badge>
-          )}
-          {pr.state !== "merged" && (
-            <button
-              type="button"
-              className="ml-auto flex items-center gap-1 rounded-sm px-1.5 py-0.5 text-[10px] text-muted-foreground/50 hover:bg-accent hover:text-foreground"
-              onClick={onOpen}
-            >
-              Open
-            </button>
-          )}
-        </div>
-        <p className={cn("mt-1 line-clamp-2 text-[12px] font-medium leading-snug", pr.state === "merged" && "text-muted-foreground/60")}>
-          {pr.title}
-        </p>
-        <div className="mt-0.5 flex items-center gap-1 text-[10px] text-muted-foreground/40">
-          <span className="truncate font-mono">{pr.headBranch}</span>
-          <span>&rarr;</span>
-          <span className="truncate font-mono">{pr.baseBranch}</span>
-        </div>
-        {mergeActions && <div className="mt-2">{mergeActions}</div>}
-      </div>
-    </div>
-  );
-}
-
 // ---------------------------------------------------------------------------
 // Main GitPanel
 // ---------------------------------------------------------------------------
@@ -183,7 +112,7 @@ export function GitPanel() {
   const repoCwd = useAppStore((s) => s.repoCwd);
   const queryClient = useQueryClient();
 
-  const { data: gitStatus = null, isLoading: isStatusLoading } = useQuery(
+  const { data: gitStatus = null } = useQuery(
     gitStatusQueryOptions(repoCwd),
   );
   const { data: branches = [] } = useQuery(gitBranchesQueryOptions(repoCwd));
@@ -231,17 +160,6 @@ export function GitPanel() {
   );
   const displayPrStack = useMemo(() => [...prStack].reverse(), [prStack]);
 
-  const branchBadges = useMemo(() => {
-    if (!gitStatus) return [];
-    const badges: Array<{ label: string; variant: "default" | "secondary" | "destructive" | "outline" }> = [];
-    badges.push({
-      label: gitStatus.hasWorkingTreeChanges ? `${gitStatus.workingTree.files.length} changed` : "Clean",
-      variant: gitStatus.hasWorkingTreeChanges ? "secondary" : "default",
-    });
-    if (gitStatus.aheadCount > 0) badges.push({ label: `Ahead ${gitStatus.aheadCount}`, variant: "outline" });
-    if (gitStatus.behindCount > 0) badges.push({ label: `Behind ${gitStatus.behindCount}`, variant: "secondary" });
-    return badges;
-  }, [gitStatus]);
 
   // Actions
   const runAction = useCallback(
@@ -449,8 +367,9 @@ export function GitPanel() {
         prsToMerge = [{ number: pr.number, headBranch: pr.headBranch, baseBranch: pr.baseBranch }];
       }
 
-      // Delegate to main process — survives Vite HMR reloads
-      const result = await window.electronAPI!.git.mergePullRequests({
+      // Delegate to server process — survives Vite HMR reloads
+      const { serverFetch } = await import("@/lib/server");
+      const result = await serverFetch<{ merged: number[]; finalBranch: string | null; error: string | null }>("/api/git/merge-prs", {
         cwd: actionCwd,
         scope,
         prs: prsToMerge,

@@ -4,12 +4,11 @@ import { resolve } from "node:path";
 
 const projectRoot = new URL("..", import.meta.url).pathname.replace(/\/$/, "");
 
-const common = {
+const electronCommon = {
   bundle: true,
   platform: "node",
   target: "node20",
   external: ["electron"],
-  outdir: "dist-electron",
   sourcemap: false,
   minify: false,
 };
@@ -18,10 +17,32 @@ const builds = [
   {
     entryPoint: "electron/main.ts",
     outputFile: "dist-electron/main.js",
+    options: { ...electronCommon, outdir: "dist-electron" },
   },
   {
     entryPoint: "electron/preload.ts",
     outputFile: "dist-electron/preload.js",
+    options: { ...electronCommon, outdir: "dist-electron" },
+  },
+  {
+    entryPoint: "server/main.ts",
+    outputFile: "dist-server/main.mjs",
+    options: {
+      bundle: true,
+      platform: "node",
+      target: "node20",
+      format: "esm",
+      outdir: "dist-server",
+      outExtension: { ".js": ".mjs" },
+      sourcemap: false,
+      minify: false,
+      // The Claude Agent SDK must NOT be bundled — it has dynamic requires
+      // and subprocess spawning that break when inlined. Keep it external
+      // and ship it via node_modules (same as hapcode's server build).
+      // Built as ESM so the SDK's ESM entry (sdk.mjs) loads natively
+      // without CJS→ESM interop issues inside Electron's asar archive.
+      external: ["@anthropic-ai/claude-agent-sdk"],
+    },
   },
 ];
 
@@ -42,14 +63,15 @@ function isUpToDate() {
 
 if (process.argv.includes("--force") || !isUpToDate()) {
   await Promise.all(
-    builds.map(({ entryPoint }) =>
+    builds.map(({ entryPoint, options }) =>
       build({
-        ...common,
+        ...options,
         entryPoints: [entryPoint],
-        format: "cjs",
+        // Use the format specified in options (ESM for server), default to CJS
+        format: options.format ?? "cjs",
       }),
     ),
   );
 } else {
-  console.log("[build:electron] dist-electron is up to date");
+  console.log("[build:electron] dist-electron & dist-server are up to date");
 }
