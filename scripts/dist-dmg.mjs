@@ -68,7 +68,9 @@ const stagePackage = {
       writeUpdateInfo: false,
     },
   },
-  dependencies: {},
+  dependencies: {
+    "@anthropic-ai/claude-agent-sdk": pkg.dependencies["@anthropic-ai/claude-agent-sdk"] ?? "*",
+  },
   devDependencies: {
     electron: "41.1.1",
   },

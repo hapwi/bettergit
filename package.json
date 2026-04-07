@@ -13,7 +13,7 @@
     "format": "prettier --write \"**/*.{ts,tsx}\"",
     "typecheck": "tsc --noEmit",
     "preview": "vite preview",
-    "dist": "bun run build && electron-builder"
+    "dist": "bun run build && node scripts/dist-dmg.mjs"
   },
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "^0.2.92",

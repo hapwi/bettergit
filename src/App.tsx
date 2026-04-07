@@ -6,7 +6,6 @@ import { GitPanel } from "@/components/git/GitPanel"
 import { Dashboard } from "@/components/git/Dashboard"
 import { WelcomeScreen } from "@/components/git/WelcomeScreen"
 import { SidebarProvider, useSidebar } from "@/components/ui/sidebar"
-import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 import { gitStatusQueryOptions } from "@/lib/git/queries"
 import {

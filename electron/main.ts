@@ -349,27 +349,43 @@ ipcMain.handle(
     async function finalize() {
       if (merged.length === 0) return;
 
-      // Checkout merge base and pull. A pull failure must NOT block branch
-      // cleanup — the PRs are already merged on GitHub.
-      await gitExec(cwd, ["checkout", mergeBaseBranch]);
-      finalBranch = mergeBaseBranch;
-      await gitExec(cwd, ["pull", "--ff-only"]).catch(() => {});
+      // Detect what branch the user is currently on
+      const headResult = await gitExec(cwd, ["branch", "--show-current"]);
+      const currentBranch = headResult.stdout.trim();
 
-      // Sync protected branches / delete feature branches
+      // Fetch to get the latest remote state after merges
+      await gitExec(cwd, ["fetch", "--quiet", "--prune", "origin"]);
+
+      // Check if any merged PR had a protected head branch (e.g. pre-release → main).
+      // If so, we want to stay on that branch instead of checking out the merge base.
+      const mergedProtectedHead = merged.find((m) => isProtectedBranch(m.headBranch));
+
+      // Sync protected branches first — they stay alive, just get reset to match
+      // the merge base. Do this WITHOUT checking out the merge base to avoid
+      // unnecessary working-tree churn (which triggers Vite HMR reloads when
+      // the app manages its own repo).
       for (const { headBranch } of merged) {
-        if (isProtectedBranch(headBranch)) {
-          if (headBranch !== mergeBaseBranch) {
-            try {
-              await gitExec(cwd, ["checkout", headBranch]);
-              await gitExec(cwd, ["reset", "--hard", mergeBaseBranch]);
-              requireOk(
-                await gitExec(cwd, ["push", "--force-with-lease", "-u", "origin", `HEAD:${headBranch}`]),
-                `sync ${headBranch}`,
-              );
-            } catch { /* best effort */ }
+        if (!isProtectedBranch(headBranch)) continue;
+        if (headBranch === mergeBaseBranch) continue;
+
+        try {
+          if (currentBranch === headBranch) {
+            // We're already on this branch — reset in place, no checkout needed
+            await gitExec(cwd, ["reset", "--hard", `origin/${mergeBaseBranch}`]);
+          } else {
+            // Update the branch ref without checking it out
+            await gitExec(cwd, ["update-ref", `refs/heads/${headBranch}`, `origin/${mergeBaseBranch}`]);
           }
-          continue;
-        }
+          requireOk(
+            await gitExec(cwd, ["push", "--force-with-lease", "-u", "origin", `HEAD:${headBranch}`]),
+            `sync ${headBranch}`,
+          );
+        } catch { /* best effort */ }
+      }
+
+      // Delete non-protected merged branches
+      for (const { headBranch } of merged) {
+        if (isProtectedBranch(headBranch)) continue;
         await deleteBranchIfPresent(cwd, headBranch);
       }
 
@@ -378,8 +394,23 @@ ipcMain.handle(
         await deleteBranchIfPresent(cwd, branch);
       }
 
-      // Make sure we end on the merge base
-      await gitExec(cwd, ["checkout", mergeBaseBranch]).catch(() => {});
+      // Decide where to end up:
+      // - If user was on a protected head branch (e.g. pre-release → main), stay there
+      // - If user was on a deleted feature branch, go to merge base
+      // - Otherwise stay where we are
+      if (mergedProtectedHead && currentBranch === mergedProtectedHead.headBranch) {
+        // Already on the protected branch, already synced above
+        finalBranch = mergedProtectedHead.headBranch;
+      } else if (merged.some((m) => m.headBranch === currentBranch && !isProtectedBranch(m.headBranch))) {
+        // Was on a deleted feature branch — move to merge base
+        await gitExec(cwd, ["checkout", mergeBaseBranch]);
+        await gitExec(cwd, ["pull", "--ff-only"]).catch(() => {});
+        finalBranch = mergeBaseBranch;
+      } else {
+        // On some other branch (e.g. already on merge base) — just pull
+        await gitExec(cwd, ["pull", "--ff-only"]).catch(() => {});
+        finalBranch = currentBranch;
+      }
     }
 
     try {
