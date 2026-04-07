@@ -1,5 +1,5 @@
 import http from "node:http";
-import { execGit, execGh, mergePullRequests } from "./git";
+import { execGit, execGh, mergePullRequests, versionBump } from "./git";
 import * as ai from "./ai";
 import { getProjectFavicon } from "./favicon";
 import { fixPath } from "./env";
@@ -41,6 +41,7 @@ const routes: Record<string, RouteHandler> = {
   "POST /api/git/exec": async (body) => execGit(body as Parameters<typeof execGit>[0]),
   "POST /api/gh/exec": async (body) => execGh(body as Parameters<typeof execGh>[0]),
   "POST /api/git/merge-prs": async (body) => mergePullRequests(body as Parameters<typeof mergePullRequests>[0]),
+  "POST /api/git/version-bump": async (body) => versionBump(body as Parameters<typeof versionBump>[0]),
   "POST /api/ai/commit-msg": async (body) => ai.generateCommitMessage(body as Parameters<typeof ai.generateCommitMessage>[0]),
   "POST /api/ai/pr-content": async (body) => ai.generatePrContent(body as Parameters<typeof ai.generatePrContent>[0]),
   "POST /api/ai/branch-name": async (body) => ai.generateBranchName(body as Parameters<typeof ai.generateBranchName>[0]),
