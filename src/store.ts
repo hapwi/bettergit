@@ -23,6 +23,7 @@ interface AppStore {
   gitResultMap: Record<string, "success" | "error" | null>;
   setRepoCwd: (cwd: string | null) => void;
   removeRecentRepo: (cwd: string) => void;
+  reorderRepos: (from: number, to: number) => void;
   setGitBusy: (cwd: string, busy: boolean) => void;
   flashGitResult: (cwd: string, result: "success" | "error") => void;
 }
@@ -52,6 +53,14 @@ export const useAppStore = create<AppStore>((set, get) => ({
     const recent = get().recentRepos.filter((r) => r !== cwd);
     set({ recentRepos: recent });
     saveRecentRepos(recent);
+  },
+
+  reorderRepos: (from, to) => {
+    const repos = [...get().recentRepos];
+    const [moved] = repos.splice(from, 1);
+    repos.splice(to, 0, moved);
+    set({ recentRepos: repos });
+    saveRecentRepos(repos);
   },
 
   setGitBusy: (cwd, busy) => set((s) => ({
