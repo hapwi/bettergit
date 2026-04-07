@@ -313,10 +313,16 @@ export async function mergePullRequests(input: MergePullRequestsInput): Promise<
     }
 
     if (shouldCheckoutBaseAfterMerge) {
-      await gitRun(cwd, ["checkout", mergeBaseBranch]).catch(() => {});
+      // If we merged a protected branch (e.g. pre-release → main), go back to
+      // that branch instead of staying on the merge base.
+      const mergedProtected = merged.find(
+        (m) => isProtectedBranch(m.headBranch) && m.headBranch !== mergeBaseBranch,
+      );
+      const checkoutTarget = mergedProtected ? mergedProtected.headBranch : mergeBaseBranch;
+      await gitRun(cwd, ["checkout", checkoutTarget]).catch(() => {});
       await gitRun(cwd, ["pull", "--ff-only"]).catch(() => {});
-      currentBranch = mergeBaseBranch;
-      finalBranch = mergeBaseBranch;
+      currentBranch = checkoutTarget;
+      finalBranch = checkoutTarget;
     }
 
     for (const { headBranch } of merged) {
