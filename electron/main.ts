@@ -82,6 +82,7 @@ async function runProcess(
       cwd,
       timeout: timeoutMs,
       maxBuffer: 10 * 1024 * 1024,
+      env: getEnvWithPath(),
     });
     return { code: 0, stdout, stderr };
   } catch (err: unknown) {
@@ -156,18 +157,65 @@ function extractJson<T>(text: string): T {
   return JSON.parse(stripped) as T;
 }
 
-async function runClaude(prompt: string, timeoutMs = 60_000): Promise<string> {
-  const { stdout, stderr } = await execFileAsync(
-    "claude",
-    ["--print", "--model", "claude-haiku-4-5", prompt],
-    {
-      timeout: timeoutMs,
-      maxBuffer: 5 * 1024 * 1024,
-      env: { ...process.env },
-    },
-  );
+// Resolve shell PATH for GUI apps on macOS (which don't inherit shell PATH)
+function getEnvWithPath(): NodeJS.ProcessEnv {
+  const env = { ...process.env };
+  if (process.platform === "darwin") {
+    // Common locations for CLI tools installed via brew, npm, etc.
+    const extraPaths = [
+      "/usr/local/bin",
+      "/opt/homebrew/bin",
+      `${process.env.HOME}/.local/bin`,
+      `${process.env.HOME}/.npm-global/bin`,
+      `${process.env.HOME}/.cargo/bin`,
+    ];
+    const currentPath = env.PATH ?? "";
+    const missing = extraPaths.filter((p) => !currentPath.includes(p));
+    if (missing.length > 0) {
+      env.PATH = [...missing, currentPath].join(":");
+    }
+  }
+  return env;
+}
+
+let aiModel = "claude-haiku-4-5";
+
+ipcMain.handle("ai:setModel", (_event, model: string) => {
+  aiModel = model;
+});
+
+ipcMain.handle("ai:getModel", () => aiModel);
+
+ipcMain.handle("ai:checkCli", async (_event, cli: string): Promise<boolean> => {
+  try {
+    await execFileAsync(cli, ["--version"], {
+      timeout: 5_000,
+      env: getEnvWithPath(),
+    });
+    return true;
+  } catch {
+    return false;
+  }
+});
+
+function isCodexModel(model: string): boolean {
+  return model.startsWith("gpt-") || model.startsWith("o");
+}
+
+async function runAi(prompt: string, timeoutMs = 60_000): Promise<string> {
+  const useCodex = isCodexModel(aiModel);
+  const cli = useCodex ? "codex" : "claude";
+  const args = useCodex
+    ? ["--print", "--model", aiModel, prompt]
+    : ["--print", "--model", aiModel, prompt];
+
+  const { stdout, stderr } = await execFileAsync(cli, args, {
+    timeout: timeoutMs,
+    maxBuffer: 5 * 1024 * 1024,
+    env: getEnvWithPath(),
+  });
   const result = stdout.trim();
-  if (!result) throw new Error(`Claude returned empty output. stderr: ${stderr}`);
+  if (!result) throw new Error(`${cli} returned empty output. stderr: ${stderr}`);
   return result;
 }
 
@@ -211,7 +259,7 @@ ipcMain.handle(
       limitSection(input.stagedPatch, 40_000),
     ].join("\n");
 
-    const text = await runClaude(prompt);
+    const text = await runAi(prompt);
     const generated = extractJson<{ subject: string; body: string; branch?: string }>(text);
 
     return {
@@ -261,7 +309,7 @@ ipcMain.handle(
       limitSection(input.diffPatch, 20_000),
     ].join("\n");
 
-    const text = await runClaude(prompt);
+    const text = await runAi(prompt);
     const generated = extractJson<{ title: string; body: string }>(text);
 
     const title = (generated.title ?? "").trim().split(/\r?\n/g)[0]?.trim() ?? "Update";
@@ -292,7 +340,7 @@ ipcMain.handle(
       limitSection(input.message, 8_000),
     ].join("\n");
 
-    const text = await runClaude(prompt);
+    const text = await runAi(prompt);
     const generated = extractJson<{ branch: string }>(text);
     return { branch: (generated.branch ?? "update").trim() };
   },

@@ -34,8 +34,8 @@ export function MergeDialog({ open, onOpenChange, scope, isBusy, onConfirm }: Me
 
         <div className="flex items-start gap-2.5 rounded-lg border bg-card/30 p-3">
           <p className="text-xs text-muted-foreground leading-relaxed">
-            Merged branches will be deleted automatically. Protected branches (main, master) are
-            kept.
+            Merged branches will be deleted automatically. Protected branches (main, master,
+            pre-release) are kept.
           </p>
         </div>
 

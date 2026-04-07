@@ -411,7 +411,9 @@ export function GitPanel() {
     try {
       const ref = gitStatus?.pr?.number?.toString();
       if (!ref) throw new Error("No PR to merge");
-      await mergePullRequest(repoCwd, ref, "squash", true);
+      const branchName = gitStatus?.pr?.headBranch ?? gitStatus?.branch ?? "";
+      const isProtected = ["main", "master", "pre-release"].includes(branchName);
+      await mergePullRequest(repoCwd, ref, "squash", !isProtected);
       setNotice({ type: "success", message: `Merged PR #${ref}` });
     } catch (err) {
       setNotice({ type: "error", message: err instanceof Error ? err.message : "Merge failed." });
@@ -481,7 +483,6 @@ export function GitPanel() {
 
       const pr = await createPullRequest(repoCwd, targetBranch, prTitle, prBody);
       setNotice({ type: "success", message: `Created release PR #${pr.number}` });
-      void window.electronAPI?.shell.openExternal(pr.url);
     } catch (err) {
       setNotice({ type: "error", message: err instanceof Error ? err.message : "Failed to create release PR." });
     } finally {

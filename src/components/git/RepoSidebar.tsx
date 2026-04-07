@@ -100,6 +100,7 @@ export function RepoSidebar() {
 
   const [renameDialogOpen, setRenameDialogOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [pendingRemoveRepo, setPendingRemoveRepo] = useState<string | null>(null);
 
   const doRenameMasterToMain = async () => {
     if (!repoCwd || !window.electronAPI) return;
@@ -255,7 +256,7 @@ export function RepoSidebar() {
                   path={repo}
                   isActive={repo === repoCwd}
                   onSelect={() => setRepoCwd(repo)}
-                  onRemove={() => removeRecentRepo(repo)}
+                  onRemove={() => setPendingRemoveRepo(repo)}
                 />
               ))}
               {recentRepos.length === 0 && (
@@ -299,6 +300,19 @@ export function RepoSidebar() {
       />
 
       <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
+
+      <ConfirmDialog
+        open={pendingRemoveRepo !== null}
+        onOpenChange={(open) => { if (!open) setPendingRemoveRepo(null); }}
+        title="Remove project"
+        description={`Remove "${pendingRemoveRepo?.split("/").pop()}" from the sidebar? This won't delete any files.`}
+        confirmLabel="Remove"
+        variant="destructive"
+        onConfirm={() => {
+          if (pendingRemoveRepo) removeRecentRepo(pendingRemoveRepo);
+          setPendingRemoveRepo(null);
+        }}
+      />
     </Sidebar>
   );
 }

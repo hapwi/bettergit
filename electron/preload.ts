@@ -68,6 +68,9 @@ contextBridge.exposeInMainWorld("electronAPI", {
       ipcRenderer.invoke("ai:generatePrContent", input),
     generateBranchName: (input: BranchNameInput): Promise<BranchNameResult> =>
       ipcRenderer.invoke("ai:generateBranchName", input),
+    setModel: (model: string): Promise<void> => ipcRenderer.invoke("ai:setModel", model),
+    getModel: (): Promise<string> => ipcRenderer.invoke("ai:getModel"),
+    checkCli: (cli: string): Promise<boolean> => ipcRenderer.invoke("ai:checkCli", cli),
   },
   platform: process.platform,
 });
