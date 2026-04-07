@@ -437,20 +437,27 @@ export function GitPanel() {
       // Sync remote state
       await execGit(actionCwd, ["fetch", "--quiet", "--prune", "origin"]);
 
-      // Checkout the base branch
-      if (!isProtected) {
+      if (isProtected) {
+        // For protected branches (like pre-release → main), sync the head branch
+        // to the base branch so they're even (0 ahead, 0 behind)
+        await execGit(actionCwd, ["checkout", baseBranch]);
+        await execGit(actionCwd, ["pull", "--ff-only"]).catch(() => {});
+        await execGit(actionCwd, ["checkout", headBranch]);
+        // Reset pre-release to match main after the squash merge
+        await execGit(actionCwd, ["reset", "--hard", `origin/${baseBranch}`]);
+        await execGit(actionCwd, ["push", "--force-with-lease", "origin", headBranch]);
+      } else {
+        // For feature branches, checkout base and delete the merged branch
         try {
           await execGit(actionCwd, ["checkout", baseBranch]);
         } catch { /* may already be on it */ }
 
-        // Delete local branch if it still exists and isn't protected
         try {
           await execGit(actionCwd, ["branch", "-D", "--", headBranch]);
-        } catch { /* already deleted or checked out */ }
-      }
+        } catch { /* already deleted */ }
 
-      // Pull base branch to sync
-      await execGit(actionCwd, ["pull", "--ff-only"]).catch(() => {});
+        await execGit(actionCwd, ["pull", "--ff-only"]).catch(() => {});
+      }
 
       guardedSetNotice({ type: "success", message: `Merged PR #${ref}` });
       flashGitResult(actionCwd, "success");
