@@ -33,23 +33,22 @@ function Toolbar({
 
   return (
     <div
-      className="fixed inset-x-0 top-0 z-50 flex items-center gap-3 pr-4 pt-2 transition-[padding] duration-200 ease-linear"
+      className="fixed inset-x-0 top-0 z-50 flex items-center gap-3 pr-4 transition-[padding] duration-200 ease-linear"
       style={{
         WebkitAppRegion: "drag",
-        paddingLeft: isCollapsed ? 80 : "calc(var(--sidebar-width) + 16px)",
-        height: 46,
+        paddingLeft: isCollapsed ? 88 : "calc(var(--sidebar-width) + 16px)",
+        height: 52,
       } as React.CSSProperties}
     >
       {/* Left: sidebar toggle + repo name + branch info */}
       <div className="flex items-center gap-2.5" style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}>
-        <Button
-          variant="ghost"
-          size="icon-xs"
+        <button
+          type="button"
           onClick={toggleSidebar}
-          className="text-muted-foreground/50 hover:text-foreground"
+          className="rounded-md p-1 text-muted-foreground/50 transition-colors hover:bg-accent hover:text-foreground"
         >
-          <HugeiconsIcon icon={SidebarLeftIcon} className="size-4" />
-        </Button>
+          <HugeiconsIcon icon={SidebarLeftIcon} className="size-[18px]" />
+        </button>
         {repoName && (
           <span className="text-sm font-semibold">{repoName}</span>
         )}
@@ -122,7 +121,7 @@ function AppContent() {
   return (
     <>
       <Toolbar activeTab={activeTab} onTabChange={setActiveTab} />
-      <main className="flex-1 overflow-hidden pt-12">
+      <main className="flex-1 overflow-hidden pt-[52px]">
         {activeTab === "dashboard" && <Dashboard />}
         {activeTab === "git" && <GitPanel />}
       </main>
