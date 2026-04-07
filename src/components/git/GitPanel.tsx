@@ -521,10 +521,16 @@ export function GitPanel() {
     if (actionRepoRef.current === repoCwdRef.current) setProgressTitle(v);
   }, []);
 
-  // Clear notices when switching projects
+  // Clear all local state when switching projects
   useEffect(() => {
     setNotice(null);
     setProgressTitle(null);
+    setIsBusyLocal(false);
+    setIsCommitDialogOpen(false);
+    setIsSwitchDialogOpen(false);
+    setMergeDialogScope(null);
+    setPendingDefaultAction(null);
+    setPendingDeleteBranch(null);
   }, [repoCwd]);
 
   if (!repoCwd) return null;
