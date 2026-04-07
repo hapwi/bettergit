@@ -1,9 +1,15 @@
 import { app, BrowserWindow, dialog, ipcMain, shell } from "electron";
 import path from "node:path";
+import fs from "node:fs";
+import os from "node:os";
 import { execFile, spawn } from "node:child_process";
 import { promisify } from "node:util";
+import { query, type SDKMessage } from "@anthropic-ai/claude-agent-sdk";
 
 const execFileAsync = promisify(execFile);
+const writeFileAsync = promisify(fs.writeFile);
+const readFileAsync = promisify(fs.readFile);
+const unlinkAsync = promisify(fs.unlink);
 
 const isDev = !app.isPackaged;
 
@@ -178,10 +184,18 @@ function getEnvWithPath(): NodeJS.ProcessEnv {
   return env;
 }
 
-let aiModel = "claude-haiku-4-5";
+const MODEL_PREF_PATH = path.join(app.getPath("userData"), "ai-model.txt");
+
+function loadSavedModel(): string {
+  try { return fs.readFileSync(MODEL_PREF_PATH, "utf-8").trim() || "claude-haiku-4-5"; }
+  catch { return "claude-haiku-4-5"; }
+}
+
+let aiModel = loadSavedModel();
 
 ipcMain.handle("ai:setModel", (_event, model: string) => {
   aiModel = model;
+  fs.writeFileSync(MODEL_PREF_PATH, model, "utf-8");
 });
 
 ipcMain.handle("ai:getModel", () => aiModel);
@@ -202,40 +216,93 @@ function isCodexModel(model: string): boolean {
   return model.startsWith("gpt-") || model.startsWith("o");
 }
 
-async function runAi(prompt: string, timeoutMs = 60_000): Promise<string> {
-  const useCodex = isCodexModel(aiModel);
-  const cli = useCodex ? "codex" : "claude";
-  // Both CLIs: pipe prompt via stdin to avoid argument length limits
-  const args = useCodex
-    ? ["--quiet", "--model", aiModel, "-"]
-    : ["--print", "--model", aiModel, "-p", "-"];
+async function runClaudeSDK(prompt: string, model: string): Promise<string> {
+  const abortController = new AbortController();
+  const timeout = setTimeout(() => abortController.abort(), 60_000);
 
-  return new Promise((resolve, reject) => {
-    const child = spawn(cli, args, {
-      env: getEnvWithPath(),
-      timeout: timeoutMs,
-      stdio: ["pipe", "pipe", "pipe"],
+  try {
+    const queryRun = query({
+      prompt,
+      options: {
+        model,
+        maxTurns: 1,
+        effort: "low",
+        persistSession: false,
+        env: getEnvWithPath(),
+        abortController,
+        canUseTool: () => Promise.resolve({ behavior: "deny" as const, message: "No tools." }),
+        pathToClaudeCodeExecutable: "claude",
+      },
     });
 
-    let stdout = "";
-    let stderr = "";
-    child.stdout.on("data", (chunk: Buffer) => { stdout += chunk.toString(); });
-    child.stderr.on("data", (chunk: Buffer) => { stderr += chunk.toString(); });
-
-    child.on("error", (err) => reject(err));
-    child.on("close", (code) => {
-      const result = stdout.trim();
-      if (code !== 0 || !result) {
-        reject(new Error(`${cli} failed (exit ${code}): ${stderr || "empty output"}`));
-      } else {
-        resolve(result);
+    let resultText = "";
+    for await (const message of queryRun as AsyncIterable<SDKMessage>) {
+      if (message.type === "result" && message.subtype === "success") {
+        resultText = message.result ?? "";
       }
-    });
+    }
 
-    // Write prompt to stdin and close
-    child.stdin.write(prompt);
-    child.stdin.end();
-  });
+    if (!resultText) throw new Error("Claude SDK returned empty result");
+    return resultText;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+async function runCodexCLI(prompt: string, model: string): Promise<string> {
+  const tmpDir = os.tmpdir();
+  const outputPath = path.join(tmpDir, `bettergit-codex-${Date.now()}.json`);
+  await writeFileAsync(outputPath, "", "utf-8");
+
+  try {
+    return await new Promise((resolve, reject) => {
+      const child = spawn("codex", [
+        "exec",
+        "--ephemeral",
+        "-s", "read-only",
+        "--model", model,
+        "--config", 'model_reasoning_effort="low"',
+        "--output-last-message", outputPath,
+        "-",
+      ], {
+        env: getEnvWithPath(),
+        stdio: ["pipe", "pipe", "pipe"],
+      });
+
+      const timer = setTimeout(() => { child.kill(); reject(new Error("Codex timed out")); }, 120_000);
+
+      let stderr = "";
+      child.stderr.on("data", (chunk: Buffer) => { stderr += chunk.toString(); });
+      child.on("error", (err) => { clearTimeout(timer); reject(err); });
+      child.on("close", async (code) => {
+        clearTimeout(timer);
+        if (code !== 0) {
+          reject(new Error(`Codex failed (exit ${code}): ${stderr}`));
+          return;
+        }
+        try {
+          const output = await readFileAsync(outputPath, "utf-8");
+          const result = output.trim();
+          if (!result) { reject(new Error("Codex returned empty output")); return; }
+          resolve(result);
+        } catch (err) {
+          reject(err);
+        }
+      });
+
+      child.stdin.write(prompt);
+      child.stdin.end();
+    });
+  } finally {
+    try { await unlinkAsync(outputPath); } catch { /* ignore */ }
+  }
+}
+
+async function runAi(prompt: string): Promise<string> {
+  if (isCodexModel(aiModel)) {
+    return runCodexCLI(prompt, aiModel);
+  }
+  return runClaudeSDK(prompt, aiModel);
 }
 
 interface CommitMessageInput {
