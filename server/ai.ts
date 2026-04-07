@@ -106,6 +106,10 @@ async function runClaudeSDK(prompt: string, model: string): Promise<string> {
         maxTurns: 1,
         effort: "low",
         persistSession: false,
+        // Use a temp directory as cwd so Claude Code doesn't index the
+        // server's working directory (which may contain node_modules or
+        // other large trees). Text generation doesn't need workspace context.
+        cwd: os.tmpdir(),
         // Pass process.env directly — fixPath() already mutated it at startup.
         // Using the live reference matches hapcode's approach and avoids stale
         // copies if the environment changes after startup.
