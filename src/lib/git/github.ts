@@ -93,6 +93,7 @@ export async function createPullRequest(
   title: string,
   body: string,
 ): Promise<PullRequestSummary> {
+  // Create the PR (returns the PR URL on stdout)
   const stdout = requireSuccess(
     await execGh(cwd, [
       "pr",
@@ -103,26 +104,48 @@ export async function createPullRequest(
       title,
       "--body",
       body,
-      "--json",
-      "number,title,url,baseRefName,headRefName,state",
     ]),
     "create PR",
   );
 
-  const pr = JSON.parse(stdout) as {
-    number: number;
-    title: string;
-    url: string;
-    baseRefName: string;
-    headRefName: string;
-    state: string;
-  };
+  const url = stdout.trim();
+
+  // Fetch the created PR details
+  const viewResult = await execGh(cwd, [
+    "pr",
+    "view",
+    url,
+    "--json",
+    "number,title,url,baseRefName,headRefName,state",
+  ]);
+
+  if (viewResult.code === 0) {
+    const pr = JSON.parse(viewResult.stdout) as {
+      number: number;
+      title: string;
+      url: string;
+      baseRefName: string;
+      headRefName: string;
+      state: string;
+    };
+    return {
+      number: pr.number,
+      title: pr.title,
+      url: pr.url,
+      baseBranch: pr.baseRefName,
+      headBranch: pr.headRefName,
+      state: "open",
+    };
+  }
+
+  // Fallback if view fails — parse number from URL
+  const numberMatch = url.match(/\/pull\/(\d+)/);
   return {
-    number: pr.number,
-    title: pr.title,
-    url: pr.url,
-    baseBranch: pr.baseRefName,
-    headBranch: pr.headRefName,
+    number: numberMatch ? parseInt(numberMatch[1], 10) : 0,
+    title,
+    url,
+    baseBranch,
+    headBranch: "",
     state: "open",
   };
 }
