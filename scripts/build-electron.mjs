@@ -34,6 +34,10 @@ const builds = [
       outdir: "dist-server",
       sourcemap: false,
       minify: false,
+      // The Claude Agent SDK must NOT be bundled — it has dynamic requires
+      // and subprocess spawning that break when inlined. Keep it external
+      // and ship it via node_modules (same as hapcode's server build).
+      external: ["@anthropic-ai/claude-agent-sdk"],
     },
   },
 ];

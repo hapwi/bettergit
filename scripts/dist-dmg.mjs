@@ -69,7 +69,12 @@ const stagePackage = {
       writeUpdateInfo: false,
     },
   },
-  dependencies: {},
+  dependencies: {
+    // The Claude Agent SDK is kept external (not bundled by esbuild) because
+    // it has dynamic requires and subprocess spawning that break when inlined.
+    // Same approach as hapcode's server build.
+    "@anthropic-ai/claude-agent-sdk": pkg.dependencies["@anthropic-ai/claude-agent-sdk"] ?? "*",
+  },
   devDependencies: {
     electron: "41.1.1",
   },
