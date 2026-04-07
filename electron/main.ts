@@ -1,8 +1,36 @@
 import { app, BrowserWindow, dialog, ipcMain, shell } from "electron";
 import path from "node:path";
 import os from "node:os";
-import { spawn, type ChildProcess } from "node:child_process";
+import { execFileSync, spawn, type ChildProcess } from "node:child_process";
 import { createServer } from "node:net";
+
+// Resolve the user's full shell PATH before anything else — macOS GUI apps
+// don't inherit the login shell's PATH, so tools like git, gh, claude won't
+// be found without this. Matches hapcode's syncShellEnvironment().
+function syncShellEnvironment(): void {
+  if (process.platform !== "darwin") return;
+  try {
+    const shell = process.env.SHELL ?? "/bin/zsh";
+    const marker = "__BETTERGIT_ENV__";
+    const output = execFileSync(shell, [
+      "-ilc",
+      `printf '%s' '${marker}'; printenv PATH; printf '%s' '${marker}'`,
+    ], { encoding: "utf8", timeout: 5_000 });
+    const start = output.indexOf(marker);
+    if (start === -1) return;
+    const valueStart = start + marker.length;
+    const end = output.indexOf(marker, valueStart);
+    if (end === -1) return;
+    const pathValue = output.slice(valueStart, end).trim();
+    if (pathValue.length > 0) {
+      process.env.PATH = pathValue;
+    }
+  } catch {
+    // Keep inherited environment if shell lookup fails.
+  }
+}
+
+syncShellEnvironment();
 
 const isDev = !app.isPackaged;
 
@@ -26,8 +54,8 @@ async function findFreePort(): Promise<number> {
 async function startServer(): Promise<number> {
   const requestedPort = await findFreePort();
   const serverEntry = isDev
-    ? path.join(__dirname, "../dist-server/main.js")
-    : path.join(__dirname, "../dist-server/main.js");
+    ? path.join(__dirname, "../dist-server/main.mjs")
+    : path.join(__dirname, "../dist-server/main.mjs");
 
   serverProcess = spawn(process.execPath, [serverEntry], {
     // Match hapcode: in prod, use homedir as cwd so claude CLI can find credentials.

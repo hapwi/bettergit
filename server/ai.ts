@@ -106,17 +106,30 @@ async function runClaudeSDK(prompt: string, model: string): Promise<string> {
         maxTurns: 1,
         effort: "low",
         persistSession: false,
-        env: getEnvWithPath(),
+        // Pass process.env directly — fixPath() already mutated it at startup.
+        // Using the live reference matches hapcode's approach and avoids stale
+        // copies if the environment changes after startup.
+        env: process.env,
         abortController,
         canUseTool: () => Promise.resolve({ behavior: "deny" as const, message: "No tools." }),
+        // Use the system-installed Claude CLI rather than the SDK's bundled
+        // cli.js which lives inside the .asar archive in packaged Electron
+        // builds and cannot be spawned as a child process.
         pathToClaudeCodeExecutable: "claude",
       },
     });
 
     let resultText = "";
     for await (const message of queryRun as AsyncIterable<SDKMessage>) {
-      if (message.type === "result" && message.subtype === "success") {
-        resultText = message.result ?? "";
+      if (message.type === "result") {
+        if (message.subtype === "success") {
+          resultText = message.result ?? "";
+        } else {
+          // Surface the actual error from Claude (auth failures, quota, etc.)
+          const detail = (message as { errors?: string[] }).errors?.[0]
+            ?? `Claude query ended with subtype: ${message.subtype}`;
+          throw new Error(detail);
+        }
       }
     }
 

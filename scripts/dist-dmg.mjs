@@ -58,7 +58,9 @@ const stagePackage = {
       output: "dist-out",
       buildResources: "build",
     },
-    files: ["dist/**/*", "dist-electron/**/*", "dist-server/**/*", "package.json"],
+    // Don't restrict files — let electron-builder use its defaults so that
+    // node_modules (production deps like the Claude Agent SDK) are included
+    // automatically. Matches hapcode's build config.
     mac: {
       target: [{ target: "dmg", arch: ["arm64"] }],
       icon: "icon.icns",
