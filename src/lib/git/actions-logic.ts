@@ -40,22 +40,19 @@ export function buildMenuItems(
   const hasChanges = gitStatus.hasWorkingTreeChanges;
   const hasOpenPr = gitStatus.pr?.state === "open";
   const isBehind = gitStatus.behindCount > 0;
-  const canPushSomehow = gitStatus.hasUpstream || hasBranch; // will create remote if needed
   const canCommit = !isBusy && hasChanges;
   const canPush =
     !isBusy &&
     hasBranch &&
     !hasChanges &&
     !isBehind &&
-    (gitStatus.aheadCount > 0 || !hasOriginRemote) &&
-    canPushSomehow;
+    gitStatus.aheadCount > 0;
   const canCreatePr =
     !isBusy &&
     hasBranch &&
     !hasChanges &&
     !hasOpenPr &&
-    !isDefaultBranch &&
-    canPushSomehow;
+    !isDefaultBranch;
   const canOpenPr = !isBusy && !!hasOpenPr;
 
   return [
