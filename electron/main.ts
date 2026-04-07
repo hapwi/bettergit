@@ -133,11 +133,15 @@ interface MergePullRequestsResult {
 
 const PROTECTED_BRANCHES = ["main", "master", "pre-release"];
 
-async function git(cwd: string, args: string[], timeout = 30_000) {
+function isProtectedBranch(name: string) {
+  return PROTECTED_BRANCHES.includes(name);
+}
+
+async function gitExec(cwd: string, args: string[], timeout = 30_000) {
   return runProcess("git", args, cwd, timeout);
 }
 
-async function gh(cwd: string, args: string[], timeout = 30_000) {
+async function ghExec(cwd: string, args: string[], timeout = 30_000) {
   return runProcess("gh", args, cwd, timeout);
 }
 
@@ -146,87 +150,247 @@ function requireOk(result: ExecResult, label: string) {
   return result.stdout;
 }
 
+// After retargeting a PR, GitHub may temporarily report it as unmergeable
+// while it recalculates. Retry with backoff (matches hapcode behaviour).
+function shouldRetryMerge(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
+  const msg = error.message.toLowerCase();
+  return (
+    msg.includes("pull request is not mergeable") ||
+    msg.includes("is not mergeable") ||
+    msg.includes("merge conflict") ||
+    msg.includes("conflict") ||
+    msg.includes("head branch was modified") ||
+    msg.includes("base branch was modified") ||
+    msg.includes("required status check") ||
+    msg.includes("review required")
+  );
+}
+
+const MERGE_RETRY_DELAYS = [250, 500, 1_000, 2_000];
+
+async function sleep(ms: number) {
+  return new Promise<void>((resolve) => setTimeout(resolve, ms));
+}
+
+// Resolve a git revision, trying multiple candidates. Returns null if none resolve.
+async function resolveRevision(cwd: string, candidates: string[]): Promise<string | null> {
+  for (const candidate of candidates) {
+    const result = await gitExec(cwd, ["rev-parse", candidate]);
+    const sha = result.stdout.trim();
+    if (result.code === 0 && sha.length > 0) return sha;
+  }
+  return null;
+}
+
+// Check if branch exists locally / on origin.
+async function readBranchPresence(cwd: string, branchName: string) {
+  await gitExec(cwd, ["fetch", "--quiet", "--prune", "origin"]).catch(() => {});
+  const result = await gitExec(cwd, ["branch", "-a", "--list", branchName, `remotes/origin/${branchName}`]);
+  const lines = result.stdout.split("\n").map((l) => l.trim()).filter(Boolean);
+  return {
+    hasLocal: lines.some((l) => l === branchName || l === `* ${branchName}`),
+    hasRemote: lines.some((l) => l === `remotes/origin/${branchName}`),
+  };
+}
+
+// Delete a merged branch (local + remote) only if it actually exists.
+async function deleteBranchIfPresent(cwd: string, branchName: string) {
+  const presence = await readBranchPresence(cwd, branchName);
+  if (!presence.hasLocal && !presence.hasRemote) return;
+  if (presence.hasRemote) {
+    await gitExec(cwd, ["push", "origin", "--delete", branchName]).catch(() => {});
+  }
+  if (presence.hasLocal) {
+    await gitExec(cwd, ["branch", "-D", "--", branchName]).catch(() => {});
+  }
+}
+
 ipcMain.handle(
   "git:mergePullRequests",
   async (_event, input: MergePullRequestsInput): Promise<MergePullRequestsResult> => {
     const { cwd, prs } = input;
-    const merged: number[] = [];
+    const mergeBaseBranch = prs[0].baseBranch;
+    const isStack = prs.length > 1;
+    const merged: Array<{ number: number; headBranch: string }> = [];
+    const autoClosedBranches: string[] = [];
     let finalBranch: string | null = null;
 
-    try {
-      const mergeBaseBranch = prs[0].baseBranch;
-      const isStack = prs.length > 1;
+    // -- Helpers ---------------------------------------------------------------
 
-      await git(cwd, ["fetch", "--quiet", "--prune", "origin"]);
+    async function readPr(number: number): Promise<{ state: string; baseRefName: string } | null> {
+      const result = await ghExec(cwd, [
+        "pr", "view", String(number), "--json", "state,baseRefName",
+      ]);
+      if (result.code !== 0) return null;
+      return JSON.parse(result.stdout) as { state: string; baseRefName: string };
+    }
+
+    async function mergePrWithRetry(prNumber: number, headBranch: string, attempt = 0): Promise<void> {
+      const mergeArgs = ["pr", "merge", String(prNumber), "--squash"];
+      // NEVER --delete-branch during a stack merge. Deleting mid-stack triggers
+      // GitHub's async retarget/auto-close on downstream PRs, racing with our
+      // own retarget + rebase steps.
+      if (!isStack && !isProtectedBranch(headBranch)) {
+        mergeArgs.push("--delete-branch");
+      }
+      const result = await ghExec(cwd, mergeArgs, 60_000);
+      if (result.code === 0) return;
+
+      // Check if it was merged/closed externally while we waited
+      const refreshed = await readPr(prNumber);
+      if (refreshed && refreshed.state !== "OPEN") return;
+
+      const error = new Error(`merge PR #${prNumber} failed: ${result.stderr}`);
+      if (attempt < 4 && shouldRetryMerge(error)) {
+        await sleep(MERGE_RETRY_DELAYS[attempt] ?? 2_000);
+        return mergePrWithRetry(prNumber, headBranch, attempt + 1);
+      }
+      throw error;
+    }
+
+    // -- Phase 1: snapshot original branch tips --------------------------------
+    // Hapcode records each branch's tip BEFORE the loop so the --onto rebase
+    // knows exactly which commits belong to each stacked branch.
+
+    async function mergeLoop() {
+      await gitExec(cwd, ["fetch", "--quiet", "--prune", "origin"]);
+
+      const originalBranchTips = new Map<string, string>();
+      for (const pr of prs) {
+        const tip = await resolveRevision(cwd, [
+          `refs/remotes/origin/${pr.headBranch}`,
+          `origin/${pr.headBranch}`,
+          pr.headBranch,
+        ]);
+        if (tip) originalBranchTips.set(pr.headBranch, tip);
+      }
+
+      // -- Phase 2: merge loop (retarget → rebase → merge, no deletion) -------
 
       for (const [index, pr] of prs.entries()) {
-        // Re-check PR state (may have been auto-closed by GitHub)
-        const viewResult = await gh(cwd, [
-          "pr", "view", String(pr.number),
-          "--json", "state,baseRefName",
-        ]);
-        if (viewResult.code === 0) {
-          const info = JSON.parse(viewResult.stdout) as { state: string; baseRefName: string };
-          if (info.state !== "OPEN") continue; // already merged/closed
+        const reference = String(pr.number);
 
-          // Retarget to merge base if GitHub hasn't already
-          if (info.baseRefName !== mergeBaseBranch) {
-            await gh(cwd, ["pr", "edit", String(pr.number), "--base", mergeBaseBranch]);
+        // Re-check PR state — GitHub may have auto-closed it after a previous
+        // merge or retarget.
+        const currentPr = await readPr(pr.number);
+        if (currentPr && currentPr.state !== "OPEN") {
+          if (!isProtectedBranch(pr.headBranch)) {
+            autoClosedBranches.push(pr.headBranch);
+          }
+          continue;
+        }
+
+        // Retarget to merge base if needed
+        if (currentPr && currentPr.baseRefName !== mergeBaseBranch) {
+          await ghExec(cwd, ["pr", "edit", reference, "--base", mergeBaseBranch]);
+
+          // Re-check — retargeting can auto-close the PR
+          const afterRetarget = await readPr(pr.number);
+          if (afterRetarget && afterRetarget.state !== "OPEN") {
+            if (!isProtectedBranch(pr.headBranch)) {
+              autoClosedBranches.push(pr.headBranch);
+            }
+            continue;
           }
         }
 
-        // Rebase onto merge base for stacked PRs after the first
-        if (isStack && index > 0) {
-          await git(cwd, ["fetch", "--quiet", "origin"]);
-          await git(cwd, ["checkout", pr.headBranch]);
-          const rebaseResult = await git(cwd, ["rebase", `origin/${mergeBaseBranch}`]);
-          if (rebaseResult.code !== 0) {
-            await git(cwd, ["rebase", "--abort"]);
-            throw new Error(`Rebase of ${pr.headBranch} failed — resolve conflicts manually.`);
+        // Rebase: for stacked PRs after the first, use --onto with the previous
+        // branch's original tip so we only replay commits unique to this branch.
+        const previousPr = index > 0 ? prs[index - 1] : null;
+        if (previousPr) {
+          const previousBranchTip = originalBranchTips.get(previousPr.headBranch);
+          if (!previousBranchTip) {
+            throw new Error(
+              `Failed to locate the original tip of ${previousPr.headBranch} before rebasing ${pr.headBranch}.`,
+            );
           }
-          requireOk(await git(cwd, ["push", "--force-with-lease", "origin", pr.headBranch]), "push rebase");
+
+          await gitExec(cwd, ["fetch", "--quiet", "origin", mergeBaseBranch]);
+          await gitExec(cwd, ["checkout", pr.headBranch]);
+
+          // Check if the branch was already rewritten (no longer contains the
+          // previous branch tip) — skip rebase if so.
+          const ancestorCheck = await gitExec(cwd, [
+            "merge-base", "--is-ancestor", previousBranchTip, "HEAD",
+          ]);
+          const needsRebase = ancestorCheck.code === 0;
+
+          if (needsRebase) {
+            const rebaseResult = await gitExec(cwd, [
+              "rebase", "--onto", `origin/${mergeBaseBranch}`, previousBranchTip,
+            ]);
+            if (rebaseResult.code !== 0) {
+              await gitExec(cwd, ["rebase", "--abort"]);
+              throw new Error(
+                `Rebase of ${pr.headBranch} onto ${mergeBaseBranch} failed — resolve conflicts manually.`,
+              );
+            }
+            requireOk(
+              await gitExec(cwd, ["push", "--force-with-lease", "-u", "origin", `HEAD:${pr.headBranch}`]),
+              `push rebased ${pr.headBranch}`,
+            );
+          }
         }
 
-        // Merge — don't delete branch mid-stack (avoids GitHub race conditions)
-        const isProtected = PROTECTED_BRANCHES.includes(pr.headBranch);
-        const mergeArgs = ["pr", "merge", String(pr.number), "--squash"];
-        if (!isStack && !isProtected) mergeArgs.push("--delete-branch");
-        requireOk(await gh(cwd, mergeArgs), `merge PR #${pr.number}`);
-        merged.push(pr.number);
+        // Merge with retry (GitHub may need time to recalculate mergeability
+        // after retarget).
+        await mergePrWithRetry(pr.number, pr.headBranch);
+        merged.push({ number: pr.number, headBranch: pr.headBranch });
 
-        await git(cwd, ["fetch", "--quiet", "--prune", "origin"]);
+        await gitExec(cwd, ["fetch", "--quiet", "--prune", "origin"]);
       }
+    }
 
-      // Cleanup: delete merged branches, sync protected branches
-      for (const pr of prs) {
-        const isProtected = PROTECTED_BRANCHES.includes(pr.headBranch);
-        if (isProtected) {
-          // Sync protected branch to match merge base (e.g. pre-release → main)
-          try {
-            await git(cwd, ["checkout", pr.headBranch]);
-            await git(cwd, ["reset", "--hard", `origin/${prs[0].baseBranch}`]);
-            await git(cwd, ["push", "--force-with-lease", "origin", pr.headBranch]);
-          } catch { /* best effort */ }
-        } else if (isStack) {
-          // Stack merge skipped --delete-branch, clean up now
-          try { await git(cwd, ["push", "origin", "--delete", pr.headBranch]); } catch { /* already gone */ }
-          try { await git(cwd, ["branch", "-D", "--", pr.headBranch]); } catch { /* already gone */ }
-        } else {
-          // Single merge with --delete-branch handled remote; delete local
-          try { await git(cwd, ["branch", "-D", "--", pr.headBranch]); } catch { /* already gone */ }
+    // -- Phase 3: finalize (runs AFTER all merges complete) --------------------
+    // Checkout merge base, pull, then clean up branches. Matches hapcode's
+    // finalizeMergedPullRequests — all deletion happens here, never mid-loop.
+
+    async function finalize() {
+      if (merged.length === 0) return;
+
+      // Checkout merge base and pull. A pull failure must NOT block branch
+      // cleanup — the PRs are already merged on GitHub.
+      await gitExec(cwd, ["checkout", mergeBaseBranch]);
+      finalBranch = mergeBaseBranch;
+      await gitExec(cwd, ["pull", "--ff-only"]).catch(() => {});
+
+      // Sync protected branches / delete feature branches
+      for (const { headBranch } of merged) {
+        if (isProtectedBranch(headBranch)) {
+          if (headBranch !== mergeBaseBranch) {
+            try {
+              await gitExec(cwd, ["checkout", headBranch]);
+              await gitExec(cwd, ["reset", "--hard", mergeBaseBranch]);
+              requireOk(
+                await gitExec(cwd, ["push", "--force-with-lease", "-u", "origin", `HEAD:${headBranch}`]),
+                `sync ${headBranch}`,
+              );
+            } catch { /* best effort */ }
+          }
+          continue;
         }
+        await deleteBranchIfPresent(cwd, headBranch);
       }
 
-      // Land on the merge base branch
-      const mergeBase = prs[0].baseBranch;
-      await git(cwd, ["checkout", mergeBase]);
-      await git(cwd, ["pull", "--ff-only"]).catch(() => {});
-      finalBranch = mergeBase;
+      // Clean up auto-closed branches
+      for (const branch of autoClosedBranches) {
+        await deleteBranchIfPresent(cwd, branch);
+      }
 
-      return { merged, finalBranch, error: null };
+      // Make sure we end on the merge base
+      await gitExec(cwd, ["checkout", mergeBaseBranch]).catch(() => {});
+    }
+
+    try {
+      await mergeLoop();
+      await finalize();
+      return { merged: merged.map((m) => m.number), finalBranch, error: null };
     } catch (err) {
+      // Best-effort cleanup even on partial failure
+      try { await finalize(); } catch { /* ignore cleanup errors */ }
       return {
-        merged,
+        merged: merged.map((m) => m.number),
         finalBranch,
         error: err instanceof Error ? err.message : "Merge failed.",
       };
