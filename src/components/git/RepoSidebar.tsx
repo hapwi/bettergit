@@ -118,7 +118,7 @@ export function RepoSidebar() {
   };
 
   return (
-    <Sidebar>
+    <Sidebar className="bg-sidebar backdrop-blur-xl">
       {/* Header — clean, no toggle icon */}
       <SidebarHeader className="px-3 pb-2 pt-14">
         <div className="flex items-center justify-between">

@@ -138,6 +138,27 @@ export async function mergePullRequest(
   requireSuccess(await execGh(cwd, args), `merge PR ${reference}`);
 }
 
+export async function createGhRepo(
+  cwd: string,
+  visibility: "public" | "private" = "private",
+): Promise<{ url: string; name: string }> {
+  const stdout = requireSuccess(
+    await execGh(cwd, [
+      "repo",
+      "create",
+      "--source",
+      ".",
+      `--${visibility}`,
+      "--push",
+      "--json",
+      "url,name",
+    ]),
+    "create GitHub repo",
+  );
+  const data = JSON.parse(stdout) as { url: string; name: string };
+  return data;
+}
+
 export async function getGhDefaultBranch(cwd: string): Promise<string | null> {
   const result = await execGh(cwd, [
     "repo",

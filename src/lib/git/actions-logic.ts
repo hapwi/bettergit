@@ -40,22 +40,22 @@ export function buildMenuItems(
   const hasChanges = gitStatus.hasWorkingTreeChanges;
   const hasOpenPr = gitStatus.pr?.state === "open";
   const isBehind = gitStatus.behindCount > 0;
-  const canPushWithoutUpstream = hasOriginRemote && !gitStatus.hasUpstream;
+  const canPushSomehow = gitStatus.hasUpstream || hasBranch; // will create remote if needed
   const canCommit = !isBusy && hasChanges;
   const canPush =
     !isBusy &&
     hasBranch &&
     !hasChanges &&
     !isBehind &&
-    gitStatus.aheadCount > 0 &&
-    (gitStatus.hasUpstream || canPushWithoutUpstream);
+    (gitStatus.aheadCount > 0 || !hasOriginRemote) &&
+    canPushSomehow;
   const canCreatePr =
     !isBusy &&
     hasBranch &&
     !hasChanges &&
     !hasOpenPr &&
     !isDefaultBranch &&
-    (gitStatus.hasUpstream || canPushWithoutUpstream);
+    canPushSomehow;
   const canOpenPr = !isBusy && !!hasOpenPr;
 
   return [
@@ -113,9 +113,6 @@ export function resolveQuickAction(
   }
 
   if (hasChanges) {
-    if (!gitStatus.hasUpstream && !hasOriginRemote) {
-      return { label: "Commit", disabled: false, kind: "run_action", action: "commit" };
-    }
     if (hasOpenPr || isDefaultBranch) {
       return {
         label: hasOpenPr ? "Commit & update PR" : "Commit & push",
@@ -125,7 +122,7 @@ export function resolveQuickAction(
       };
     }
     return {
-      label: "Commit & push",
+      label: !hasOriginRemote ? "Commit & publish" : "Commit & push",
       disabled: false,
       kind: "run_action",
       action: "commit_push",
@@ -134,7 +131,7 @@ export function resolveQuickAction(
 
   if (!gitStatus.hasUpstream && !hasOriginRemote) {
     if (hasOpenPr && !isAhead) return { label: "View PR", disabled: false, kind: "open_pr" };
-    return { label: "Push", disabled: true, kind: "show_hint", hint: 'Add an "origin" remote before pushing.' };
+    return { label: "Publish to GitHub", disabled: false, kind: "run_action", action: "commit_push" };
   }
 
   if (isDiverged) {

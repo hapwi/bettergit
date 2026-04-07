@@ -3,7 +3,8 @@
  */
 import { execGit, requireSuccess } from "./exec";
 import { generateCommitMessage, generatePrContent } from "./ai";
-import { createPullRequest } from "./github";
+import { createPullRequest, createGhRepo } from "./github";
+import { hasOriginRemote as checkOriginRemote } from "./remote";
 import { sanitizeFeatureBranchName, resolveAutoFeatureBranchName } from "./branch-utils";
 
 export type StackedAction = "commit" | "commit_push" | "commit_push_pr";
@@ -180,22 +181,30 @@ export async function runStackedAction(input: StackedActionInput): Promise<Stack
     if (!currentBranch) {
       result.push = { status: "skipped_not_requested" };
     } else {
-      // Check if upstream exists
-      const upstreamCheck = await execGit(cwd, [
-        "config",
-        `branch.${currentBranch}.remote`,
-      ]);
-      const needsUpstream = upstreamCheck.code !== 0;
+      // Create GitHub repo if no origin remote exists
+      const hasRemote = await checkOriginRemote(cwd);
+      if (!hasRemote) {
+        // --push flag creates repo, adds origin, and pushes current branch
+        await createGhRepo(cwd, "private");
+        result.push = { status: "pushed", branch: currentBranch, setUpstream: true };
+      } else {
+        // Check if upstream exists
+        const upstreamCheck = await execGit(cwd, [
+          "config",
+          `branch.${currentBranch}.remote`,
+        ]);
+        const needsUpstream = upstreamCheck.code !== 0;
 
-      const pushArgs = needsUpstream
-        ? ["push", "-u", "origin", currentBranch]
-        : ["push"];
-      requireSuccess(await execGit(cwd, pushArgs), "push");
-      result.push = {
-        status: "pushed",
-        branch: currentBranch,
-        setUpstream: needsUpstream,
-      };
+        const pushArgs = needsUpstream
+          ? ["push", "-u", "origin", currentBranch]
+          : ["push"];
+        requireSuccess(await execGit(cwd, pushArgs), "push");
+        result.push = {
+          status: "pushed",
+          branch: currentBranch,
+          setUpstream: needsUpstream,
+        };
+      }
     }
   }
 

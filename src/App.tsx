@@ -122,13 +122,13 @@ function AppContent() {
   const [activeTab, setActiveTab] = useState<"dashboard" | "git">("dashboard")
 
   return (
-    <div className="flex flex-1 flex-col overflow-hidden pt-12">
+    <>
       <Toolbar activeTab={activeTab} onTabChange={setActiveTab} />
-      <main className="flex-1 overflow-hidden">
+      <main className="flex-1 overflow-hidden pt-12">
         {activeTab === "dashboard" && <Dashboard />}
         {activeTab === "git" && <GitPanel />}
       </main>
-    </div>
+    </>
   )
 }
 
@@ -148,9 +148,9 @@ export function App() {
   }
 
   return (
-    <SidebarProvider>
-      <div className="flex h-screen w-full">
-        <RepoSidebar />
+    <SidebarProvider className="overflow-hidden rounded-2xl bg-sidebar">
+      <RepoSidebar />
+      <div className="relative z-[11] flex h-screen w-full flex-col overflow-hidden rounded-l-2xl bg-background text-foreground">
         <AppContent />
       </div>
     </SidebarProvider>
