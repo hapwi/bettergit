@@ -545,7 +545,7 @@ export function GitPanel() {
               </Button>
             ))}
             <Button
-              variant={gitStatus?.pr?.state === "open" ? "default" : "outline"}
+              variant={gitStatus?.pr?.state === "open" && gitStatus?.hasWorkingTreeChanges ? "default" : "outline"}
               onClick={() => {
                 if (!gitStatus?.hasWorkingTreeChanges) {
                   setNotice({ type: "info", message: "Make local changes first to create a feature branch." });
@@ -616,27 +616,40 @@ export function GitPanel() {
             {/* Merge actions for current PR */}
             {gitStatus?.pr?.state === "open" && (
               <div className="flex gap-1.5">
-                <Button
-                  size="sm"
-                  variant="outline"
-                  disabled={isBusy}
-                  onClick={() => setMergeDialogScope("current")}
-                  className="gap-1.5"
-                >
-                  <HugeiconsIcon icon={GitMergeIcon} className="size-3" />
-                  Merge PR
-                </Button>
-                {prStack.length > 1 && (
+                {prStack.length <= 1 ? (
                   <Button
                     size="sm"
-                    variant="outline"
+                    variant={!gitStatus.hasWorkingTreeChanges && gitStatus.aheadCount === 0 ? "default" : "outline"}
                     disabled={isBusy}
-                    onClick={() => setMergeDialogScope("stack")}
+                    onClick={() => setMergeDialogScope("current")}
                     className="gap-1.5"
                   >
                     <HugeiconsIcon icon={GitMergeIcon} className="size-3" />
-                    Merge stack
+                    Merge PR
                   </Button>
+                ) : (
+                  <>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={isBusy}
+                      onClick={() => setMergeDialogScope("current")}
+                      className="gap-1.5"
+                    >
+                      <HugeiconsIcon icon={GitMergeIcon} className="size-3" />
+                      Merge PR
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant={!gitStatus.hasWorkingTreeChanges && gitStatus.aheadCount === 0 ? "default" : "outline"}
+                      disabled={isBusy}
+                      onClick={() => setMergeDialogScope("stack")}
+                      className="gap-1.5"
+                    >
+                      <HugeiconsIcon icon={GitMergeIcon} className="size-3" />
+                      Merge stack
+                    </Button>
+                  </>
                 )}
               </div>
             )}
