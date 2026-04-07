@@ -109,6 +109,131 @@ ipcMain.handle("gh:exec", async (_event, input: ExecInput): Promise<ExecResult> 
   return runProcess("gh", input.args, input.cwd, input.timeoutMs);
 });
 
+// ---------------------------------------------------------------------------
+// Merge pull requests — runs entirely in main process so Vite HMR reloads
+// in the renderer don't interrupt the git checkout / branch cleanup steps.
+// ---------------------------------------------------------------------------
+
+interface MergePullRequestsInput {
+  cwd: string;
+  scope: "current" | "stack";
+  /** PR numbers to merge, ordered base→tip. For "current" this is a single element. */
+  prs: Array<{
+    number: number;
+    headBranch: string;
+    baseBranch: string;
+  }>;
+}
+
+interface MergePullRequestsResult {
+  merged: number[];
+  finalBranch: string | null;
+  error: string | null;
+}
+
+const PROTECTED_BRANCHES = ["main", "master", "pre-release"];
+
+async function git(cwd: string, args: string[], timeout = 30_000) {
+  return runProcess("git", args, cwd, timeout);
+}
+
+async function gh(cwd: string, args: string[], timeout = 30_000) {
+  return runProcess("gh", args, cwd, timeout);
+}
+
+function requireOk(result: ExecResult, label: string) {
+  if (result.code !== 0) throw new Error(`${label} failed: ${result.stderr}`);
+  return result.stdout;
+}
+
+ipcMain.handle(
+  "git:mergePullRequests",
+  async (_event, input: MergePullRequestsInput): Promise<MergePullRequestsResult> => {
+    const { cwd, prs } = input;
+    const merged: number[] = [];
+    let finalBranch: string | null = null;
+
+    try {
+      const mergeBaseBranch = prs[0].baseBranch;
+      const isStack = prs.length > 1;
+
+      await git(cwd, ["fetch", "--quiet", "--prune", "origin"]);
+
+      for (const [index, pr] of prs.entries()) {
+        // Re-check PR state (may have been auto-closed by GitHub)
+        const viewResult = await gh(cwd, [
+          "pr", "view", String(pr.number),
+          "--json", "state,baseRefName",
+        ]);
+        if (viewResult.code === 0) {
+          const info = JSON.parse(viewResult.stdout) as { state: string; baseRefName: string };
+          if (info.state !== "OPEN") continue; // already merged/closed
+
+          // Retarget to merge base if GitHub hasn't already
+          if (info.baseRefName !== mergeBaseBranch) {
+            await gh(cwd, ["pr", "edit", String(pr.number), "--base", mergeBaseBranch]);
+          }
+        }
+
+        // Rebase onto merge base for stacked PRs after the first
+        if (isStack && index > 0) {
+          await git(cwd, ["fetch", "--quiet", "origin"]);
+          await git(cwd, ["checkout", pr.headBranch]);
+          const rebaseResult = await git(cwd, ["rebase", `origin/${mergeBaseBranch}`]);
+          if (rebaseResult.code !== 0) {
+            await git(cwd, ["rebase", "--abort"]);
+            throw new Error(`Rebase of ${pr.headBranch} failed — resolve conflicts manually.`);
+          }
+          requireOk(await git(cwd, ["push", "--force-with-lease", "origin", pr.headBranch]), "push rebase");
+        }
+
+        // Merge — don't delete branch mid-stack (avoids GitHub race conditions)
+        const isProtected = PROTECTED_BRANCHES.includes(pr.headBranch);
+        const mergeArgs = ["pr", "merge", String(pr.number), "--squash"];
+        if (!isStack && !isProtected) mergeArgs.push("--delete-branch");
+        requireOk(await gh(cwd, mergeArgs), `merge PR #${pr.number}`);
+        merged.push(pr.number);
+
+        await git(cwd, ["fetch", "--quiet", "--prune", "origin"]);
+      }
+
+      // Cleanup: delete merged branches, sync protected branches
+      for (const pr of prs) {
+        const isProtected = PROTECTED_BRANCHES.includes(pr.headBranch);
+        if (isProtected) {
+          // Sync protected branch to match merge base (e.g. pre-release → main)
+          try {
+            await git(cwd, ["checkout", pr.headBranch]);
+            await git(cwd, ["reset", "--hard", `origin/${prs[0].baseBranch}`]);
+            await git(cwd, ["push", "--force-with-lease", "origin", pr.headBranch]);
+          } catch { /* best effort */ }
+        } else if (isStack) {
+          // Stack merge skipped --delete-branch, clean up now
+          try { await git(cwd, ["push", "origin", "--delete", pr.headBranch]); } catch { /* already gone */ }
+          try { await git(cwd, ["branch", "-D", "--", pr.headBranch]); } catch { /* already gone */ }
+        } else {
+          // Single merge with --delete-branch handled remote; delete local
+          try { await git(cwd, ["branch", "-D", "--", pr.headBranch]); } catch { /* already gone */ }
+        }
+      }
+
+      // Land on the merge base branch
+      const mergeBase = prs[0].baseBranch;
+      await git(cwd, ["checkout", mergeBase]);
+      await git(cwd, ["pull", "--ff-only"]).catch(() => {});
+      finalBranch = mergeBase;
+
+      return { merged, finalBranch, error: null };
+    } catch (err) {
+      return {
+        merged,
+        finalBranch,
+        error: err instanceof Error ? err.message : "Merge failed.",
+      };
+    }
+  },
+);
+
 ipcMain.handle("dialog:openDirectory", async (): Promise<string | null> => {
   const result = await dialog.showOpenDialog({
     properties: ["openDirectory"],

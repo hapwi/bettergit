@@ -48,9 +48,27 @@ interface BranchNameResult {
   branch: string;
 }
 
+interface MergePullRequestsInput {
+  cwd: string;
+  scope: "current" | "stack";
+  prs: Array<{
+    number: number;
+    headBranch: string;
+    baseBranch: string;
+  }>;
+}
+
+interface MergePullRequestsResult {
+  merged: number[];
+  finalBranch: string | null;
+  error: string | null;
+}
+
 contextBridge.exposeInMainWorld("electronAPI", {
   git: {
     exec: (input: ExecInput): Promise<ExecResult> => ipcRenderer.invoke("git:exec", input),
+    mergePullRequests: (input: MergePullRequestsInput): Promise<MergePullRequestsResult> =>
+      ipcRenderer.invoke("git:mergePullRequests", input),
   },
   gh: {
     exec: (input: ExecInput): Promise<ExecResult> => ipcRenderer.invoke("gh:exec", input),

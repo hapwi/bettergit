@@ -46,9 +46,26 @@ interface BranchNameResult {
   branch: string;
 }
 
+interface MergePullRequestsInput {
+  cwd: string;
+  scope: "current" | "stack";
+  prs: Array<{
+    number: number;
+    headBranch: string;
+    baseBranch: string;
+  }>;
+}
+
+interface MergePullRequestsResult {
+  merged: number[];
+  finalBranch: string | null;
+  error: string | null;
+}
+
 interface ElectronAPI {
   git: {
     exec: (input: ExecInput) => Promise<ExecResult>;
+    mergePullRequests: (input: MergePullRequestsInput) => Promise<MergePullRequestsResult>;
   };
   gh: {
     exec: (input: ExecInput) => Promise<ExecResult>;
