@@ -507,6 +507,12 @@ export function GitPanel() {
     if (!isBusy) setProgressTitle(null);
   }, [isBusy]);
 
+  // Clear notices when switching projects
+  useEffect(() => {
+    setNotice(null);
+    setProgressTitle(null);
+  }, [repoCwd]);
+
   if (!repoCwd) return null;
 
   return (
