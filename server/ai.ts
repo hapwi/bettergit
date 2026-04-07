@@ -152,11 +152,16 @@ async function runCodexCLI(prompt: string, model: string): Promise<string> {
     return await new Promise((resolve, reject) => {
       const child = spawn("codex", [
         "exec", "--ephemeral", "-s", "read-only",
+        "--skip-git-repo-check",
         "--model", model,
         "--config", 'model_reasoning_effort="low"',
         "--output-last-message", outputPath,
         "-",
       ], {
+        // Text generation does not need repository context. Running from a temp
+        // directory keeps packaged app requests independent from Codex's repo
+        // trust model and matches the Claude path above.
+        cwd: tmpDir,
         env: getEnvWithPath(),
         stdio: ["pipe", "pipe", "pipe"],
       });
