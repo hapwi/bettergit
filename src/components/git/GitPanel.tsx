@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   GitBranchIcon,
@@ -278,6 +278,9 @@ export function GitPanel() {
         featureBranch: input.featureBranch,
       });
 
+      const actionCwd = repoCwd;
+      actionRepoRef.current = actionCwd;
+
       setIsBusy(true);
       setNotice(null);
       setProgressTitle(stages[0] ?? "Running...");
@@ -285,39 +288,39 @@ export function GitPanel() {
       let stageIndex = 0;
       const interval = setInterval(() => {
         stageIndex = Math.min(stageIndex + 1, stages.length - 1);
-        setProgressTitle(stages[stageIndex] ?? "Running...");
+        guardedSetProgressTitle(stages[stageIndex] ?? "Running...");
       }, 1100);
 
       try {
         const result = await runStackedAction({
-          cwd: repoCwd,
+          cwd: actionCwd,
           action: input.action,
           commitMessage: input.commitMessage,
           featureBranch: input.featureBranch,
           filePaths: input.filePaths,
         });
         clearInterval(interval);
-        setProgressTitle(null);
+        guardedSetProgressTitle(null);
 
         const summary = summarizeGitResult(result);
         if (summary.noChanges) {
-          setNotice({ type: "error", message: summary.description ?? summary.title });
-          if (repoCwd) flashGitResult(repoCwd, "error");
+          guardedSetNotice({ type: "error", message: summary.description ?? summary.title });
+          flashGitResult(actionCwd, "error");
         } else {
-          setNotice({
+          guardedSetNotice({
             type: "success",
             message: summary.description ? `${summary.title} · ${summary.description}` : summary.title,
           });
-          if (repoCwd) flashGitResult(repoCwd, "success");
+          flashGitResult(actionCwd, "success");
         }
       } catch (err) {
         clearInterval(interval);
-        setProgressTitle(null);
-        setNotice({
+        guardedSetProgressTitle(null);
+        guardedSetNotice({
           type: "error",
           message: err instanceof Error ? err.message : "Action failed.",
         });
-        if (repoCwd) flashGitResult(repoCwd, "error");
+        flashGitResult(actionCwd, "error");
       } finally {
         setIsBusy(false);
         void invalidateGitQueries(queryClient);
@@ -454,7 +457,7 @@ export function GitPanel() {
         setPreReleaseAhead(count > 0);
       })
       .catch(() => setPreReleaseAhead(false));
-  }, [isPreReleaseBranch, repoCwd, branches, gitStatus]);
+  }, [isPreReleaseBranch, repoCwd, branches]);
 
   const handleCreateReleasePr = useCallback(async () => {
     if (!repoCwd) return;
@@ -506,6 +509,17 @@ export function GitPanel() {
   useEffect(() => {
     if (!isBusy) setProgressTitle(null);
   }, [isBusy]);
+
+  // Track which repo owns the current action — guarded setters only apply if repo hasn't changed
+  const actionRepoRef = useRef<string | null>(null);
+  const repoCwdRef = useRef(repoCwd);
+  repoCwdRef.current = repoCwd;
+  const guardedSetNotice = useCallback((v: { type: "info" | "error" | "success"; message: string } | null) => {
+    if (actionRepoRef.current === repoCwdRef.current) setNotice(v);
+  }, []);
+  const guardedSetProgressTitle = useCallback((v: string | null) => {
+    if (actionRepoRef.current === repoCwdRef.current) setProgressTitle(v);
+  }, []);
 
   // Clear notices when switching projects
   useEffect(() => {
