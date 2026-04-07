@@ -79,9 +79,9 @@ function StatusCard({
   loading?: boolean;
 }) {
   return (
-    <div className="flex items-start gap-2.5 rounded-xl border bg-card/50 px-3 py-2.5">
+    <div className="flex items-center gap-2.5 rounded-xl border bg-card/50 px-3 py-2.5">
       {loading ? (
-        <Spinner className="mt-0.5 size-3.5" />
+        <Spinner className="size-3.5" />
       ) : (
         <Badge variant={badgeVariant} className="shrink-0">{badgeLabel}</Badge>
       )}
@@ -523,7 +523,7 @@ export function GitPanel() {
             {/* Primary action — spans full width or half */}
             {quickAction.kind !== "show_hint" && (
               <Button
-                variant={quickAction.disabled ? "outline" : "default"}
+                variant={quickAction.disabled || gitStatus?.pr?.state === "open" ? "outline" : "default"}
                 disabled={isBusy || quickAction.disabled}
                 onClick={runQuickAction}
                 className="col-span-4 h-auto justify-center gap-2 py-3"
@@ -545,7 +545,7 @@ export function GitPanel() {
               </Button>
             ))}
             <Button
-              variant="outline"
+              variant={gitStatus?.pr?.state === "open" ? "default" : "outline"}
               onClick={() => {
                 if (!gitStatus?.hasWorkingTreeChanges) {
                   setNotice({ type: "info", message: "Make local changes first to create a feature branch." });
@@ -583,49 +583,34 @@ export function GitPanel() {
                 <span className="text-xs">No pull requests yet</span>
               </div>
             ) : (
-              <Card>
-                <CardContent className="p-0">
-                  <div className="divide-y">
-                    {displayPrStack.map((pr) => {
-                      const isCurrent = pr.number === gitStatus?.pr?.number;
-                      return (
-                        <button
-                          key={pr.number}
-                          type="button"
-                          className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-accent/30"
-                          onClick={() => void window.electronAPI?.shell.openExternal(pr.url)}
-                        >
-                          <HugeiconsIcon
-                            icon={pr.state === "merged" ? GitMergeIcon : GitPullRequestIcon}
-                            className={cn(
-                              "size-4 shrink-0",
-                              pr.state === "open" ? "text-emerald-500" : pr.state === "merged" ? "text-purple-400" : "text-muted-foreground/40",
-                            )}
-                          />
-                          <div className="min-w-0 flex-1">
-                            <div className="flex items-center gap-2">
-                              <span className="text-xs font-medium text-muted-foreground">#{pr.number}</span>
-                              <span className="truncate text-sm font-medium">{pr.title}</span>
-                            </div>
-                            <div className="mt-0.5 flex items-center gap-1 text-[11px] text-muted-foreground/50">
-                              <span className="font-mono">{pr.headBranch}</span>
-                              <span>&rarr;</span>
-                              <span className="font-mono">{pr.baseBranch}</span>
-                            </div>
-                          </div>
-                          {isCurrent && <Badge variant="default" className="shrink-0 text-[10px]">Current</Badge>}
-                          {pr.state === "merged" && (
-                            <Badge variant="secondary" className="shrink-0 text-[10px] text-purple-400">Merged</Badge>
-                          )}
-                          {pr.state === "open" && !isCurrent && (
-                            <Badge variant="default" className="shrink-0 text-[10px]">Open</Badge>
-                          )}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </CardContent>
-              </Card>
+              <div className="divide-y rounded-xl border">
+                {displayPrStack.map((pr) => {
+                  const isCurrent = pr.number === gitStatus?.pr?.number;
+                  return (
+                    <button
+                      key={pr.number}
+                      type="button"
+                      className="flex w-full items-center gap-2.5 px-3 py-2 text-left transition-colors hover:bg-accent/30"
+                      onClick={() => void window.electronAPI?.shell.openExternal(pr.url)}
+                    >
+                      <HugeiconsIcon
+                        icon={pr.state === "merged" ? GitMergeIcon : GitPullRequestIcon}
+                        className={cn(
+                          "size-3.5 shrink-0",
+                          pr.state === "open" ? "text-emerald-500" : pr.state === "merged" ? "text-purple-400" : "text-muted-foreground/40",
+                        )}
+                      />
+                      <span className="text-xs text-muted-foreground">#{pr.number}</span>
+                      <span className="truncate text-sm">{pr.title}</span>
+                      <span className="ml-auto shrink-0 text-[11px] text-muted-foreground/40">{pr.headBranch} → {pr.baseBranch}</span>
+                      {isCurrent && <Badge variant="default" className="shrink-0 text-[10px]">Current</Badge>}
+                      {pr.state === "merged" && (
+                        <Badge variant="secondary" className="shrink-0 text-[10px] text-purple-400">Merged</Badge>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
             )}
 
             {/* Merge actions for current PR */}
