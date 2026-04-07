@@ -12,7 +12,10 @@ export const gitQueryKeys = {
 };
 
 export function invalidateGitQueries(queryClient: QueryClient) {
-  return queryClient.refetchQueries({ queryKey: gitQueryKeys.all });
+  return queryClient.invalidateQueries({
+    queryKey: gitQueryKeys.all,
+    refetchType: "active",
+  });
 }
 
 export function gitStatusQueryOptions(cwd: string | null) {
@@ -20,8 +23,8 @@ export function gitStatusQueryOptions(cwd: string | null) {
     queryKey: gitQueryKeys.status(cwd),
     queryFn: () => getStatus(cwd!),
     enabled: cwd !== null,
-    staleTime: 5_000,
-    refetchInterval: 10_000,
+    staleTime: 2_000,
+    refetchInterval: 5_000,
     refetchOnWindowFocus: "always" as const,
   });
 }
@@ -31,7 +34,7 @@ export function gitBranchesQueryOptions(cwd: string | null) {
     queryKey: gitQueryKeys.branches(cwd),
     queryFn: () => listBranches(cwd!),
     enabled: cwd !== null,
-    staleTime: 15_000,
-    refetchInterval: 60_000,
+    staleTime: 5_000,
+    refetchInterval: 15_000,
   });
 }

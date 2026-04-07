@@ -219,10 +219,18 @@ export function RepoSidebar() {
                             cwd: repoCwd,
                             args: ["branch", "pre-release"],
                           });
-                          await window.electronAPI.git.exec({
+                          // Push to remote if origin exists
+                          const remoteCheck = await window.electronAPI.git.exec({
                             cwd: repoCwd,
-                            args: ["push", "-u", "origin", "pre-release"],
+                            args: ["remote"],
                           });
+                          const hasOrigin = remoteCheck.stdout.split("\n").some((r: string) => r.trim() === "origin");
+                          if (hasOrigin) {
+                            await window.electronAPI.git.exec({
+                              cwd: repoCwd,
+                              args: ["push", "-u", "origin", "pre-release"],
+                            });
+                          }
                           toast.success("Created pre-release branch");
                           void invalidateGitQueries(queryClient);
                         } catch {

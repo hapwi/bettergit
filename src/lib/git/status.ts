@@ -67,15 +67,38 @@ export async function getStatus(cwd: string): Promise<GitStatus> {
         aheadCount = parseInt(match[1], 10);
         behindCount = parseInt(match[2], 10);
       }
-    } else if (line.startsWith("1 ") || line.startsWith("2 ")) {
+    } else if (line.startsWith("1 ")) {
+      // Ordinary changed entry: "1 XY sub m1 m2 m3 h1 h2 path"
+      const parts = line.split(" ");
+      // Path is everything after the 8th space-separated field
+      if (parts.length >= 9) {
+        const filePath = parts.slice(8).join(" ");
+        if (filePath) changedPaths.push(filePath);
+      }
+    } else if (line.startsWith("2 ")) {
+      // Rename/copy entry: "2 XY sub m1 m2 m3 h1 h2 Xscore\tpath\torigPath"
       const tabIdx = line.indexOf("\t");
       if (tabIdx >= 0) {
         const parts = line.slice(tabIdx + 1).split("\t");
-        const filePath = parts[parts.length - 1];
+        const filePath = parts[0];
         if (filePath) changedPaths.push(filePath);
       }
     } else if (line.startsWith("? ")) {
       changedPaths.push(line.slice(2));
+    }
+  }
+
+  // If no upstream, compute ahead count against default branch (main/master)
+  if (!hasUpstream && branch) {
+    const defaultBranches = ["main", "master"];
+    for (const base of defaultBranches) {
+      if (base === branch) continue;
+      const countResult = await execGit(cwd, ["rev-list", "--count", `${base}..${branch}`]);
+      if (countResult.code === 0) {
+        const count = parseInt(countResult.stdout.trim(), 10);
+        if (count > 0) aheadCount = count;
+        break;
+      }
     }
   }
 

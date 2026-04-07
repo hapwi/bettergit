@@ -426,6 +426,23 @@ export function GitPanel() {
     (pr) => pr.headBranch === "pre-release" && (pr.baseBranch === "main" || pr.baseBranch === "master"),
   );
 
+  // Check if pre-release is ahead of main (has commits to release)
+  const [preReleaseAhead, setPreReleaseAhead] = useState(false);
+  useEffect(() => {
+    if (!isPreReleaseBranch || !repoCwd) {
+      setPreReleaseAhead(false);
+      return;
+    }
+    const mainExists = branches.some((b) => b.name === "main" || b.name === "origin/main");
+    const target = mainExists ? "main" : "master";
+    execGit(repoCwd, ["rev-list", "--count", `${target}..pre-release`])
+      .then((result) => {
+        const count = parseInt(result.stdout.trim(), 10);
+        setPreReleaseAhead(count > 0);
+      })
+      .catch(() => setPreReleaseAhead(false));
+  }, [isPreReleaseBranch, repoCwd, branches, gitStatus]);
+
   const handleCreateReleasePr = useCallback(async () => {
     if (!repoCwd) return;
     setIsBusy(true);
@@ -545,7 +562,7 @@ export function GitPanel() {
           </div>
 
           {/* Release PR — only on pre-release branch */}
-          {isPreReleaseBranch && !hasExistingReleasePr && !gitStatus?.hasWorkingTreeChanges && (
+          {isPreReleaseBranch && !hasExistingReleasePr && preReleaseAhead && !gitStatus?.hasWorkingTreeChanges && (
             <Button
               variant="outline"
               disabled={isBusy}
