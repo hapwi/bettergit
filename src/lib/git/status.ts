@@ -1,0 +1,170 @@
+/**
+ * Git status — rich repo status matching hapcode's model.
+ */
+import { execGit } from "./exec";
+import { listOpenPullRequests, type PullRequestSummary } from "./github";
+
+export interface WorkingTreeFile {
+  path: string;
+  insertions: number;
+  deletions: number;
+}
+
+export interface GitStatus {
+  branch: string | null;
+  isRepo: boolean;
+  hasWorkingTreeChanges: boolean;
+  workingTree: {
+    files: WorkingTreeFile[];
+    insertions: number;
+    deletions: number;
+  };
+  hasUpstream: boolean;
+  aheadCount: number;
+  behindCount: number;
+  pr: PullRequestSummary | null;
+  prStack: PullRequestSummary[];
+}
+
+export async function getStatus(cwd: string): Promise<GitStatus> {
+  const result = await execGit(cwd, [
+    "status",
+    "--porcelain=v2",
+    "--branch",
+    "--untracked-files=normal",
+  ]);
+
+  if (result.code !== 0) {
+    return {
+      branch: null,
+      isRepo: false,
+      hasWorkingTreeChanges: false,
+      workingTree: { files: [], insertions: 0, deletions: 0 },
+      hasUpstream: false,
+      aheadCount: 0,
+      behindCount: 0,
+      pr: null,
+      prStack: [],
+    };
+  }
+
+  const lines = result.stdout.split("\n").filter(Boolean);
+  let branch: string | null = null;
+  let aheadCount = 0;
+  let behindCount = 0;
+  let hasUpstream = false;
+  const changedPaths: string[] = [];
+
+  for (const line of lines) {
+    if (line.startsWith("# branch.head ")) {
+      branch = line.slice("# branch.head ".length);
+      if (branch === "(detached)") branch = null;
+    } else if (line.startsWith("# branch.upstream ")) {
+      hasUpstream = true;
+    } else if (line.startsWith("# branch.ab ")) {
+      const match = line.match(/^# branch\.ab \+(\d+) -(\d+)$/);
+      if (match) {
+        aheadCount = parseInt(match[1], 10);
+        behindCount = parseInt(match[2], 10);
+      }
+    } else if (line.startsWith("1 ") || line.startsWith("2 ")) {
+      const tabIdx = line.indexOf("\t");
+      if (tabIdx >= 0) {
+        const parts = line.slice(tabIdx + 1).split("\t");
+        const filePath = parts[parts.length - 1];
+        if (filePath) changedPaths.push(filePath);
+      }
+    } else if (line.startsWith("? ")) {
+      changedPaths.push(line.slice(2));
+    }
+  }
+
+  // Get numstat for insertions/deletions
+  let files: WorkingTreeFile[] = [];
+  if (changedPaths.length > 0) {
+    const numstatResult = await execGit(cwd, ["diff", "--numstat", "HEAD"]);
+    const untrackedResult = await execGit(cwd, [
+      "diff",
+      "--numstat",
+      "--no-index",
+      "/dev/null",
+      ...changedPaths.filter((p) => !numstatResult.stdout.includes(p)),
+    ]);
+
+    const parseNumstat = (stdout: string): WorkingTreeFile[] => {
+      return stdout
+        .split("\n")
+        .filter(Boolean)
+        .map((line) => {
+          const [addedRaw, deletedRaw, ...pathParts] = line.split("\t");
+          const path = pathParts.join("\t").trim();
+          if (!path) return null;
+          const insertions = parseInt(addedRaw ?? "0", 10);
+          const deletions = parseInt(deletedRaw ?? "0", 10);
+          return {
+            path,
+            insertions: Number.isFinite(insertions) ? insertions : 0,
+            deletions: Number.isFinite(deletions) ? deletions : 0,
+          };
+        })
+        .filter((f): f is WorkingTreeFile => f !== null);
+    };
+
+    const tracked = parseNumstat(numstatResult.stdout);
+    const untracked = parseNumstat(untrackedResult.stdout);
+    const trackedPaths = new Set(tracked.map((f) => f.path));
+    files = [...tracked, ...untracked.filter((f) => !trackedPaths.has(f.path))];
+
+    // Ensure all changed paths are represented
+    const filePaths = new Set(files.map((f) => f.path));
+    for (const p of changedPaths) {
+      if (!filePaths.has(p)) {
+        files.push({ path: p, insertions: 0, deletions: 0 });
+      }
+    }
+  }
+
+  const totalInsertions = files.reduce((sum, f) => sum + f.insertions, 0);
+  const totalDeletions = files.reduce((sum, f) => sum + f.deletions, 0);
+
+  // Fetch PR info if we have a branch
+  let pr: PullRequestSummary | null = null;
+  const prStack: PullRequestSummary[] = [];
+  if (branch) {
+    try {
+      const prs = await listOpenPullRequests(cwd, branch);
+      if (prs.length > 0) {
+        pr = prs.find((p) => p.headBranch === branch) ?? prs[0];
+        prStack.push(...prs);
+      }
+    } catch {
+      // gh CLI may not be available — that's fine
+    }
+  }
+
+  return {
+    branch,
+    isRepo: true,
+    hasWorkingTreeChanges: changedPaths.length > 0,
+    workingTree: {
+      files,
+      insertions: totalInsertions,
+      deletions: totalDeletions,
+    },
+    hasUpstream,
+    aheadCount,
+    behindCount,
+    pr,
+    prStack,
+  };
+}
+
+export async function isGitRepo(cwd: string): Promise<boolean> {
+  const result = await execGit(cwd, ["rev-parse", "--is-inside-work-tree"]);
+  return result.code === 0 && result.stdout.trim() === "true";
+}
+
+export async function getRepoRoot(cwd: string): Promise<string | null> {
+  const result = await execGit(cwd, ["rev-parse", "--show-toplevel"]);
+  return result.code === 0 ? result.stdout.trim() : null;
+}
