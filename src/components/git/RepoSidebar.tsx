@@ -49,7 +49,7 @@ function ProjectItem({
   gitResult: "success" | "error" | null;
 }) {
   const name = path.split("/").pop() ?? "Repository";
-  const showStatus = isActive && (gitBusy || gitResult !== null);
+  const showStatus = gitBusy || gitResult !== null;
 
   return (
     <SidebarMenuItem>
@@ -103,8 +103,8 @@ export function RepoSidebar() {
   const recentRepos = useAppStore((s) => s.recentRepos);
   const setRepoCwd = useAppStore((s) => s.setRepoCwd);
   const removeRecentRepo = useAppStore((s) => s.removeRecentRepo);
-  const gitBusy = useAppStore((s) => s.gitBusy);
-  const gitResult = useAppStore((s) => s.gitResult);
+  const gitBusyMap = useAppStore((s) => s.gitBusyMap);
+  const gitResultMap = useAppStore((s) => s.gitResultMap);
   const queryClient = useQueryClient();
   const { data: status } = useQuery(gitStatusQueryOptions(repoCwd));
   const { data: branches = [] } = useQuery(gitBranchesQueryOptions(repoCwd));
@@ -280,8 +280,8 @@ export function RepoSidebar() {
                   isActive={repo === repoCwd}
                   onSelect={() => setRepoCwd(repo)}
                   onRemove={() => setPendingRemoveRepo(repo)}
-                  gitBusy={gitBusy}
-                  gitResult={gitResult}
+                  gitBusy={gitBusyMap[repo] ?? false}
+                  gitResult={gitResultMap[repo] ?? null}
                 />
               ))}
               {recentRepos.length === 0 && (

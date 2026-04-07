@@ -19,12 +19,12 @@ function saveRecentRepos(repos: string[]) {
 interface AppStore {
   repoCwd: string | null;
   recentRepos: string[];
-  gitBusy: boolean;
-  gitResult: "success" | "error" | null;
+  gitBusyMap: Record<string, boolean>;
+  gitResultMap: Record<string, "success" | "error" | null>;
   setRepoCwd: (cwd: string | null) => void;
   removeRecentRepo: (cwd: string) => void;
-  setGitBusy: (busy: boolean) => void;
-  flashGitResult: (result: "success" | "error") => void;
+  setGitBusy: (cwd: string, busy: boolean) => void;
+  flashGitResult: (cwd: string, result: "success" | "error") => void;
 }
 
 const initialRecent = loadRecentRepos();
@@ -32,8 +32,8 @@ const initialRecent = loadRecentRepos();
 export const useAppStore = create<AppStore>((set, get) => ({
   repoCwd: initialRecent[0] ?? null,
   recentRepos: initialRecent,
-  gitBusy: false,
-  gitResult: null,
+  gitBusyMap: {},
+  gitResultMap: {},
 
   setRepoCwd: (cwd) => {
     set({ repoCwd: cwd });
@@ -54,10 +54,12 @@ export const useAppStore = create<AppStore>((set, get) => ({
     saveRecentRepos(recent);
   },
 
-  setGitBusy: (busy) => set({ gitBusy: busy }),
+  setGitBusy: (cwd, busy) => set((s) => ({
+    gitBusyMap: { ...s.gitBusyMap, [cwd]: busy },
+  })),
 
-  flashGitResult: (result) => {
-    set({ gitResult: result });
-    setTimeout(() => set({ gitResult: null }), 2500);
+  flashGitResult: (cwd, result) => {
+    set((s) => ({ gitResultMap: { ...s.gitResultMap, [cwd]: result } }));
+    setTimeout(() => set((s) => ({ gitResultMap: { ...s.gitResultMap, [cwd]: null } })), 2500);
   },
 }));

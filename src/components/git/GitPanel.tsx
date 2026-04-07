@@ -207,8 +207,8 @@ export function GitPanel() {
   const flashGitResult = useAppStore((s) => s.flashGitResult);
   const setIsBusy = useCallback((busy: boolean) => {
     setIsBusyLocal(busy);
-    setGitBusy(busy);
-  }, [setGitBusy]);
+    if (repoCwd) setGitBusy(repoCwd, busy);
+  }, [setGitBusy, repoCwd]);
   const isBusy = isBusyLocal;
 
   const isDefaultBranch = useMemo(
@@ -302,13 +302,13 @@ export function GitPanel() {
         const summary = summarizeGitResult(result);
         if (summary.noChanges) {
           setNotice({ type: "error", message: summary.description ?? summary.title });
-          flashGitResult("error");
+          if (repoCwd) flashGitResult(repoCwd, "error");
         } else {
           setNotice({
             type: "success",
             message: summary.description ? `${summary.title} · ${summary.description}` : summary.title,
           });
-          flashGitResult("success");
+          if (repoCwd) flashGitResult(repoCwd, "success");
         }
       } catch (err) {
         clearInterval(interval);
@@ -317,7 +317,7 @@ export function GitPanel() {
           type: "error",
           message: err instanceof Error ? err.message : "Action failed.",
         });
-        flashGitResult("error");
+        if (repoCwd) flashGitResult(repoCwd, "error");
       } finally {
         setIsBusy(false);
         void invalidateGitQueries(queryClient);
