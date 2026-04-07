@@ -62,6 +62,7 @@ const stagePackage = {
       target: [{ target: "dmg", arch: ["arm64"] }],
       icon: "icon.icns",
       category: "public.app-category.developer-tools",
+      identity: null,
     },
     dmg: {
       writeUpdateInfo: false,
