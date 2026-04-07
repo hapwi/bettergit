@@ -170,6 +170,23 @@ export async function mergePullRequest(
   requireSuccess(await execGh(cwd, args), `merge PR ${reference}`);
 }
 
+export async function updatePullRequestBase(
+  cwd: string,
+  reference: string,
+  baseBranch: string,
+): Promise<void> {
+  requireSuccess(
+    await execGh(cwd, [
+      "pr",
+      "edit",
+      reference,
+      "--base",
+      baseBranch,
+    ]),
+    `retarget PR ${reference} to ${baseBranch}`,
+  );
+}
+
 export async function createGhRepo(
   cwd: string,
   visibility: "public" | "private" = "private",

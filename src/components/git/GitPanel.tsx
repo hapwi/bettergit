@@ -22,7 +22,7 @@ import {
 import { runStackedAction, type StackedAction } from "@/lib/git/stacked";
 import { pull } from "@/lib/git/remote";
 import { checkoutBranch, deleteBranch } from "@/lib/git/branches";
-import { mergePullRequest, createPullRequest } from "@/lib/git/github";
+import { mergePullRequest, createPullRequest, updatePullRequestBase, getPullRequest } from "@/lib/git/github";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { generatePrContent } from "@/lib/git/ai";
 import { execGit } from "@/lib/git/exec";
@@ -336,48 +336,111 @@ export function GitPanel() {
     if (!repoCwd || !mergeDialogScope) return;
     const actionCwd = repoCwd;
     actionRepoRef.current = actionCwd;
+    const scope = mergeDialogScope;
     setMergeDialogScope(null);
     setIsBusy(true);
     setNotice(null);
-    setProgressTitle(mergeDialogScope === "stack" ? "Merging stack..." : "Merging PR...");
+    setProgressTitle(scope === "stack" ? "Merging stack..." : "Merging PR...");
     try {
       const pr = gitStatus?.pr;
       const ref = pr?.number?.toString();
       if (!ref) throw new Error("No PR to merge");
-      const headBranch = pr?.headBranch ?? gitStatus?.branch ?? "";
-      const baseBranch = pr?.baseBranch ?? "main";
-      const isProtected = ["main", "master", "pre-release"].includes(headBranch);
 
-      // Merge via gh (--delete-branch handles remote cleanup for non-protected)
-      await mergePullRequest(actionCwd, ref, "squash", !isProtected);
+      if (scope === "stack" && prStack.length > 1) {
+        // Build ordered stack: walk the dependency chain from base to tip.
+        // Each PR's headBranch is the next PR's baseBranch.
+        const openPrs = [...prStack];
+        const byBaseBranch = new Map(openPrs.map((p) => [p.baseBranch, p]));
+        // Find the root: a PR whose baseBranch isn't any other open PR's headBranch
+        const headBranches = new Set(openPrs.map((p) => p.headBranch));
+        const root = openPrs.find((p) => !headBranches.has(p.baseBranch));
+        if (!root) throw new Error("Could not determine stack order");
+        const orderedStack: typeof openPrs = [root];
+        let cursor = root;
+        while (true) {
+          const next = openPrs.find((p) => p.baseBranch === cursor.headBranch && !orderedStack.includes(p));
+          if (!next) break;
+          orderedStack.push(next);
+          cursor = next;
+        }
 
-      // Sync remote state
-      await execGit(actionCwd, ["fetch", "--quiet", "--prune", "origin"]);
+        const mergeBaseBranch = orderedStack[0].baseBranch;
+        const merged: string[] = [];
+        const isStackMerge = orderedStack.length > 1;
 
-      if (isProtected) {
-        // For protected branches (like pre-release → main), sync the head branch
-        // to the base branch so they're even (0 ahead, 0 behind)
-        await execGit(actionCwd, ["checkout", baseBranch]);
+        await execGit(actionCwd, ["fetch", "--quiet", "--prune", "origin"]);
+
+        for (const [index, stackPr] of orderedStack.entries()) {
+          // Re-check PR state (may have been auto-closed by GitHub after previous merge)
+          const current = await getPullRequest(actionCwd, String(stackPr.number));
+          if (!current || current.state !== "open") continue;
+
+          // Retarget to the merge base if needed (after first merge, downstream PRs
+          // still point at the now-merged branch)
+          if (current.baseBranch !== mergeBaseBranch) {
+            await updatePullRequestBase(actionCwd, String(stackPr.number), mergeBaseBranch);
+          }
+
+          // Rebase onto merge base if this isn't the first PR
+          if (index > 0) {
+            await execGit(actionCwd, ["fetch", "--quiet", "origin"]);
+            await execGit(actionCwd, ["checkout", stackPr.headBranch]);
+            await execGit(actionCwd, ["rebase", `origin/${mergeBaseBranch}`]);
+            await execGit(actionCwd, ["push", "--force-with-lease", "origin", stackPr.headBranch]);
+          }
+
+          // Merge — don't delete branch mid-stack to avoid GitHub race conditions
+          const isProtected = ["main", "master", "pre-release"].includes(stackPr.headBranch);
+          await mergePullRequest(actionCwd, String(stackPr.number), "squash", !isStackMerge && !isProtected);
+          merged.push(`#${stackPr.number}`);
+
+          await execGit(actionCwd, ["fetch", "--quiet", "--prune", "origin"]);
+        }
+
+        // Cleanup: delete merged branches and checkout the merge base
+        for (const stackPr of orderedStack) {
+          const isProtected = ["main", "master", "pre-release"].includes(stackPr.headBranch);
+          if (isProtected) {
+            // Sync protected branch to merge base
+            try {
+              await execGit(actionCwd, ["checkout", stackPr.headBranch]);
+              await execGit(actionCwd, ["reset", "--hard", `origin/${mergeBaseBranch}`]);
+              await execGit(actionCwd, ["push", "--force-with-lease", "origin", stackPr.headBranch]);
+            } catch { /* best effort */ }
+          } else {
+            try { await execGit(actionCwd, ["branch", "-D", "--", stackPr.headBranch]); } catch { /* already deleted */ }
+          }
+        }
+
+        try { await execGit(actionCwd, ["checkout", mergeBaseBranch]); } catch { /* may already be on it */ }
         await execGit(actionCwd, ["pull", "--ff-only"]).catch(() => {});
-        await execGit(actionCwd, ["checkout", headBranch]);
-        // Reset pre-release to match main after the squash merge
-        await execGit(actionCwd, ["reset", "--hard", `origin/${baseBranch}`]);
-        await execGit(actionCwd, ["push", "--force-with-lease", "origin", headBranch]);
+
+        guardedSetNotice({ type: "success", message: `Merged ${merged.join(", ")}` });
+        flashGitResult(actionCwd, "success");
       } else {
-        // For feature branches, checkout base and delete the merged branch
-        try {
+        // Single PR merge
+        const headBranch = pr?.headBranch ?? gitStatus?.branch ?? "";
+        const baseBranch = pr?.baseBranch ?? "main";
+        const isProtected = ["main", "master", "pre-release"].includes(headBranch);
+
+        await mergePullRequest(actionCwd, ref, "squash", !isProtected);
+        await execGit(actionCwd, ["fetch", "--quiet", "--prune", "origin"]);
+
+        if (isProtected) {
           await execGit(actionCwd, ["checkout", baseBranch]);
-        } catch { /* may already be on it */ }
+          await execGit(actionCwd, ["pull", "--ff-only"]).catch(() => {});
+          await execGit(actionCwd, ["checkout", headBranch]);
+          await execGit(actionCwd, ["reset", "--hard", `origin/${baseBranch}`]);
+          await execGit(actionCwd, ["push", "--force-with-lease", "origin", headBranch]);
+        } else {
+          try { await execGit(actionCwd, ["checkout", baseBranch]); } catch { /* may already be on it */ }
+          try { await execGit(actionCwd, ["branch", "-D", "--", headBranch]); } catch { /* already deleted */ }
+          await execGit(actionCwd, ["pull", "--ff-only"]).catch(() => {});
+        }
 
-        try {
-          await execGit(actionCwd, ["branch", "-D", "--", headBranch]);
-        } catch { /* already deleted */ }
-
-        await execGit(actionCwd, ["pull", "--ff-only"]).catch(() => {});
+        guardedSetNotice({ type: "success", message: `Merged PR #${ref}` });
+        flashGitResult(actionCwd, "success");
       }
-
-      guardedSetNotice({ type: "success", message: `Merged PR #${ref}` });
-      flashGitResult(actionCwd, "success");
     } catch (err) {
       guardedSetNotice({ type: "error", message: err instanceof Error ? err.message : "Merge failed." });
       flashGitResult(actionCwd, "error");
@@ -386,7 +449,7 @@ export function GitPanel() {
       setProgressTitle(null);
       void invalidateGitQueries(queryClient);
     }
-  }, [repoCwd, mergeDialogScope, gitStatus?.pr?.number, gitStatus?.pr?.headBranch, gitStatus?.pr?.baseBranch, gitStatus?.branch, queryClient, flashGitResult]);
+  }, [repoCwd, mergeDialogScope, gitStatus?.pr?.number, gitStatus?.pr?.headBranch, gitStatus?.pr?.baseBranch, gitStatus?.branch, prStack, queryClient, flashGitResult]);
 
   const isPreReleaseBranch = gitStatus?.branch === "pre-release";
   const hasExistingReleasePr = prStack.some(

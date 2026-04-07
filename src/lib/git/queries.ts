@@ -12,10 +12,16 @@ export const gitQueryKeys = {
 };
 
 export function invalidateGitQueries(queryClient: QueryClient) {
-  return queryClient.invalidateQueries({
-    queryKey: gitQueryKeys.all,
-    refetchType: "active",
-  });
+  return Promise.all([
+    queryClient.invalidateQueries({
+      queryKey: ["git", "status"],
+      refetchType: "active",
+    }),
+    queryClient.invalidateQueries({
+      queryKey: ["git", "branches"],
+      refetchType: "active",
+    }),
+  ]);
 }
 
 export function gitStatusQueryOptions(cwd: string | null) {
