@@ -44,6 +44,7 @@ import { toast } from "sonner";
 import { CommitDialog } from "./CommitDialog";
 import { SwitchBranchDialog } from "./SwitchBranchDialog";
 import { MergeDialog } from "./MergeDialog";
+import { VersionReleaseDialog } from "./VersionReleaseDialog";
 import { DefaultBranchDialog } from "./DefaultBranchDialog";
 
 // ---------------------------------------------------------------------------
@@ -318,6 +319,7 @@ export function GitPanel() {
   );
 
   const [pendingDeleteBranch, setPendingDeleteBranch] = useState<string | null>(null);
+  const [showVersionRelease, setShowVersionRelease] = useState(false);
 
   const doDeleteBranch = useCallback(
     async (branch: string) => {
@@ -383,6 +385,12 @@ export function GitPanel() {
       const label = result.merged.map((n) => `#${n}`).join(", ");
       guardedSetNotice({ type: "success", message: `Merged ${label}` });
       flashGitResult(actionCwd, "success");
+
+      // Offer version tagging when merging into main/master
+      const mergeBase = prsToMerge[0]?.baseBranch;
+      if (mergeBase === "main" || mergeBase === "master") {
+        setShowVersionRelease(true);
+      }
     } catch (err) {
       guardedSetNotice({ type: "error", message: err instanceof Error ? err.message : "Merge failed." });
       flashGitResult(actionCwd, "error");
@@ -486,6 +494,7 @@ export function GitPanel() {
     setMergeDialogScope(null);
     setPendingDefaultAction(null);
     setPendingDeleteBranch(null);
+    setShowVersionRelease(false);
   }, [repoCwd]);
 
   if (!repoCwd) return null;
@@ -755,6 +764,18 @@ export function GitPanel() {
           setPendingDeleteBranch(null);
         }}
       />
+
+      {showVersionRelease && repoCwd && (
+        <VersionReleaseDialog
+          open
+          onOpenChange={() => setShowVersionRelease(false)}
+          repoCwd={repoCwd}
+          onTagCreated={(tag) => {
+            setNotice({ type: "success", message: `Created release ${tag}` });
+            void invalidateGitQueries(queryClient);
+          }}
+        />
+      )}
     </div>
   );
 }

@@ -133,7 +133,7 @@ export function App() {
 
   if (!repoCwd) {
     return (
-      <div className="h-screen">
+      <div className="flex h-screen flex-col overflow-hidden bg-background text-foreground">
         <div
           className="h-11 shrink-0"
           style={{ WebkitAppRegion: "drag" } as React.CSSProperties}
