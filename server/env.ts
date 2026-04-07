@@ -3,46 +3,61 @@ import { promisify } from "node:util";
 
 export const execFileAsync = promisify(execFile);
 
-// Resolve the user's full shell PATH by running their login shell, matching
-// hapcode's readPathFromLoginShell approach. This catches everything the user
-// has configured in .zshrc/.bashrc (homebrew, nvm, cargo, etc.).
-let resolvedPath: string | null = null;
+// Resolve the user's shell environment by running their login shell, matching
+// hapcode's desktop sync. Packaged macOS GUI apps often miss both PATH and
+// SSH_AUTH_SOCK, which breaks provider CLIs in the DMG while dev works.
+const SHELL_ENV_KEYS = ["PATH", "SSH_AUTH_SOCK"] as const;
 
-function readPathFromLoginShell(): string | null {
-  if (process.platform !== "darwin") return null;
+let resolvedShellEnv: Partial<Record<(typeof SHELL_ENV_KEYS)[number], string>> = {};
+
+function readEnvironmentFromLoginShell(): Partial<Record<(typeof SHELL_ENV_KEYS)[number], string>> {
+  if (process.platform !== "darwin") return {};
   try {
     const shell = process.env.SHELL ?? "/bin/zsh";
-    const marker = "__BETTERGIT_PATH__";
-    const output = execFileSync(shell, ["-ilc", `printf '%s' '${marker}'; printenv PATH; printf '%s' '${marker}'`], {
-      encoding: "utf8",
-      timeout: 5_000,
-    });
-    const start = output.indexOf(marker);
-    if (start === -1) return null;
-    const valueStart = start + marker.length;
-    const end = output.indexOf(marker, valueStart);
-    if (end === -1) return null;
-    const pathValue = output.slice(valueStart, end).trim();
-    return pathValue.length > 0 ? pathValue : null;
+    const marker = "__BETTERGIT_ENV__";
+    const command = SHELL_ENV_KEYS.map(
+      (key) => `printf '%s' '${marker}${key}='; printenv ${key}; printf '%s' '${marker}'`,
+    ).join(";");
+    const output = execFileSync(shell, ["-ilc", command], { encoding: "utf8", timeout: 5_000 });
+    const nextEnv: Partial<Record<(typeof SHELL_ENV_KEYS)[number], string>> = {};
+
+    for (const key of SHELL_ENV_KEYS) {
+      const keyMarker = `${marker}${key}=`;
+      const start = output.indexOf(keyMarker);
+      if (start === -1) continue;
+      const valueStart = start + keyMarker.length;
+      const end = output.indexOf(marker, valueStart);
+      if (end === -1) continue;
+      const value = output.slice(valueStart, end).trim();
+      if (value.length > 0) {
+        nextEnv[key] = value;
+      }
+    }
+
+    return nextEnv;
   } catch {
-    return null;
+    return {};
   }
 }
 
 // Called once at server startup
 export function fixPath(): void {
   if (process.platform !== "darwin") return;
-  const shellPath = readPathFromLoginShell();
-  if (shellPath) {
-    resolvedPath = shellPath;
-    process.env.PATH = shellPath;
+  const shellEnv = readEnvironmentFromLoginShell();
+  resolvedShellEnv = shellEnv;
+  for (const [key, value] of Object.entries(shellEnv)) {
+    if (value) {
+      process.env[key] = value;
+    }
   }
 }
 
 export function getEnvWithPath(): NodeJS.ProcessEnv {
   const env = { ...process.env };
-  if (resolvedPath) {
-    env.PATH = resolvedPath;
+  for (const [key, value] of Object.entries(resolvedShellEnv)) {
+    if (value) {
+      env[key] = value;
+    }
   }
   return env;
 }
