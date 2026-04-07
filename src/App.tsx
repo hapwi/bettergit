@@ -40,18 +40,16 @@ function Toolbar({
         height: 46,
       } as React.CSSProperties}
     >
-      {/* Left: sidebar toggle (only when collapsed) + repo name + branch info */}
+      {/* Left: sidebar toggle + repo name + branch info */}
       <div className="flex items-center gap-2.5" style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}>
-        {isCollapsed && (
-          <Button
-            variant="ghost"
-            size="icon-xs"
-            onClick={toggleSidebar}
-            className="text-muted-foreground/50 hover:text-foreground"
-          >
-            <HugeiconsIcon icon={SidebarLeftIcon} className="size-4" />
-          </Button>
-        )}
+        <Button
+          variant="ghost"
+          size="icon-xs"
+          onClick={toggleSidebar}
+          className="text-muted-foreground/50 hover:text-foreground"
+        >
+          <HugeiconsIcon icon={SidebarLeftIcon} className="size-4" />
+        </Button>
         {repoName && (
           <span className="text-sm font-semibold">{repoName}</span>
         )}

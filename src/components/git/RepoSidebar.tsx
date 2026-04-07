@@ -7,7 +7,6 @@ import {
   ArrowUp01Icon,
   ArrowDown01Icon,
   ExchangeIcon,
-  SidebarLeftIcon,
   Settings01Icon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
@@ -25,7 +24,6 @@ import {
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
-  useSidebar,
 } from "@/components/ui/sidebar";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
@@ -85,7 +83,6 @@ export function RepoSidebar() {
   const setRepoCwd = useAppStore((s) => s.setRepoCwd);
   const removeRecentRepo = useAppStore((s) => s.removeRecentRepo);
   const queryClient = useQueryClient();
-  const { toggleSidebar } = useSidebar();
   const { data: status } = useQuery(gitStatusQueryOptions(repoCwd));
   const { data: branches = [] } = useQuery(gitBranchesQueryOptions(repoCwd));
 
@@ -125,25 +122,7 @@ export function RepoSidebar() {
 
   return (
     <Sidebar className="bg-sidebar">
-      {/* Header — clean, no toggle icon */}
-      <SidebarHeader className="px-3 pb-2 pt-14">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <div className="flex size-7 items-center justify-center rounded-lg bg-primary">
-              <HugeiconsIcon icon={GitBranchIcon} className="size-3.5 text-primary-foreground" />
-            </div>
-            <span className="text-sm font-bold tracking-tight">BetterGit</span>
-          </div>
-          <Button
-            variant="ghost"
-            size="icon-xs"
-            onClick={toggleSidebar}
-            className="text-muted-foreground/40 hover:text-foreground"
-          >
-            <HugeiconsIcon icon={SidebarLeftIcon} className="size-3.5" />
-          </Button>
-        </div>
-      </SidebarHeader>
+      <SidebarHeader className="pt-11" />
 
       <SidebarContent>
         {/* Active project status */}
