@@ -367,12 +367,13 @@ export function GitPanel() {
         prsToMerge = [{ number: pr.number, headBranch: pr.headBranch, baseBranch: pr.baseBranch }];
       }
 
-      // Delegate to server process — survives Vite HMR reloads
+      // Delegate to server process — merge + optional version bump in one shot
       const { serverFetch } = await import("@/lib/server");
-      const result = await serverFetch<{ merged: number[]; finalBranch: string | null; error: string | null }>("/api/git/merge-prs", {
+      const result = await serverFetch<{ merged: number[]; tag: string | null; finalBranch: string | null; error: string | null }>("/api/git/merge-prs", {
         cwd: actionCwd,
         scope,
         prs: prsToMerge,
+        versionBump,
       });
 
       if (result.error) {
@@ -381,21 +382,8 @@ export function GitPanel() {
       }
 
       const label = result.merged.map((n) => `#${n}`).join(", ");
-
-      // Version bump: update package.json, commit, tag, push — all on server
-      if (versionBump) {
-        guardedSetProgressTitle("Bumping version...");
-        try {
-          const { serverFetch: sf } = await import("@/lib/server");
-          const bump = await sf<{ tag: string; version: string; error: string | null }>("/api/git/version-bump", {
-            cwd: actionCwd,
-            bump: versionBump,
-          });
-          if (bump.error) throw new Error(bump.error);
-          guardedSetNotice({ type: "success", message: `Merged ${label} · Released ${bump.tag}` });
-        } catch {
-          guardedSetNotice({ type: "success", message: `Merged ${label} (version bump failed)` });
-        }
+      if (result.tag) {
+        guardedSetNotice({ type: "success", message: `Merged ${label} · Released ${result.tag}` });
       } else {
         guardedSetNotice({ type: "success", message: `Merged ${label}` });
       }
