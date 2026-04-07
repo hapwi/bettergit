@@ -224,11 +224,17 @@ export async function mergePullRequests(input: MergePullRequestsInput): Promise<
     if (merged.length === 0) return;
 
     const headResult = await gitRun(cwd, ["branch", "--show-current"]);
-    const currentBranch = headResult.stdout.trim();
+    let currentBranch = headResult.stdout.trim();
 
     await gitRun(cwd, ["fetch", "--quiet", "--prune", "origin"]);
 
     const mergedProtectedHead = merged.find((m) => isProtectedBranch(m.headBranch));
+    const shouldCheckoutBaseAfterMerge =
+      currentBranch.length > 0 &&
+      (
+        merged.some((m) => m.headBranch === currentBranch && m.headBranch !== mergeBaseBranch) ||
+        autoClosedBranches.includes(currentBranch)
+      );
 
     for (const { headBranch } of merged) {
       if (!isProtectedBranch(headBranch)) continue;
@@ -247,6 +253,13 @@ export async function mergePullRequests(input: MergePullRequestsInput): Promise<
       } catch { /* best effort */ }
     }
 
+    if (shouldCheckoutBaseAfterMerge) {
+      await gitRun(cwd, ["checkout", mergeBaseBranch]).catch(() => {});
+      await gitRun(cwd, ["pull", "--ff-only"]).catch(() => {});
+      currentBranch = mergeBaseBranch;
+      finalBranch = mergeBaseBranch;
+    }
+
     for (const { headBranch } of merged) {
       if (isProtectedBranch(headBranch)) continue;
       await deleteBranchIfPresent(cwd, headBranch);
@@ -256,13 +269,7 @@ export async function mergePullRequests(input: MergePullRequestsInput): Promise<
       await deleteBranchIfPresent(cwd, branch);
     }
 
-    if (mergedProtectedHead && currentBranch === mergedProtectedHead.headBranch) {
-      finalBranch = mergedProtectedHead.headBranch;
-    } else if (merged.some((m) => m.headBranch === currentBranch && !isProtectedBranch(m.headBranch))) {
-      await gitRun(cwd, ["checkout", mergeBaseBranch]);
-      await gitRun(cwd, ["pull", "--ff-only"]).catch(() => {});
-      finalBranch = mergeBaseBranch;
-    } else {
+    if (!finalBranch) {
       await gitRun(cwd, ["pull", "--ff-only"]).catch(() => {});
       finalBranch = currentBranch;
     }
