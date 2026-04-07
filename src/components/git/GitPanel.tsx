@@ -13,6 +13,7 @@ import {
 import { HugeiconsIcon } from "@hugeicons/react";
 import { useAppStore } from "@/store";
 import { cn } from "@/lib/utils";
+import { GitHubIcon } from "@/components/icons";
 import {
   gitStatusQueryOptions,
   gitBranchesQueryOptions,
@@ -587,11 +588,9 @@ export function GitPanel() {
                 {displayPrStack.map((pr) => {
                   const isCurrent = pr.number === gitStatus?.pr?.number;
                   return (
-                    <button
+                    <div
                       key={pr.number}
-                      type="button"
-                      className="flex w-full items-center gap-2.5 px-3 py-2 text-left transition-colors hover:bg-accent/30"
-                      onClick={() => void window.electronAPI?.shell.openExternal(pr.url)}
+                      className="flex w-full items-center gap-2.5 px-3 py-2"
                     >
                       <HugeiconsIcon
                         icon={pr.state === "merged" ? GitMergeIcon : GitPullRequestIcon}
@@ -607,7 +606,14 @@ export function GitPanel() {
                       {pr.state === "merged" && (
                         <Badge variant="secondary" className="shrink-0 text-[10px] text-purple-400">Merged</Badge>
                       )}
-                    </button>
+                      <button
+                        type="button"
+                        className="shrink-0 rounded-md p-1 text-muted-foreground/40 transition-colors hover:bg-accent hover:text-foreground"
+                        onClick={() => void window.electronAPI?.shell.openExternal(pr.url)}
+                      >
+                        <GitHubIcon className="size-3.5" />
+                      </button>
+                    </div>
                   );
                 })}
               </div>
