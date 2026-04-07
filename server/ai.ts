@@ -111,9 +111,8 @@ async function runClaudeSDK(prompt: string, model: string): Promise<string> {
         // other large trees). Text generation doesn't need workspace context.
         cwd: os.tmpdir(),
         // Pass process.env directly — fixPath() already mutated it at startup.
-        // Using the live reference matches hapcode's approach and avoids stale
-        // copies if the environment changes after startup.
-        env: process.env,
+        // Use the shell-hydrated environment for packaged macOS builds too.
+        env: getEnvWithPath(),
         abortController,
         canUseTool: () => Promise.resolve({ behavior: "deny" as const, message: "No tools." }),
         // Use the system-installed Claude CLI rather than the SDK's bundled

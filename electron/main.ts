@@ -1,29 +1,35 @@
 import { app, BrowserWindow, dialog, ipcMain, shell } from "electron";
 import path from "node:path";
 import os from "node:os";
+import fs from "node:fs";
 import { execFileSync, spawn, type ChildProcess } from "node:child_process";
 import { createServer } from "node:net";
 
 // Resolve the user's full shell PATH before anything else — macOS GUI apps
-// don't inherit the login shell's PATH, so tools like git, gh, claude won't
-// be found without this. Matches hapcode's syncShellEnvironment().
+// don't inherit the login shell's environment, so tools like git/gh/claude
+// and provider auth sockets can disappear in packaged builds.
 function syncShellEnvironment(): void {
   if (process.platform !== "darwin") return;
   try {
     const shell = process.env.SHELL ?? "/bin/zsh";
     const marker = "__BETTERGIT_ENV__";
-    const output = execFileSync(shell, [
-      "-ilc",
-      `printf '%s' '${marker}'; printenv PATH; printf '%s' '${marker}'`,
-    ], { encoding: "utf8", timeout: 5_000 });
-    const start = output.indexOf(marker);
-    if (start === -1) return;
-    const valueStart = start + marker.length;
-    const end = output.indexOf(marker, valueStart);
-    if (end === -1) return;
-    const pathValue = output.slice(valueStart, end).trim();
-    if (pathValue.length > 0) {
-      process.env.PATH = pathValue;
+    const keys = ["PATH", "SSH_AUTH_SOCK"] as const;
+    const command = keys.map(
+      (key) => `printf '%s' '${marker}${key}='; printenv ${key}; printf '%s' '${marker}'`,
+    ).join(";");
+    const output = execFileSync(shell, ["-ilc", command], { encoding: "utf8", timeout: 5_000 });
+
+    for (const key of keys) {
+      const keyMarker = `${marker}${key}=`;
+      const start = output.indexOf(keyMarker);
+      if (start === -1) continue;
+      const valueStart = start + keyMarker.length;
+      const end = output.indexOf(marker, valueStart);
+      if (end === -1) continue;
+      const value = output.slice(valueStart, end).trim();
+      if (value.length > 0) {
+        process.env[key] = value;
+      }
     }
   } catch {
     // Keep inherited environment if shell lookup fails.
@@ -40,6 +46,24 @@ const isDev = !app.isPackaged;
 
 let serverProcess: ChildProcess | null = null;
 let serverPort = 0;
+let serverLogStream: fs.WriteStream | null = null;
+
+function appendMainLog(message: string): void {
+  const line = `[${new Date().toISOString()}] ${message}\n`;
+  if (serverLogStream) {
+    serverLogStream.write(line);
+  }
+  process.stderr.write(line);
+}
+
+function ensurePackagedLogging(): void {
+  if (!app.isPackaged || serverLogStream) return;
+  const userDataDir = app.getPath("userData");
+  fs.mkdirSync(userDataDir, { recursive: true });
+  serverLogStream = fs.createWriteStream(path.join(userDataDir, "server-child.log"), {
+    flags: "a",
+  });
+}
 
 async function findFreePort(): Promise<number> {
   return new Promise((resolve) => {
@@ -53,6 +77,7 @@ async function findFreePort(): Promise<number> {
 
 async function startServer(): Promise<number> {
   const requestedPort = await findFreePort();
+  ensurePackagedLogging();
   const serverEntry = isDev
     ? path.join(__dirname, "../dist-server/main.mjs")
     : path.join(__dirname, "../dist-server/main.mjs");
@@ -76,6 +101,7 @@ async function startServer(): Promise<number> {
     const timer = setTimeout(() => reject(new Error("Server startup timed out")), 10_000);
 
     serverProcess!.stdout!.on("data", (chunk: Buffer) => {
+      if (serverLogStream) serverLogStream.write(chunk);
       stdout += chunk.toString();
       const match = stdout.match(/BETTERGIT_SERVER_PORT=(\d+)/);
       if (match) {
@@ -86,17 +112,20 @@ async function startServer(): Promise<number> {
     });
 
     serverProcess!.stderr!.on("data", (chunk: Buffer) => {
+      if (serverLogStream) serverLogStream.write(chunk);
       process.stderr.write(`[server] ${chunk.toString()}`);
     });
 
     serverProcess!.on("error", (err) => {
       clearTimeout(timer);
+      appendMainLog(`server process error: ${err.message}`);
       reject(err);
     });
 
     serverProcess!.on("exit", (code) => {
       if (code !== null && code !== 0) {
         clearTimeout(timer);
+        appendMainLog(`server exited before ready with code ${code}`);
         reject(new Error(`Server exited with code ${code}`));
       }
     });
@@ -107,6 +136,10 @@ function stopServer() {
   if (serverProcess) {
     serverProcess.kill();
     serverProcess = null;
+  }
+  if (serverLogStream) {
+    serverLogStream.end();
+    serverLogStream = null;
   }
 }
 
@@ -162,6 +195,14 @@ app.whenReady().then(async () => {
     console.log(`[main] Server running on port ${serverPort}`);
   } catch (err) {
     console.error("[main] Failed to start server:", err);
+    const message = err instanceof Error ? err.message : String(err);
+    dialog.showErrorBox(
+      "BetterGit failed to start",
+      `The bundled server did not start correctly.\n\n${message}\n\n` +
+        `If this is a packaged build, check the server log in:\n${path.join(app.getPath("userData"), "server-child.log")}`,
+    );
+    app.quit();
+    return;
   }
   createWindow();
 });
