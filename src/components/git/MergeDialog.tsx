@@ -58,17 +58,33 @@ export function MergeDialog({ open, onOpenChange, scope, baseBranch, repoCwd, is
     if (!open || !isMainMerge) return;
     setSelectedBump(null);
     setVersionLoading(true);
-    execGit(repoCwd, ["tag", "--sort=-v:refname", "-l", "v*"])
-      .then((result) => {
+    (async () => {
+      try {
+        await execGit(repoCwd, ["fetch", "--tags", "--quiet", "origin"]).catch(() => {});
+        const result = await execGit(repoCwd, ["tag", "--sort=-v:refname", "-l", "v*"]);
         const tags = result.stdout.trim().split("\n").filter(Boolean);
         for (const tag of tags) {
           const parsed = parseVersion(tag);
           if (parsed) { setCurrentVersion(parsed); return; }
         }
+        // No tags found — try reading version from package.json
+        const pkgResult = await execGit(repoCwd, ["show", "HEAD:package.json"]);
+        if (pkgResult.code === 0) {
+          try {
+            const pkg = JSON.parse(pkgResult.stdout) as { version?: string };
+            if (pkg.version) {
+              const parsed = parseVersion(pkg.version);
+              if (parsed) { setCurrentVersion(parsed); return; }
+            }
+          } catch { /* invalid JSON */ }
+        }
         setCurrentVersion({ major: 0, minor: 0, patch: 0 });
-      })
-      .catch(() => setCurrentVersion({ major: 0, minor: 0, patch: 0 }))
-      .finally(() => setVersionLoading(false));
+      } catch {
+        setCurrentVersion({ major: 0, minor: 0, patch: 0 });
+      } finally {
+        setVersionLoading(false);
+      }
+    })();
   }, [open, isMainMerge, repoCwd]);
 
   return (

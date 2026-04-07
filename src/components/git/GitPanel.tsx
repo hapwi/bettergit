@@ -386,12 +386,24 @@ export function GitPanel() {
       if (versionBump) {
         guardedSetProgressTitle("Creating version tag...");
         try {
+          await execGit(actionCwd, ["fetch", "--tags", "--quiet", "origin"]);
           const tagListResult = await execGit(actionCwd, ["tag", "--sort=-v:refname", "-l", "v*"]);
           const tags = tagListResult.stdout.trim().split("\n").filter(Boolean);
           let current = { major: 0, minor: 0, patch: 0 };
+          let foundTag = false;
           for (const t of tags) {
             const m = t.replace(/^v/, "").match(/^(\d+)\.(\d+)\.(\d+)/);
-            if (m) { current = { major: +m[1], minor: +m[2], patch: +m[3] }; break; }
+            if (m) { current = { major: +m[1], minor: +m[2], patch: +m[3] }; foundTag = true; break; }
+          }
+          if (!foundTag) {
+            const pkgResult = await execGit(actionCwd, ["show", "HEAD:package.json"]);
+            if (pkgResult.code === 0) {
+              try {
+                const pkg = JSON.parse(pkgResult.stdout) as { version?: string };
+                const m = pkg.version?.match(/^(\d+)\.(\d+)\.(\d+)/);
+                if (m) current = { major: +m[1], minor: +m[2], patch: +m[3] };
+              } catch { /* ignore */ }
+            }
           }
           const bumped = versionBump === "major"
             ? { major: current.major + 1, minor: 0, patch: 0 }
