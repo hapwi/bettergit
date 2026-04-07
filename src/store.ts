@@ -19,8 +19,12 @@ function saveRecentRepos(repos: string[]) {
 interface AppStore {
   repoCwd: string | null;
   recentRepos: string[];
+  gitBusy: boolean;
+  gitResult: "success" | "error" | null;
   setRepoCwd: (cwd: string | null) => void;
   removeRecentRepo: (cwd: string) => void;
+  setGitBusy: (busy: boolean) => void;
+  flashGitResult: (result: "success" | "error") => void;
 }
 
 const initialRecent = loadRecentRepos();
@@ -28,6 +32,8 @@ const initialRecent = loadRecentRepos();
 export const useAppStore = create<AppStore>((set, get) => ({
   repoCwd: initialRecent[0] ?? null,
   recentRepos: initialRecent,
+  gitBusy: false,
+  gitResult: null,
 
   setRepoCwd: (cwd) => {
     set({ repoCwd: cwd });
@@ -46,5 +52,12 @@ export const useAppStore = create<AppStore>((set, get) => ({
     const recent = get().recentRepos.filter((r) => r !== cwd);
     set({ recentRepos: recent });
     saveRecentRepos(recent);
+  },
+
+  setGitBusy: (busy) => set({ gitBusy: busy }),
+
+  flashGitResult: (result) => {
+    set({ gitResult: result });
+    setTimeout(() => set({ gitResult: null }), 2500);
   },
 }));

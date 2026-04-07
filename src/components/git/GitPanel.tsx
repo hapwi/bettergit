@@ -202,7 +202,14 @@ export function GitPanel() {
   } | null>(null);
   const [progressTitle, setProgressTitle] = useState<string | null>(null);
   const [notice, setNotice] = useState<{ type: "info" | "error" | "success"; message: string } | null>(null);
-  const [isBusy, setIsBusy] = useState(false);
+  const [isBusyLocal, setIsBusyLocal] = useState(false);
+  const setGitBusy = useAppStore((s) => s.setGitBusy);
+  const flashGitResult = useAppStore((s) => s.flashGitResult);
+  const setIsBusy = useCallback((busy: boolean) => {
+    setIsBusyLocal(busy);
+    setGitBusy(busy);
+  }, [setGitBusy]);
+  const isBusy = isBusyLocal;
 
   const isDefaultBranch = useMemo(
     () => isDefaultBranchName(gitStatus?.branch ?? null, branches),
@@ -295,11 +302,13 @@ export function GitPanel() {
         const summary = summarizeGitResult(result);
         if (summary.noChanges) {
           setNotice({ type: "error", message: summary.description ?? summary.title });
+          flashGitResult("error");
         } else {
           setNotice({
             type: "success",
             message: summary.description ? `${summary.title} · ${summary.description}` : summary.title,
           });
+          flashGitResult("success");
         }
       } catch (err) {
         clearInterval(interval);
@@ -308,12 +317,13 @@ export function GitPanel() {
           type: "error",
           message: err instanceof Error ? err.message : "Action failed.",
         });
+        flashGitResult("error");
       } finally {
         setIsBusy(false);
         void invalidateGitQueries(queryClient);
       }
     },
-    [repoCwd, gitStatus, isDefaultBranch, queryClient],
+    [repoCwd, gitStatus, isDefaultBranch, queryClient, flashGitResult],
   );
 
   const runQuickAction = useCallback(() => {

@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { CheckmarkCircle02Icon } from "@hugeicons/core-free-icons";
 import { useQuery } from "@tanstack/react-query";
 import {
   GitBranchIcon,
@@ -26,6 +27,7 @@ import {
   SidebarMenuItem,
 } from "@/components/ui/sidebar";
 import { Button } from "@/components/ui/button";
+import { Spinner } from "@/components/ui/spinner";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { SettingsDialog } from "@/components/git/SettingsDialog";
 import { useQueryClient } from "@tanstack/react-query";
@@ -36,13 +38,18 @@ function ProjectItem({
   isActive,
   onSelect,
   onRemove,
+  gitBusy,
+  gitResult,
 }: {
   path: string;
   isActive: boolean;
   onSelect: () => void;
   onRemove: () => void;
+  gitBusy: boolean;
+  gitResult: "success" | "error" | null;
 }) {
   const name = path.split("/").pop() ?? "Repository";
+  const showStatus = isActive && (gitBusy || gitResult !== null);
 
   return (
     <SidebarMenuItem>
@@ -58,20 +65,34 @@ function ProjectItem({
           {name.slice(0, 2)}
         </div>
         <span className="flex-1 truncate text-sm">{name}</span>
-        <span
-          role="button"
-          tabIndex={0}
-          onClick={(e) => {
-            e.stopPropagation();
-            onRemove();
-          }}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") { e.stopPropagation(); onRemove(); }
-          }}
-          className="shrink-0 text-muted-foreground/30 opacity-0 transition-opacity hover:text-destructive group-hover/item:opacity-100"
-        >
-          <HugeiconsIcon icon={Cancel01Icon} className="size-3" />
-        </span>
+        {showStatus ? (
+          <span className="shrink-0">
+            {gitBusy && <Spinner className="size-3.5" />}
+            {!gitBusy && gitResult === "success" && (
+              <HugeiconsIcon icon={CheckmarkCircle02Icon} className="size-3.5 text-emerald-500" />
+            )}
+            {!gitBusy && gitResult === "error" && (
+              <span className="flex size-3.5 items-center justify-center">
+                <span className="size-1.5 rounded-full bg-red-500" />
+              </span>
+            )}
+          </span>
+        ) : (
+          <span
+            role="button"
+            tabIndex={0}
+            onClick={(e) => {
+              e.stopPropagation();
+              onRemove();
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") { e.stopPropagation(); onRemove(); }
+            }}
+            className="shrink-0 text-muted-foreground/30 opacity-0 transition-opacity hover:text-destructive group-hover/item:opacity-100"
+          >
+            <HugeiconsIcon icon={Cancel01Icon} className="size-3" />
+          </span>
+        )}
       </SidebarMenuButton>
     </SidebarMenuItem>
   );
@@ -82,6 +103,8 @@ export function RepoSidebar() {
   const recentRepos = useAppStore((s) => s.recentRepos);
   const setRepoCwd = useAppStore((s) => s.setRepoCwd);
   const removeRecentRepo = useAppStore((s) => s.removeRecentRepo);
+  const gitBusy = useAppStore((s) => s.gitBusy);
+  const gitResult = useAppStore((s) => s.gitResult);
   const queryClient = useQueryClient();
   const { data: status } = useQuery(gitStatusQueryOptions(repoCwd));
   const { data: branches = [] } = useQuery(gitBranchesQueryOptions(repoCwd));
@@ -257,6 +280,8 @@ export function RepoSidebar() {
                   isActive={repo === repoCwd}
                   onSelect={() => setRepoCwd(repo)}
                   onRemove={() => setPendingRemoveRepo(repo)}
+                  gitBusy={gitBusy}
+                  gitResult={gitResult}
                 />
               ))}
               {recentRepos.length === 0 && (
