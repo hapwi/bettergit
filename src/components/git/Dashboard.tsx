@@ -25,6 +25,8 @@ import {
 import { HugeiconsIcon } from "@hugeicons/react";
 import { useAppStore } from "@/store";
 import { getRepoStats, getRecentCommits, getOpenPrs, getMergedPrs } from "@/lib/git/stats";
+import { getOriginRepoSlug } from "@/lib/git/remote";
+import { execGh } from "@/lib/git/exec";
 import { GitHubIcon } from "@/components/icons";
 import {
   Card,
@@ -104,6 +106,22 @@ export function Dashboard() {
     staleTime: 30_000,
     refetchInterval: 60_000,
   });
+  const { data: forkInfo } = useQuery({
+    queryKey: ["git", "fork-info", repoCwd],
+    queryFn: async () => {
+      const repo = await getOriginRepoSlug(repoCwd!);
+      if (!repo) return null;
+      const result = await execGh(repoCwd!, ["repo", "view", repo, "--json", "isFork,parent"]);
+      if (result.code !== 0) return null;
+      const data = JSON.parse(result.stdout) as { isFork: boolean; parent?: { name: string; owner: { login: string } } };
+      if (!data.isFork || !data.parent) return null;
+      return `${data.parent.owner.login}/${data.parent.name}`;
+    },
+    enabled: repoCwd !== null,
+    staleTime: Infinity,
+    gcTime: 10 * 60_000,
+  });
+
   const { data: mergedPrs = [] } = useQuery({
     queryKey: ["git", "merged-prs", repoCwd],
     queryFn: () => getMergedPrs(repoCwd!, 10),
@@ -162,6 +180,18 @@ export function Dashboard() {
   return (
     <ScrollArea className="h-full">
       <div className="flex flex-col gap-5 p-6">
+        {/* Fork indicator */}
+        {forkInfo && (
+          <button
+            type="button"
+            className="flex items-center gap-2 text-xs text-muted-foreground/60 transition-colors hover:text-muted-foreground"
+            onClick={() => void window.electronAPI?.shell.openExternal(`https://github.com/${forkInfo}`)}
+          >
+            <GitHubIcon className="size-3" />
+            <span>Forked from <span className="font-medium">{forkInfo}</span></span>
+          </button>
+        )}
+
         {/* Stat row */}
         <div className="grid grid-cols-4 gap-3">
           {[

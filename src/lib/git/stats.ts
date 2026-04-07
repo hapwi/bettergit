@@ -2,6 +2,7 @@
  * Git statistics — commit history data for dashboard charts.
  */
 import { execGit, execGh } from "./exec";
+import { getOriginRepoSlug } from "./remote";
 
 export interface DailyCommitStat {
   date: string; // YYYY-MM-DD
@@ -28,15 +29,19 @@ export async function getRepoStats(cwd: string, days = 30): Promise<RepoStats> {
   since.setDate(since.getDate() - days);
   const sinceStr = since.toISOString().split("T")[0];
 
+  // Detect if this is a fork (has an "upstream" remote)
+  const upstreamCheck = await execGit(cwd, ["remote"]);
+  const hasUpstream = upstreamCheck.stdout.split("\n").some((r) => r.trim() === "upstream");
+
   // Run all queries in parallel
-  const [commitLogResult, branchCountResult, authorResult, tagResult] = await Promise.all([
+  const [commitLogResult, branchCountResult, authorResult] = await Promise.all([
     execGit(cwd, [
       "log",
       `--since=${sinceStr}`,
       "--format=%ai",
       "--no-merges",
     ]),
-    execGit(cwd, ["branch", "-a", "--format=%(refname:short)"]),
+    execGit(cwd, ["branch", "--format=%(refname:short)"]),
     execGit(cwd, [
       "shortlog",
       "-sn",
@@ -44,8 +49,23 @@ export async function getRepoStats(cwd: string, days = 30): Promise<RepoStats> {
       `--since=${sinceStr}`,
       "HEAD",
     ]),
-    execGit(cwd, ["tag", "--sort=-creatordate", "-l"]),
   ]);
+
+  // Tags: for forks, query GitHub API for the user's repo tags; otherwise use local git
+  let tagResult: { code: number; stdout: string };
+  if (hasUpstream) {
+    const repo = await getOriginRepoSlug(cwd);
+    if (repo) {
+      const ghResult = await execGh(cwd, [
+        "api", `repos/${repo}/tags`, "--jq", ".[].name",
+      ]);
+      tagResult = { code: ghResult.code, stdout: ghResult.stdout };
+    } else {
+      tagResult = { code: 1, stdout: "" };
+    }
+  } else {
+    tagResult = await execGit(cwd, ["tag", "--sort=-creatordate", "-l"]);
+  }
 
   // Parse daily commits
   const dateCounts = new Map<string, number>();
@@ -193,10 +213,13 @@ export interface PrListItem {
 }
 
 export async function getOpenPrs(cwd: string): Promise<PrListItem[]> {
-  const ghResult = await execGh(cwd, [
+  const repo = await getOriginRepoSlug(cwd);
+  const args = [
     "pr", "list", "--state", "open", "--limit", "20",
     "--json", "number,title,url,baseRefName,headRefName,state,author,updatedAt",
-  ]);
+  ];
+  if (repo) args.push("--repo", repo);
+  const ghResult = await execGh(cwd, args);
   if (ghResult.code !== 0) return [];
   try {
     const raw = JSON.parse(ghResult.stdout) as Array<{
@@ -218,10 +241,13 @@ export async function getOpenPrs(cwd: string): Promise<PrListItem[]> {
 }
 
 export async function getMergedPrs(cwd: string, limit = 10): Promise<PrListItem[]> {
-  const ghResult = await execGh(cwd, [
+  const repo = await getOriginRepoSlug(cwd);
+  const args = [
     "pr", "list", "--state", "merged", "--limit", String(limit),
     "--json", "number,title,url,baseRefName,headRefName,state,author,updatedAt",
-  ]);
+  ];
+  if (repo) args.push("--repo", repo);
+  const ghResult = await execGh(cwd, args);
   if (ghResult.code !== 0) return [];
   try {
     const raw = JSON.parse(ghResult.stdout) as Array<{
