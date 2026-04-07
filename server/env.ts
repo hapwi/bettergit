@@ -1,23 +1,48 @@
-import { execFile } from "node:child_process";
+import { execFile, execFileSync } from "node:child_process";
 import { promisify } from "node:util";
 
 export const execFileAsync = promisify(execFile);
 
+// Resolve the user's full shell PATH by running their login shell, matching
+// hapcode's readPathFromLoginShell approach. This catches everything the user
+// has configured in .zshrc/.bashrc (homebrew, nvm, cargo, etc.).
+let resolvedPath: string | null = null;
+
+function readPathFromLoginShell(): string | null {
+  if (process.platform !== "darwin") return null;
+  try {
+    const shell = process.env.SHELL ?? "/bin/zsh";
+    const marker = "__BETTERGIT_PATH__";
+    const output = execFileSync(shell, ["-ilc", `printf '%s' '${marker}'; printenv PATH; printf '%s' '${marker}'`], {
+      encoding: "utf8",
+      timeout: 5_000,
+    });
+    const start = output.indexOf(marker);
+    if (start === -1) return null;
+    const valueStart = start + marker.length;
+    const end = output.indexOf(marker, valueStart);
+    if (end === -1) return null;
+    const pathValue = output.slice(valueStart, end).trim();
+    return pathValue.length > 0 ? pathValue : null;
+  } catch {
+    return null;
+  }
+}
+
+// Called once at server startup
+export function fixPath(): void {
+  if (process.platform !== "darwin") return;
+  const shellPath = readPathFromLoginShell();
+  if (shellPath) {
+    resolvedPath = shellPath;
+    process.env.PATH = shellPath;
+  }
+}
+
 export function getEnvWithPath(): NodeJS.ProcessEnv {
   const env = { ...process.env };
-  if (process.platform === "darwin") {
-    const extraPaths = [
-      "/usr/local/bin",
-      "/opt/homebrew/bin",
-      `${process.env.HOME}/.local/bin`,
-      `${process.env.HOME}/.npm-global/bin`,
-      `${process.env.HOME}/.cargo/bin`,
-    ];
-    const currentPath = env.PATH ?? "";
-    const missing = extraPaths.filter((p) => !currentPath.includes(p));
-    if (missing.length > 0) {
-      env.PATH = [...missing, currentPath].join(":");
-    }
+  if (resolvedPath) {
+    env.PATH = resolvedPath;
   }
   return env;
 }

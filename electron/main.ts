@@ -1,5 +1,6 @@
 import { app, BrowserWindow, dialog, ipcMain, shell } from "electron";
 import path from "node:path";
+import os from "node:os";
 import { spawn, type ChildProcess } from "node:child_process";
 import { createServer } from "node:net";
 
@@ -29,6 +30,9 @@ async function startServer(): Promise<number> {
     : path.join(__dirname, "../dist-server/main.js");
 
   serverProcess = spawn(process.execPath, [serverEntry], {
+    // Match hapcode: in prod, use homedir as cwd so claude CLI can find credentials.
+    // In dev, use the project root.
+    cwd: isDev ? path.join(__dirname, "..") : os.homedir(),
     env: {
       ...process.env,
       ELECTRON_RUN_AS_NODE: "1",
@@ -54,7 +58,7 @@ async function startServer(): Promise<number> {
     });
 
     serverProcess!.stderr!.on("data", (chunk: Buffer) => {
-      console.error("[server]", chunk.toString());
+      process.stderr.write(`[server] ${chunk.toString()}`);
     });
 
     serverProcess!.on("error", (err) => {

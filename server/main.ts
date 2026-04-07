@@ -2,6 +2,12 @@ import http from "node:http";
 import { execGit, execGh, mergePullRequests } from "./git";
 import * as ai from "./ai";
 import { getProjectFavicon } from "./favicon";
+import { fixPath } from "./env";
+
+// Resolve the user's full shell PATH before anything else — macOS GUI apps
+// don't inherit the login shell's PATH, so tools like git, gh, claude won't
+// be found without this. Matches hapcode's os-jank.fixPath().
+fixPath();
 
 const port = parseInt(process.env.BETTERGIT_SERVER_PORT ?? "0", 10);
 const userDataPath = process.env.BETTERGIT_USER_DATA ?? "";
@@ -81,6 +87,7 @@ const server = http.createServer(async (req, res) => {
     json(res, result);
   } catch (err) {
     const message = err instanceof Error ? err.message : "Internal server error";
+    console.error(`[server] ${key} error:`, err instanceof Error ? err.stack ?? err.message : err);
     error(res, message);
   }
 });
