@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { CheckmarkCircle02Icon } from "@hugeicons/core-free-icons";
 import { useQuery } from "@tanstack/react-query";
 import {
@@ -11,6 +11,22 @@ import {
   Settings01Icon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
+import {
+  DndContext,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from "@dnd-kit/core";
+import {
+  SortableContext,
+  sortableKeyboardCoordinates,
+  verticalListSortingStrategy,
+  useSortable,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 import { useAppStore } from "@/store";
 import { gitStatusQueryOptions, gitBranchesQueryOptions, invalidateGitQueries } from "@/lib/git/queries";
 import { cn } from "@/lib/utils";
@@ -33,6 +49,38 @@ import { SettingsDialog } from "@/components/git/SettingsDialog";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 
+function ProjectFavicon({ cwd, fallback }: { cwd: string; fallback: string }) {
+  const [src, setSrc] = useState<string | null>(null);
+  const [error, setError] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    window.electronAPI?.project.favicon(cwd).then((dataUrl) => {
+      if (!cancelled) setSrc(dataUrl);
+    }).catch(() => {
+      if (!cancelled) setError(true);
+    });
+    return () => { cancelled = true; };
+  }, [cwd]);
+
+  if (!src || error) {
+    return (
+      <span className="flex size-6 shrink-0 items-center justify-center rounded-md bg-muted text-[10px] font-bold uppercase text-muted-foreground">
+        {fallback}
+      </span>
+    );
+  }
+
+  return (
+    <img
+      src={src}
+      alt=""
+      className="size-6 shrink-0 rounded-md object-contain"
+      onError={() => setError(true)}
+    />
+  );
+}
+
 function ProjectItem({
   path,
   isActive,
@@ -51,19 +99,34 @@ function ProjectItem({
   const name = path.split("/").pop() ?? "Repository";
   const showStatus = gitBusy || gitResult !== null;
 
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: path });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+    position: "relative" as const,
+    zIndex: isDragging ? 10 : undefined,
+  };
+
   return (
+    <div ref={setNodeRef} style={style}>
     <SidebarMenuItem>
-      <SidebarMenuButton isActive={isActive} onClick={onSelect} className="group/item">
-        <div
-          className={cn(
-            "flex size-6 shrink-0 items-center justify-center rounded-md text-[10px] font-bold uppercase",
-            isActive
-              ? "bg-primary text-primary-foreground"
-              : "bg-muted text-muted-foreground",
-          )}
-        >
-          {name.slice(0, 2)}
-        </div>
+      <SidebarMenuButton
+        isActive={isActive}
+        onClick={onSelect}
+        className="group/item cursor-grab active:cursor-grabbing"
+        {...attributes}
+        {...listeners}
+      >
+        <ProjectFavicon cwd={path} fallback={name.slice(0, 2)} />
         <span className="flex-1 truncate text-sm">{name}</span>
         {showStatus ? (
           <span className="shrink-0">
@@ -95,6 +158,7 @@ function ProjectItem({
         )}
       </SidebarMenuButton>
     </SidebarMenuItem>
+    </div>
   );
 }
 
@@ -103,6 +167,7 @@ export function RepoSidebar() {
   const recentRepos = useAppStore((s) => s.recentRepos);
   const setRepoCwd = useAppStore((s) => s.setRepoCwd);
   const removeRecentRepo = useAppStore((s) => s.removeRecentRepo);
+  const reorderRepos = useAppStore((s) => s.reorderRepos);
   const gitBusyMap = useAppStore((s) => s.gitBusyMap);
   const gitResultMap = useAppStore((s) => s.gitResultMap);
   const queryClient = useQueryClient();
@@ -119,6 +184,21 @@ export function RepoSidebar() {
   const handleOpen = async () => {
     const path = await window.electronAPI?.dialog.openDirectory();
     if (path) setRepoCwd(path);
+  };
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  );
+
+  const handleDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+    const oldIndex = recentRepos.indexOf(active.id as string);
+    const newIndex = recentRepos.indexOf(over.id as string);
+    if (oldIndex !== -1 && newIndex !== -1) {
+      reorderRepos(oldIndex, newIndex);
+    }
   };
 
   const [renameDialogOpen, setRenameDialogOpen] = useState(false);
@@ -272,24 +352,32 @@ export function RepoSidebar() {
         <SidebarGroup>
           <SidebarGroupLabel>Projects</SidebarGroupLabel>
           <SidebarGroupContent>
-            <SidebarMenu>
-              {recentRepos.map((repo) => (
-                <ProjectItem
-                  key={repo}
-                  path={repo}
-                  isActive={repo === repoCwd}
-                  onSelect={() => setRepoCwd(repo)}
-                  onRemove={() => setPendingRemoveRepo(repo)}
-                  gitBusy={gitBusyMap[repo] ?? false}
-                  gitResult={gitResultMap[repo] ?? null}
-                />
-              ))}
-              {recentRepos.length === 0 && (
-                <p className="px-2 py-3 text-center text-xs text-muted-foreground/50">
-                  No projects yet
-                </p>
-              )}
-            </SidebarMenu>
+            <DndContext
+              sensors={sensors}
+              collisionDetection={closestCenter}
+              onDragEnd={handleDragEnd}
+            >
+              <SortableContext items={recentRepos} strategy={verticalListSortingStrategy}>
+                <SidebarMenu>
+                  {recentRepos.map((repo) => (
+                    <ProjectItem
+                      key={repo}
+                      path={repo}
+                      isActive={repo === repoCwd}
+                      onSelect={() => setRepoCwd(repo)}
+                      onRemove={() => setPendingRemoveRepo(repo)}
+                      gitBusy={gitBusyMap[repo] ?? false}
+                      gitResult={gitResultMap[repo] ?? null}
+                    />
+                  ))}
+                  {recentRepos.length === 0 && (
+                    <p className="px-2 py-3 text-center text-xs text-muted-foreground/50">
+                      No projects yet
+                    </p>
+                  )}
+                </SidebarMenu>
+              </SortableContext>
+            </DndContext>
           </SidebarGroupContent>
         </SidebarGroup>
       </SidebarContent>

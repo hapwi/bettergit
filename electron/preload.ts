@@ -48,9 +48,27 @@ interface BranchNameResult {
   branch: string;
 }
 
+interface MergePullRequestsInput {
+  cwd: string;
+  scope: "current" | "stack";
+  prs: Array<{
+    number: number;
+    headBranch: string;
+    baseBranch: string;
+  }>;
+}
+
+interface MergePullRequestsResult {
+  merged: number[];
+  finalBranch: string | null;
+  error: string | null;
+}
+
 contextBridge.exposeInMainWorld("electronAPI", {
   git: {
     exec: (input: ExecInput): Promise<ExecResult> => ipcRenderer.invoke("git:exec", input),
+    mergePullRequests: (input: MergePullRequestsInput): Promise<MergePullRequestsResult> =>
+      ipcRenderer.invoke("git:mergePullRequests", input),
   },
   gh: {
     exec: (input: ExecInput): Promise<ExecResult> => ipcRenderer.invoke("gh:exec", input),
@@ -71,6 +89,9 @@ contextBridge.exposeInMainWorld("electronAPI", {
     setModel: (model: string): Promise<void> => ipcRenderer.invoke("ai:setModel", model),
     getModel: (): Promise<string> => ipcRenderer.invoke("ai:getModel"),
     checkCli: (cli: string): Promise<boolean> => ipcRenderer.invoke("ai:checkCli", cli),
+  },
+  project: {
+    favicon: (cwd: string): Promise<string | null> => ipcRenderer.invoke("project:favicon", cwd),
   },
   platform: process.platform,
 });
