@@ -104,8 +104,26 @@ export async function deleteBranch(
   branch: string,
   force = false,
 ): Promise<void> {
+  // Handle remote tracking branches (origin/*)
+  if (branch.startsWith("origin/")) {
+    const remoteBranch = branch.replace(/^origin\//, "");
+    await execGit(cwd, ["push", "origin", "--delete", remoteBranch]);
+    await execGit(cwd, ["fetch", "--prune", "origin"]);
+    return;
+  }
+
+  // Delete local branch
   requireSuccess(
-    await execGit(cwd, ["branch", force ? "-D" : "-d", branch]),
+    await execGit(cwd, ["branch", force ? "-D" : "-d", "--", branch]),
     `delete branch ${branch}`,
   );
+
+  // Also delete the remote branch if it exists
+  const remoteCheck = await execGit(cwd, ["ls-remote", "--heads", "origin", branch]);
+  if (remoteCheck.code === 0 && remoteCheck.stdout.trim()) {
+    await execGit(cwd, ["push", "origin", "--delete", branch]);
+  }
+
+  // Prune stale remote tracking refs
+  await execGit(cwd, ["fetch", "--prune", "origin"]);
 }

@@ -417,25 +417,52 @@ export function GitPanel() {
 
   const handleMerge = useCallback(async () => {
     if (!repoCwd || !mergeDialogScope) return;
+    const actionCwd = repoCwd;
+    actionRepoRef.current = actionCwd;
     setMergeDialogScope(null);
     setIsBusy(true);
     setNotice(null);
     setProgressTitle(mergeDialogScope === "stack" ? "Merging stack..." : "Merging PR...");
     try {
-      const ref = gitStatus?.pr?.number?.toString();
+      const pr = gitStatus?.pr;
+      const ref = pr?.number?.toString();
       if (!ref) throw new Error("No PR to merge");
-      const branchName = gitStatus?.pr?.headBranch ?? gitStatus?.branch ?? "";
-      const isProtected = ["main", "master", "pre-release"].includes(branchName);
-      await mergePullRequest(repoCwd, ref, "squash", !isProtected);
-      setNotice({ type: "success", message: `Merged PR #${ref}` });
+      const headBranch = pr?.headBranch ?? gitStatus?.branch ?? "";
+      const baseBranch = pr?.baseBranch ?? "main";
+      const isProtected = ["main", "master", "pre-release"].includes(headBranch);
+
+      // Merge via gh (--delete-branch handles remote cleanup for non-protected)
+      await mergePullRequest(actionCwd, ref, "squash", !isProtected);
+
+      // Sync remote state
+      await execGit(actionCwd, ["fetch", "--quiet", "--prune", "origin"]);
+
+      // Checkout the base branch
+      if (!isProtected) {
+        try {
+          await execGit(actionCwd, ["checkout", baseBranch]);
+        } catch { /* may already be on it */ }
+
+        // Delete local branch if it still exists and isn't protected
+        try {
+          await execGit(actionCwd, ["branch", "-D", "--", headBranch]);
+        } catch { /* already deleted or checked out */ }
+      }
+
+      // Pull base branch to sync
+      await execGit(actionCwd, ["pull", "--ff-only"]).catch(() => {});
+
+      guardedSetNotice({ type: "success", message: `Merged PR #${ref}` });
+      flashGitResult(actionCwd, "success");
     } catch (err) {
-      setNotice({ type: "error", message: err instanceof Error ? err.message : "Merge failed." });
+      guardedSetNotice({ type: "error", message: err instanceof Error ? err.message : "Merge failed." });
+      flashGitResult(actionCwd, "error");
     } finally {
       setIsBusy(false);
       setProgressTitle(null);
       void invalidateGitQueries(queryClient);
     }
-  }, [repoCwd, mergeDialogScope, gitStatus?.pr?.number, queryClient]);
+  }, [repoCwd, mergeDialogScope, gitStatus?.pr?.number, gitStatus?.pr?.headBranch, gitStatus?.pr?.baseBranch, gitStatus?.branch, queryClient, flashGitResult]);
 
   const isPreReleaseBranch = gitStatus?.branch === "pre-release";
   const hasExistingReleasePr = prStack.some(
