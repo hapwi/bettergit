@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "vite",
     "dev:electron": "bun run build:electron && concurrently \"vite\" \"wait-on http://localhost:5173 && node scripts/dev-electron.mjs\"",
-    "build:electron": "tsc -p electron/tsconfig.json",
+    "build:electron": "node scripts/build-electron.mjs --force",
     "build": "tsc -b && vite build && bun run build:electron",
     "start": "bun run build && electron .",
     "lint": "eslint .",

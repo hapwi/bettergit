@@ -1,12 +1,7 @@
 /**
- * AI text generation — commit messages, PR content, branch names via Claude CLI.
+ * AI text generation via the bettergit server.
  */
-
-function getAPI() {
-  const api = window.electronAPI;
-  if (!api) throw new Error("Electron API not available");
-  return api;
-}
+import { serverFetch } from "../server";
 
 export interface CommitMessageResult {
   subject: string;
@@ -30,7 +25,7 @@ export async function generateCommitMessage(input: {
   stagedPatch: string;
   includeBranch?: boolean;
 }): Promise<CommitMessageResult> {
-  return getAPI().ai.generateCommitMessage(input);
+  return serverFetch("/api/ai/commit-msg", input);
 }
 
 export async function generatePrContent(input: {
@@ -41,11 +36,11 @@ export async function generatePrContent(input: {
   diffSummary: string;
   diffPatch: string;
 }): Promise<PrContentResult> {
-  return getAPI().ai.generatePrContent(input);
+  return serverFetch("/api/ai/pr-content", input);
 }
 
 export async function generateBranchName(input: {
   message: string;
 }): Promise<BranchNameResult> {
-  return getAPI().ai.generateBranchName(input);
+  return serverFetch("/api/ai/branch-name", input);
 }

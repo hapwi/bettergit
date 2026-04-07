@@ -367,8 +367,9 @@ export function GitPanel() {
         prsToMerge = [{ number: pr.number, headBranch: pr.headBranch, baseBranch: pr.baseBranch }];
       }
 
-      // Delegate to main process — survives Vite HMR reloads
-      const result = await window.electronAPI!.git.mergePullRequests({
+      // Delegate to server process — survives Vite HMR reloads
+      const { serverFetch } = await import("@/lib/server");
+      const result = await serverFetch<{ merged: number[]; finalBranch: string | null; error: string | null }>("/api/git/merge-prs", {
         cwd: actionCwd,
         scope,
         prs: prsToMerge,

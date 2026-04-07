@@ -1,6 +1,7 @@
 /**
- * Low-level git/gh command execution via Electron IPC.
+ * Low-level git/gh command execution via the bettergit server.
  */
+import { serverFetch } from "../server";
 
 export interface ExecResult {
   code: number;
@@ -8,18 +9,12 @@ export interface ExecResult {
   stderr: string;
 }
 
-function getAPI() {
-  const api = window.electronAPI;
-  if (!api) throw new Error("Electron API not available — running outside Electron?");
-  return api;
-}
-
 export async function execGit(
   cwd: string,
   args: string[],
   timeoutMs?: number,
 ): Promise<ExecResult> {
-  return getAPI().git.exec({ cwd, args, timeoutMs });
+  return serverFetch("/api/git/exec", { cwd, args, timeoutMs });
 }
 
 export async function execGh(
@@ -27,7 +22,7 @@ export async function execGh(
   args: string[],
   timeoutMs?: number,
 ): Promise<ExecResult> {
-  return getAPI().gh.exec({ cwd, args, timeoutMs });
+  return serverFetch("/api/gh/exec", { cwd, args, timeoutMs });
 }
 
 export function requireSuccess(result: ExecResult, operation: string): string {

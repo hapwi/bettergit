@@ -74,7 +74,7 @@ export function SettingsDialog({
     setServices(initial);
 
     const cwd = repoCwd ?? ".";
-    const api = window.electronAPI;
+    const { serverFetch } = await import("@/lib/server");
 
     // GitHub CLI
     let gh: ServiceStatus;
@@ -99,7 +99,7 @@ export function SettingsDialog({
     // Claude Code CLI
     let claude: ServiceStatus;
     try {
-      const available = await api?.ai.checkCli("claude");
+      const { available } = await serverFetch<{ available: boolean }>("/api/ai/check-cli?cli=claude");
       claude = {
         label: "Claude Code",
         status: available ? "connected" : "disconnected",
@@ -113,7 +113,7 @@ export function SettingsDialog({
     // Codex CLI
     let codex: ServiceStatus;
     try {
-      const available = await api?.ai.checkCli("codex");
+      const { available } = await serverFetch<{ available: boolean }>("/api/ai/check-cli?cli=codex");
       codex = {
         label: "Codex",
         status: available ? "connected" : "disconnected",
@@ -136,7 +136,9 @@ export function SettingsDialog({
     }
 
     // Load model
-    window.electronAPI?.ai.getModel().then(setSelectedModel).catch(() => {});
+    import("@/lib/server").then(({ serverFetch }) =>
+      serverFetch<{ model: string }>("/api/ai/model").then((res) => setSelectedModel(res.model)),
+    ).catch(() => {});
 
     // Only check connections once per session (or if no cache)
     if (!checkedRef.current || !cachedServices) {
@@ -147,7 +149,9 @@ export function SettingsDialog({
 
   const handleModelChange = (model: string) => {
     setSelectedModel(model);
-    void window.electronAPI?.ai.setModel(model);
+    void import("@/lib/server").then(({ serverFetch }) =>
+      serverFetch("/api/ai/set-model", { model }),
+    );
   };
 
   const claudeModels = AI_MODELS.filter((m) => m.group === "Claude");
