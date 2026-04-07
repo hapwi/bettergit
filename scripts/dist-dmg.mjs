@@ -9,7 +9,15 @@
  * 4. Copies artifacts to release/
  */
 
-import { mkdtempSync, mkdirSync, cpSync, writeFileSync, readdirSync, statSync, copyFileSync } from "node:fs";
+import {
+  mkdtempSync,
+  mkdirSync,
+  cpSync,
+  writeFileSync,
+  readdirSync,
+  statSync,
+  copyFileSync,
+} from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { execSync } from "node:child_process";
@@ -22,7 +30,9 @@ const version = pkg.version ?? "0.0.1";
 // 1. Create staging directory
 const stageRoot = mkdtempSync(join(tmpdir(), "bettergit-dist-"));
 const stageApp = join(stageRoot, "app");
+const stageTmp = join(stageRoot, "tmp");
 mkdirSync(stageApp, { recursive: true });
+mkdirSync(stageTmp, { recursive: true });
 
 console.log(`[dist] Staging in ${stageApp}`);
 
@@ -65,13 +75,37 @@ const stagePackage = {
 
 writeFileSync(join(stageApp, "package.json"), JSON.stringify(stagePackage, null, 2) + "\n");
 
+const buildEnv = { ...process.env };
+for (const [key, value] of Object.entries(buildEnv)) {
+  if (value === "") {
+    delete buildEnv[key];
+  }
+}
+
+// Keep Bun/electron-builder inside a known-writable temp dir during staging.
+buildEnv.TMPDIR = stageTmp;
+buildEnv.TEMP = stageTmp;
+buildEnv.TMP = stageTmp;
+buildEnv.BUN_TMPDIR = stageTmp;
+
+// Match hapcode's unsigned build path so existing signing env vars don't leak in.
+buildEnv.CSC_IDENTITY_AUTO_DISCOVERY = "false";
+delete buildEnv.CSC_LINK;
+delete buildEnv.CSC_KEY_PASSWORD;
+delete buildEnv.APPLE_API_KEY;
+delete buildEnv.APPLE_API_KEY_ID;
+delete buildEnv.APPLE_API_ISSUER;
+
 // 4. Install electron in staging dir
 console.log("[dist] Installing electron in staging dir...");
-execSync("bun install --production", { cwd: stageApp, stdio: "inherit" });
+execSync("bun install --production", {
+  cwd: stageApp,
+  stdio: "inherit",
+  env: buildEnv,
+});
 
-// 5. Run electron-builder with signing disabled (like hapcode does for unsigned builds)
+// 5. Run electron-builder with the same unsigned-build environment.
 console.log(`[dist] Building DMG (version=${version}, arch=arm64)...`);
-const buildEnv = { ...process.env, CSC_IDENTITY_AUTO_DISCOVERY: "false" };
 execSync("bunx electron-builder --mac --arm64 --publish never", {
   cwd: stageApp,
   stdio: "inherit",
