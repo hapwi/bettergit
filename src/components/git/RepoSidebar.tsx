@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { execGit } from "@/lib/git/exec";
 import { CheckmarkCircle02Icon } from "@hugeicons/core-free-icons";
 import { useQuery } from "@tanstack/react-query";
 import {
@@ -55,9 +56,11 @@ function ProjectFavicon({ cwd, fallback }: { cwd: string; fallback: string }) {
 
   useEffect(() => {
     let cancelled = false;
-    window.electronAPI?.project.favicon(cwd).then((dataUrl) => {
-      if (!cancelled) setSrc(dataUrl);
-    }).catch(() => {
+    import("@/lib/server").then(({ serverFetch }) =>
+      serverFetch<{ favicon: string | null }>("/api/project/favicon", { cwd }).then((res) => {
+        if (!cancelled) setSrc(res.favicon);
+      }),
+    ).catch(() => {
       if (!cancelled) setError(true);
     });
     return () => { cancelled = true; };
@@ -206,17 +209,13 @@ export function RepoSidebar() {
   const [pendingRemoveRepo, setPendingRemoveRepo] = useState<string | null>(null);
 
   const doRenameMasterToMain = async () => {
-    if (!repoCwd || !window.electronAPI) return;
+    if (!repoCwd) return;
 
     try {
-      // Rename local branch
-      await window.electronAPI.git.exec({ cwd: repoCwd, args: ["branch", "-m", "master", "main"] });
-      // Push new branch name
-      await window.electronAPI.git.exec({ cwd: repoCwd, args: ["push", "-u", "origin", "main"] });
-      // Set remote HEAD
-      await window.electronAPI.git.exec({ cwd: repoCwd, args: ["remote", "set-head", "origin", "main"] });
-      // Delete old remote branch
-      await window.electronAPI.git.exec({ cwd: repoCwd, args: ["push", "origin", "--delete", "master"] });
+      await execGit(repoCwd, ["branch", "-m", "master", "main"]);
+      await execGit(repoCwd, ["push", "-u", "origin", "main"]);
+      await execGit(repoCwd, ["remote", "set-head", "origin", "main"]);
+      await execGit(repoCwd, ["push", "origin", "--delete", "master"]);
       toast.success("Renamed master to main (local + remote)");
       void invalidateGitQueries(queryClient);
     } catch (err) {
@@ -296,23 +295,13 @@ export function RepoSidebar() {
                       size="sm"
                       className="mt-1 h-6 w-full justify-center text-[11px] text-amber-500 hover:text-amber-400"
                       onClick={async () => {
-                        if (!repoCwd || !window.electronAPI) return;
+                        if (!repoCwd) return;
                         try {
-                          await window.electronAPI.git.exec({
-                            cwd: repoCwd,
-                            args: ["checkout", "-b", "pre-release"],
-                          });
-                          // Push to remote if origin exists
-                          const remoteCheck = await window.electronAPI.git.exec({
-                            cwd: repoCwd,
-                            args: ["remote"],
-                          });
+                          await execGit(repoCwd, ["checkout", "-b", "pre-release"]);
+                          const remoteCheck = await execGit(repoCwd, ["remote"]);
                           const hasOrigin = remoteCheck.stdout.split("\n").some((r: string) => r.trim() === "origin");
                           if (hasOrigin) {
-                            await window.electronAPI.git.exec({
-                              cwd: repoCwd,
-                              args: ["push", "-u", "origin", "pre-release"],
-                            });
+                            await execGit(repoCwd, ["push", "-u", "origin", "pre-release"]);
                           }
                           toast.success("Created pre-release branch");
                           void invalidateGitQueries(queryClient);
