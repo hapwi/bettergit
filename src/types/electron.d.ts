@@ -59,6 +59,9 @@ interface ElectronAPI {
   shell: {
     openExternal: (url: string) => Promise<void>;
   };
+  project: {
+    favicon: (cwd: string) => Promise<string | null>;
+  };
   ai: {
     generateCommitMessage: (input: CommitMessageInput) => Promise<CommitMessageResult>;
     generatePrContent: (input: PrContentInput) => Promise<PrContentResult>;

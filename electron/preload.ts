@@ -72,5 +72,8 @@ contextBridge.exposeInMainWorld("electronAPI", {
     getModel: (): Promise<string> => ipcRenderer.invoke("ai:getModel"),
     checkCli: (cli: string): Promise<boolean> => ipcRenderer.invoke("ai:checkCli", cli),
   },
+  project: {
+    favicon: (cwd: string): Promise<string | null> => ipcRenderer.invoke("project:favicon", cwd),
+  },
   platform: process.platform,
 });

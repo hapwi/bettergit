@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { CheckmarkCircle02Icon } from "@hugeicons/core-free-icons";
 import { useQuery } from "@tanstack/react-query";
 import {
@@ -33,6 +33,38 @@ import { SettingsDialog } from "@/components/git/SettingsDialog";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 
+function ProjectFavicon({ cwd, fallback }: { cwd: string; fallback: string }) {
+  const [src, setSrc] = useState<string | null>(null);
+  const [error, setError] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    window.electronAPI?.project.favicon(cwd).then((dataUrl) => {
+      if (!cancelled) setSrc(dataUrl);
+    }).catch(() => {
+      if (!cancelled) setError(true);
+    });
+    return () => { cancelled = true; };
+  }, [cwd]);
+
+  if (!src || error) {
+    return (
+      <span className="flex size-6 shrink-0 items-center justify-center rounded-md bg-muted text-[10px] font-bold uppercase text-muted-foreground">
+        {fallback}
+      </span>
+    );
+  }
+
+  return (
+    <img
+      src={src}
+      alt=""
+      className="size-6 shrink-0 rounded-md object-contain"
+      onError={() => setError(true)}
+    />
+  );
+}
+
 function ProjectItem({
   path,
   isActive,
@@ -54,16 +86,7 @@ function ProjectItem({
   return (
     <SidebarMenuItem>
       <SidebarMenuButton isActive={isActive} onClick={onSelect} className="group/item">
-        <div
-          className={cn(
-            "flex size-6 shrink-0 items-center justify-center rounded-md text-[10px] font-bold uppercase",
-            isActive
-              ? "bg-primary text-primary-foreground"
-              : "bg-muted text-muted-foreground",
-          )}
-        >
-          {name.slice(0, 2)}
-        </div>
+        <ProjectFavicon cwd={path} fallback={name.slice(0, 2)} />
         <span className="flex-1 truncate text-sm">{name}</span>
         {showStatus ? (
           <span className="shrink-0">
