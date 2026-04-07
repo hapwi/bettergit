@@ -121,7 +121,7 @@ function AppContent() {
   return (
     <>
       <Toolbar activeTab={activeTab} onTabChange={setActiveTab} />
-      <main className="flex-1 overflow-hidden pt-[52px]">
+      <main className="flex min-h-0 flex-1 flex-col overflow-hidden pt-[52px]">
         {activeTab === "dashboard" && <Dashboard />}
         {activeTab === "git" && <GitPanel />}
       </main>

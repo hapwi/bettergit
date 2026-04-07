@@ -16,13 +16,17 @@ export async function listOpenPullRequests(
   cwd: string,
   headBranch: string,
 ): Promise<PullRequestSummary[]> {
+  // Get current GitHub username to filter out upstream PRs on forks
+  const userResult = await execGh(cwd, ["api", "user", "--jq", ".login"]);
+  const currentUser = userResult.code === 0 ? userResult.stdout.trim() : "";
+
   const args = [
     "pr",
     "list",
     "--state",
     "open",
     "--json",
-    "number,title,url,baseRefName,headRefName,state",
+    "number,title,url,baseRefName,headRefName,state,headRepositoryOwner",
     "--limit",
     "20",
   ];
@@ -40,15 +44,18 @@ export async function listOpenPullRequests(
       baseRefName: string;
       headRefName: string;
       state: string;
+      headRepositoryOwner?: { login: string };
     }>;
-    return raw.map((pr) => ({
-      number: pr.number,
-      title: pr.title,
-      url: pr.url,
-      baseBranch: pr.baseRefName,
-      headBranch: pr.headRefName,
-      state: pr.state === "MERGED" ? "merged" : pr.state === "CLOSED" ? "closed" : "open",
-    }));
+    return raw
+      .filter((pr) => !currentUser || !pr.headRepositoryOwner || pr.headRepositoryOwner.login === currentUser)
+      .map((pr) => ({
+        number: pr.number,
+        title: pr.title,
+        url: pr.url,
+        baseBranch: pr.baseRefName,
+        headBranch: pr.headRefName,
+        state: pr.state === "MERGED" ? "merged" : pr.state === "CLOSED" ? "closed" : "open",
+      }));
   } catch {
     return [];
   }

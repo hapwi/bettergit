@@ -339,10 +339,10 @@ ipcMain.handle(
       `Branch: ${input.branch ?? "(detached)"}`,
       "",
       "Staged files:",
-      limitSection(input.stagedSummary, 6_000),
+      limitSection(input.stagedSummary, 3_000),
       "",
       "Staged patch:",
-      limitSection(input.stagedPatch, 40_000),
+      limitSection(input.stagedPatch, 8_000),
     ].join("\n");
 
     const text = await runAi(prompt);
@@ -386,13 +386,13 @@ ipcMain.handle(
       `Head branch: ${input.headBranch}`,
       "",
       "Commits:",
-      limitSection(input.commitSummary, 8_000),
+      limitSection(input.commitSummary, 3_000),
       "",
       "Diff stat:",
-      limitSection(input.diffSummary, 8_000),
+      limitSection(input.diffSummary, 3_000),
       "",
       "Diff patch:",
-      limitSection(input.diffPatch, 20_000),
+      limitSection(input.diffPatch, 8_000),
     ].join("\n");
 
     const text = await runAi(prompt);
