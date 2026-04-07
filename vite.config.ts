@@ -13,4 +13,11 @@ export default defineConfig({
   },
   // Build for Electron — use relative paths so file:// loading works
   base: "./",
+  // Prevent full-page reloads when git operations (checkout, pull) modify
+  // non-source files in the project root during merge flows.
+  server: {
+    watch: {
+      ignored: ["**/package.json", "**/package-lock.json"],
+    },
+  },
 })
