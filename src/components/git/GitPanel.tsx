@@ -382,40 +382,19 @@ export function GitPanel() {
 
       const label = result.merged.map((n) => `#${n}`).join(", ");
 
-      // Create version tag if requested
+      // Version bump: update package.json, commit, tag, push — all on server
       if (versionBump) {
-        guardedSetProgressTitle("Creating version tag...");
+        guardedSetProgressTitle("Bumping version...");
         try {
-          await execGit(actionCwd, ["fetch", "--tags", "--quiet", "origin"]);
-          const tagListResult = await execGit(actionCwd, ["tag", "--sort=-v:refname", "-l", "v*"]);
-          const tags = tagListResult.stdout.trim().split("\n").filter(Boolean);
-          let current = { major: 0, minor: 0, patch: 0 };
-          let foundTag = false;
-          for (const t of tags) {
-            const m = t.replace(/^v/, "").match(/^(\d+)\.(\d+)\.(\d+)/);
-            if (m) { current = { major: +m[1], minor: +m[2], patch: +m[3] }; foundTag = true; break; }
-          }
-          if (!foundTag) {
-            const pkgResult = await execGit(actionCwd, ["show", "HEAD:package.json"]);
-            if (pkgResult.code === 0) {
-              try {
-                const pkg = JSON.parse(pkgResult.stdout) as { version?: string };
-                const m = pkg.version?.match(/^(\d+)\.(\d+)\.(\d+)/);
-                if (m) current = { major: +m[1], minor: +m[2], patch: +m[3] };
-              } catch { /* ignore */ }
-            }
-          }
-          const bumped = versionBump === "major"
-            ? { major: current.major + 1, minor: 0, patch: 0 }
-            : versionBump === "minor"
-              ? { major: current.major, minor: current.minor + 1, patch: 0 }
-              : { major: current.major, minor: current.minor, patch: current.patch + 1 };
-          const tag = `v${bumped.major}.${bumped.minor}.${bumped.patch}`;
-          await execGit(actionCwd, ["tag", tag]);
-          await execGit(actionCwd, ["push", "origin", tag]);
-          guardedSetNotice({ type: "success", message: `Merged ${label} · Tagged ${tag}` });
+          const { serverFetch: sf } = await import("@/lib/server");
+          const bump = await sf<{ tag: string; version: string; error: string | null }>("/api/git/version-bump", {
+            cwd: actionCwd,
+            bump: versionBump,
+          });
+          if (bump.error) throw new Error(bump.error);
+          guardedSetNotice({ type: "success", message: `Merged ${label} · Released ${bump.tag}` });
         } catch {
-          guardedSetNotice({ type: "success", message: `Merged ${label} (tag creation failed)` });
+          guardedSetNotice({ type: "success", message: `Merged ${label} (version bump failed)` });
         }
       } else {
         guardedSetNotice({ type: "success", message: `Merged ${label}` });
