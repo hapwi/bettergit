@@ -12,6 +12,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import type { Branch } from "@/lib/git/branches";
 
 interface SwitchBranchDialogProps {
@@ -32,6 +33,7 @@ export function SwitchBranchDialog({
   onDelete,
 }: SwitchBranchDialogProps) {
   const [filter, setFilter] = useState("");
+  const [confirmDeleteBranch, setConfirmDeleteBranch] = useState<string | null>(null);
 
   const switchable = useMemo(() => {
     const local = branches.filter((b) => !b.current && !b.isRemote);
@@ -95,13 +97,19 @@ export function SwitchBranchDialog({
                       <Badge variant="outline" className="ml-auto shrink-0">remote</Badge>
                     )}
                   </button>
-                  {!branch.isDefault && !branch.current && !["main", "master", "pre-release"].includes(branch.name) && (
+                  {!branch.isDefault && !branch.current && !["main", "master"].includes(branch.name) && (
                     <Button
                       size="sm"
                       variant="ghost"
                       className="shrink-0 text-muted-foreground opacity-0 hover:text-destructive group-hover:opacity-100"
                       disabled={isBusy}
-                      onClick={() => onDelete(branch.name)}
+                      onClick={() => {
+                        if (branch.name === "pre-release") {
+                          setConfirmDeleteBranch(branch.name);
+                        } else {
+                          onDelete(branch.name);
+                        }
+                      }}
                     >
                       Delete
                     </Button>
@@ -118,6 +126,19 @@ export function SwitchBranchDialog({
           </Button>
         </DialogFooter>
       </DialogContent>
+
+      <ConfirmDialog
+        open={confirmDeleteBranch !== null}
+        onOpenChange={(v) => { if (!v) setConfirmDeleteBranch(null); }}
+        title="Delete pre-release branch"
+        description="This will delete the pre-release branch locally and on the remote. You'll need to set it up again. Are you sure?"
+        confirmLabel="Delete"
+        variant="destructive"
+        onConfirm={() => {
+          if (confirmDeleteBranch) onDelete(confirmDeleteBranch);
+          setConfirmDeleteBranch(null);
+        }}
+      />
     </Dialog>
   );
 }
