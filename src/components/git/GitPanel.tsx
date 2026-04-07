@@ -477,21 +477,20 @@ export function GitPanel() {
   );
 
   // Check if pre-release is ahead of main (has commits to release)
-  const [preReleaseAhead, setPreReleaseAhead] = useState(false);
-  useEffect(() => {
-    if (!isPreReleaseBranch || !repoCwd) {
-      setPreReleaseAhead(false);
-      return;
-    }
-    const mainExists = branches.some((b) => b.name === "main" || b.name === "origin/main");
-    const target = mainExists ? "main" : "master";
-    execGit(repoCwd, ["rev-list", "--count", `${target}..pre-release`])
-      .then((result) => {
-        const count = parseInt(result.stdout.trim(), 10);
-        setPreReleaseAhead(count > 0);
-      })
-      .catch(() => setPreReleaseAhead(false));
-  }, [isPreReleaseBranch, repoCwd, branches]);
+  const { data: preReleaseAhead = false } = useQuery({
+    queryKey: ["git", "pre-release-ahead", repoCwd],
+    queryFn: async () => {
+      if (!repoCwd) return false;
+      const mainExists = branches.some((b) => b.name === "main" || b.name === "origin/main");
+      const target = mainExists ? "main" : "master";
+      const result = await execGit(repoCwd, ["rev-list", "--count", `${target}..pre-release`]);
+      if (result.code !== 0) return false;
+      return parseInt(result.stdout.trim(), 10) > 0;
+    },
+    enabled: isPreReleaseBranch && repoCwd !== null,
+    staleTime: 5_000,
+    refetchInterval: 10_000,
+  });
 
   const handleCreateReleasePr = useCallback(async () => {
     if (!repoCwd) return;
