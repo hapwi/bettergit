@@ -32,10 +32,12 @@ export interface MergePullRequestsInput {
     headBranch: string;
     baseBranch: string;
   }>;
+  versionBump?: "patch" | "minor" | "major" | null;
 }
 
 export interface MergePullRequestsResult {
   merged: number[];
+  tag: string | null;
   finalBranch: string | null;
   error: string | null;
 }
@@ -125,39 +127,56 @@ export interface VersionBumpResult {
   error: string | null;
 }
 
-export async function versionBump(input: VersionBumpInput): Promise<VersionBumpResult> {
-  const { cwd, bump } = input;
+/**
+ * Compute the bumped version string from the current package.json.
+ */
+async function computeBumpedVersion(cwd: string, bump: "patch" | "minor" | "major") {
   const pkgPath = path.join(cwd, "package.json");
+  const raw = await fs.readFile(pkgPath, "utf-8");
+  const pkg = JSON.parse(raw) as { version?: string };
+  const current = pkg.version ?? "0.0.0";
+  const m = current.match(/^(\d+)\.(\d+)\.(\d+)/);
+  if (!m) throw new Error(`Invalid version in package.json: ${current}`);
 
+  let [major, minor, patch] = [+m[1], +m[2], +m[3]];
+  if (bump === "major") { major++; minor = 0; patch = 0; }
+  else if (bump === "minor") { minor++; patch = 0; }
+  else { patch++; }
+
+  const newVersion = `${major}.${minor}.${patch}`;
+  return { raw, pkgPath, newVersion, tag: `v${newVersion}` };
+}
+
+/**
+ * Update package.json, commit, and push — used on the head branch before merge
+ * so the version bump is part of the PR content.
+ */
+async function commitVersionBump(cwd: string, bump: "patch" | "minor" | "major") {
+  const { raw, pkgPath, newVersion, tag } = await computeBumpedVersion(cwd, bump);
+  const updated = raw.replace(/"version"\s*:\s*"[^"]*"/, `"version": "${newVersion}"`);
+  await fs.writeFile(pkgPath, updated, "utf-8");
+  requireOk(await gitRun(cwd, ["add", "package.json"]), "stage package.json");
+  requireOk(await gitRun(cwd, ["commit", "-m", `chore: bump version to ${tag}`]), "version commit");
+  requireOk(await gitRun(cwd, ["push", "origin", "HEAD"]), "push version bump");
+  return tag;
+}
+
+/**
+ * Create a git tag on the current commit and push it.
+ */
+async function createAndPushTag(cwd: string, tag: string) {
+  requireOk(await gitRun(cwd, ["tag", tag]), "create tag");
+  requireOk(await gitRun(cwd, ["push", "origin", tag]), "push tag");
+}
+
+/**
+ * Full standalone version bump — update package.json, commit, tag, push.
+ */
+export async function versionBump(input: VersionBumpInput): Promise<VersionBumpResult> {
   try {
-    const raw = await fs.readFile(pkgPath, "utf-8");
-    const pkg = JSON.parse(raw) as { version?: string };
-    const current = pkg.version ?? "0.0.0";
-    const m = current.match(/^(\d+)\.(\d+)\.(\d+)/);
-    if (!m) throw new Error(`Invalid version in package.json: ${current}`);
-
-    let [major, minor, patch] = [+m[1], +m[2], +m[3]];
-    if (bump === "major") { major++; minor = 0; patch = 0; }
-    else if (bump === "minor") { minor++; patch = 0; }
-    else { patch++; }
-
-    const newVersion = `${major}.${minor}.${patch}`;
-    const tag = `v${newVersion}`;
-
-    // Update package.json preserving formatting
-    const updated = raw.replace(
-      /"version"\s*:\s*"[^"]*"/,
-      `"version": "${newVersion}"`,
-    );
-    await fs.writeFile(pkgPath, updated, "utf-8");
-
-    // Commit, tag, push
-    requireOk(await gitRun(cwd, ["add", "package.json"]), "stage package.json");
-    requireOk(await gitRun(cwd, ["commit", "-m", `chore: bump version to ${tag}`]), "version commit");
-    requireOk(await gitRun(cwd, ["tag", tag]), "create tag");
-    requireOk(await gitRun(cwd, ["push", "origin", "HEAD", tag]), "push tag");
-
-    return { tag, version: newVersion, error: null };
+    const tag = await commitVersionBump(input.cwd, input.bump);
+    await createAndPushTag(input.cwd, tag);
+    return { tag, version: tag.slice(1), error: null };
   } catch (err) {
     return { tag: "", version: "", error: err instanceof Error ? err.message : "Version bump failed." };
   }
@@ -340,14 +359,38 @@ export async function mergePullRequests(input: MergePullRequestsInput): Promise<
     }
   }
 
+  let tag: string | null = null;
+
   try {
+    // Version bump: commit to the head branch BEFORE merge so it's part of
+    // the PR content. After merge, tag the resulting commit on main.
+    if (input.versionBump && prs.length > 0) {
+      try {
+        const headBranch = prs[prs.length - 1].headBranch;
+        await gitRun(cwd, ["checkout", headBranch]);
+        await gitRun(cwd, ["pull", "--ff-only"]).catch(() => {});
+        tag = await commitVersionBump(cwd, input.versionBump);
+      } catch { /* version bump is best-effort */ }
+    }
+
     await mergeLoop();
+
+    // Tag the merge commit on the base branch
+    if (tag) {
+      try {
+        await gitRun(cwd, ["checkout", mergeBaseBranch]);
+        await gitRun(cwd, ["pull", "--ff-only"]).catch(() => {});
+        await createAndPushTag(cwd, tag);
+      } catch { /* tagging is best-effort */ }
+    }
+
     await finalize();
-    return { merged: merged.map((m) => m.number), finalBranch, error: null };
+    return { merged: merged.map((m) => m.number), tag, finalBranch, error: null };
   } catch (err) {
     try { await finalize(); } catch { /* ignore cleanup errors */ }
     return {
       merged: merged.map((m) => m.number),
+      tag,
       finalBranch,
       error: err instanceof Error ? err.message : "Merge failed.",
     };
