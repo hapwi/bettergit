@@ -16,18 +16,20 @@ export async function listOpenPullRequests(
   cwd: string,
   headBranch: string,
 ): Promise<PullRequestSummary[]> {
-  const result = await execGh(cwd, [
+  const args = [
     "pr",
     "list",
-    "--head",
-    headBranch,
     "--state",
     "open",
     "--json",
     "number,title,url,baseRefName,headRefName,state",
     "--limit",
     "20",
-  ]);
+  ];
+  if (headBranch) {
+    args.push("--head", headBranch);
+  }
+  const result = await execGh(cwd, args);
   if (result.code !== 0) return [];
 
   try {

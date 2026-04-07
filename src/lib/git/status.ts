@@ -150,19 +150,20 @@ export async function getStatus(cwd: string): Promise<GitStatus> {
   const totalInsertions = files.reduce((sum, f) => sum + f.insertions, 0);
   const totalDeletions = files.reduce((sum, f) => sum + f.deletions, 0);
 
-  // Fetch PR info if we have a branch
+  // Fetch PR info — current branch PR + all open PRs for the repo
   let pr: PullRequestSummary | null = null;
   const prStack: PullRequestSummary[] = [];
-  if (branch) {
-    try {
-      const prs = await listOpenPullRequests(cwd, branch);
-      if (prs.length > 0) {
-        pr = prs.find((p) => p.headBranch === branch) ?? prs[0];
-        prStack.push(...prs);
+  try {
+    // Fetch all open PRs for the repo
+    const allPrs = await listOpenPullRequests(cwd, "");
+    if (allPrs.length > 0) {
+      prStack.push(...allPrs);
+      if (branch) {
+        pr = allPrs.find((p) => p.headBranch === branch) ?? null;
       }
-    } catch {
-      // gh CLI may not be available — that's fine
     }
+  } catch {
+    // gh CLI may not be available — that's fine
   }
 
   return {
