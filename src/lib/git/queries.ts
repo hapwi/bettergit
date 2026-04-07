@@ -1,7 +1,7 @@
 /**
  * React Query options for git operations.
  */
-import { queryOptions, type QueryClient } from "@tanstack/react-query";
+import { queryOptions, keepPreviousData, type QueryClient } from "@tanstack/react-query";
 import { getStatus } from "./status";
 import { listBranches } from "./branches";
 
@@ -23,9 +23,11 @@ export function gitStatusQueryOptions(cwd: string | null) {
     queryKey: gitQueryKeys.status(cwd),
     queryFn: () => getStatus(cwd!),
     enabled: cwd !== null,
-    staleTime: 2_000,
+    staleTime: 10_000,
+    gcTime: 5 * 60_000,
     refetchInterval: 5_000,
     refetchOnWindowFocus: "always" as const,
+    placeholderData: keepPreviousData,
   });
 }
 
@@ -34,7 +36,9 @@ export function gitBranchesQueryOptions(cwd: string | null) {
     queryKey: gitQueryKeys.branches(cwd),
     queryFn: () => listBranches(cwd!),
     enabled: cwd !== null,
-    staleTime: 5_000,
-    refetchInterval: 15_000,
+    staleTime: 30_000,
+    gcTime: 5 * 60_000,
+    refetchInterval: 30_000,
+    placeholderData: keepPreviousData,
   });
 }
