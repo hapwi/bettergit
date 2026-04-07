@@ -1,6 +1,6 @@
 import { app, BrowserWindow, dialog, ipcMain, shell } from "electron";
 import path from "node:path";
-import { execFile } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import { promisify } from "node:util";
 
 const execFileAsync = promisify(execFile);
@@ -205,18 +205,37 @@ function isCodexModel(model: string): boolean {
 async function runAi(prompt: string, timeoutMs = 60_000): Promise<string> {
   const useCodex = isCodexModel(aiModel);
   const cli = useCodex ? "codex" : "claude";
+  // Both CLIs: pipe prompt via stdin to avoid argument length limits
   const args = useCodex
-    ? ["--print", "--model", aiModel, prompt]
-    : ["--print", "--model", aiModel, prompt];
+    ? ["--quiet", "--model", aiModel, "-"]
+    : ["--print", "--model", aiModel, "-p", "-"];
 
-  const { stdout, stderr } = await execFileAsync(cli, args, {
-    timeout: timeoutMs,
-    maxBuffer: 5 * 1024 * 1024,
-    env: getEnvWithPath(),
+  return new Promise((resolve, reject) => {
+    const child = spawn(cli, args, {
+      env: getEnvWithPath(),
+      timeout: timeoutMs,
+      stdio: ["pipe", "pipe", "pipe"],
+    });
+
+    let stdout = "";
+    let stderr = "";
+    child.stdout.on("data", (chunk: Buffer) => { stdout += chunk.toString(); });
+    child.stderr.on("data", (chunk: Buffer) => { stderr += chunk.toString(); });
+
+    child.on("error", (err) => reject(err));
+    child.on("close", (code) => {
+      const result = stdout.trim();
+      if (code !== 0 || !result) {
+        reject(new Error(`${cli} failed (exit ${code}): ${stderr || "empty output"}`));
+      } else {
+        resolve(result);
+      }
+    });
+
+    // Write prompt to stdin and close
+    child.stdin.write(prompt);
+    child.stdin.end();
   });
-  const result = stdout.trim();
-  if (!result) throw new Error(`${cli} returned empty output. stderr: ${stderr}`);
-  return result;
 }
 
 interface CommitMessageInput {
