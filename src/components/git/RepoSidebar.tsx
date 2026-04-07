@@ -220,7 +220,7 @@ export function RepoSidebar() {
                         try {
                           await window.electronAPI.git.exec({
                             cwd: repoCwd,
-                            args: ["branch", "pre-release"],
+                            args: ["checkout", "-b", "pre-release"],
                           });
                           // Push to remote if origin exists
                           const remoteCheck = await window.electronAPI.git.exec({
