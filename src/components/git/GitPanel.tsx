@@ -415,18 +415,18 @@ export function GitPanel() {
     (pr) => pr.headBranch === "pre-release" && (pr.baseBranch === "main" || pr.baseBranch === "master"),
   );
 
-  // Check if pre-release is ahead of main (has commits to release)
-  const { data: preReleaseAhead = false } = useQuery({
+  // Check how many commits pre-release is ahead of main
+  const { data: preReleaseAheadCount = 0 } = useQuery({
     queryKey: ["git", "pre-release-ahead", repoCwd],
     queryFn: async () => {
-      if (!repoCwd) return false;
+      if (!repoCwd) return 0;
       // Fetch first so we compare against the latest remote state
       await execGit(repoCwd, ["fetch", "--quiet", "origin"]);
       const mainExists = branches.some((b) => b.name === "main" || b.name === "origin/main");
       const target = mainExists ? "origin/main" : "origin/master";
       const result = await execGit(repoCwd, ["rev-list", "--count", `${target}..pre-release`]);
-      if (result.code !== 0) return false;
-      return parseInt(result.stdout.trim(), 10) > 0;
+      if (result.code !== 0) return 0;
+      return parseInt(result.stdout.trim(), 10);
     },
     enabled: isPreReleaseBranch && repoCwd !== null,
     staleTime: 5_000,
@@ -578,7 +578,7 @@ export function GitPanel() {
           </div>
 
           {/* Release PR — only on pre-release branch */}
-          {isPreReleaseBranch && !hasExistingReleasePr && preReleaseAhead && !gitStatus?.hasWorkingTreeChanges && (
+          {isPreReleaseBranch && !hasExistingReleasePr && preReleaseAheadCount > 0 && !gitStatus?.hasWorkingTreeChanges && (
             <Button
               variant="outline"
               disabled={isBusy}
@@ -587,6 +587,10 @@ export function GitPanel() {
             >
               <HugeiconsIcon icon={GitPullRequestIcon} className="size-3.5" />
               Create Release PR → main
+              <span className="inline-flex items-center gap-0.5 text-[11px] tabular-nums opacity-70">
+                <HugeiconsIcon icon={Upload04Icon} className="size-3" />
+                {preReleaseAheadCount}
+              </span>
             </Button>
           )}
 
