@@ -42,6 +42,7 @@ import { Spinner } from "@/components/ui/spinner";
 import { toast } from "sonner";
 import { pauseHmr, resumeHmr } from "@/lib/hmr";
 import { CommitDialog } from "./CommitDialog";
+import { DefaultBranchDialog } from "./DefaultBranchDialog";
 import { SwitchBranchDialog } from "./SwitchBranchDialog";
 import { MergeDialog } from "./MergeDialog";
 
@@ -120,6 +121,11 @@ export function GitPanel() {
   // State
   const [isCommitDialogOpen, setIsCommitDialogOpen] = useState(false);
   const [isSwitchDialogOpen, setIsSwitchDialogOpen] = useState(false);
+  const [pendingDefaultAction, setPendingDefaultAction] = useState<{
+    action: StackedAction;
+    commitMessage?: string;
+    filePaths?: string[];
+  } | null>(null);
   const [mergeDialogScope, setMergeDialogScope] = useState<"current" | "stack" | null>(null);
   const [progressTitle, setProgressTitle] = useState<string | null>(null);
   const [notice, setNotice] = useState<{ type: "info" | "error" | "success"; message: string } | null>(null);
@@ -164,20 +170,23 @@ export function GitPanel() {
     }) => {
       if (!repoCwd || !gitStatus) return;
 
-      // Protected branches — route to feature branch, but only when the repo
-      // already has a remote. New repos with no origin need the initial commit
-      // pushed directly to main so the repo is properly initialized on GitHub.
+      // Protected branches — ask user whether to create a feature branch or
+      // continue on the default branch, but only when the repo already has a
+      // remote. New repos with no origin need the initial commit pushed directly
+      // to main so the repo is properly initialized on GitHub.
       if (
         !input.featureBranch &&
+        !input.skipDefaultBranchPrompt &&
         hasOriginRemote &&
         requiresDefaultBranchConfirmation(input.action, isDefaultBranch) &&
         gitStatus.branch
       ) {
-        return runAction({
-          ...input,
-          featureBranch: true,
-          skipDefaultBranchPrompt: true,
+        setPendingDefaultAction({
+          action: input.action,
+          commitMessage: input.commitMessage,
+          filePaths: input.filePaths,
         });
+        return;
       }
 
       const stages = buildGitActionProgressStages({
@@ -495,6 +504,7 @@ export function GitPanel() {
     setIsSwitchDialogOpen(false);
     setMergeDialogScope(null);
     setPendingDeleteBranch(null);
+    setPendingDefaultAction(null);
   }, [repoCwd]);
 
   if (!repoCwd) return null;
@@ -727,6 +737,27 @@ export function GitPanel() {
           onConfirm={handleMerge}
         />
       )}
+
+      <DefaultBranchDialog
+        open={pendingDefaultAction !== null}
+        onOpenChange={(open) => { if (!open) setPendingDefaultAction(null); }}
+        branchName={gitStatus?.branch ?? ""}
+        includesCommit={gitStatus?.hasWorkingTreeChanges ?? false}
+        onContinueOnDefault={() => {
+          if (pendingDefaultAction) {
+            const action = pendingDefaultAction;
+            setPendingDefaultAction(null);
+            void runAction({ ...action, skipDefaultBranchPrompt: true });
+          }
+        }}
+        onCreateFeatureBranch={() => {
+          if (pendingDefaultAction) {
+            const action = pendingDefaultAction;
+            setPendingDefaultAction(null);
+            void runAction({ ...action, featureBranch: true, skipDefaultBranchPrompt: true });
+          }
+        }}
+      />
 
       <ConfirmDialog
         open={pendingDeleteBranch !== null}
