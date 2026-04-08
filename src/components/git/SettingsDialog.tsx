@@ -14,6 +14,15 @@ import { GitHubIcon, ClaudeIcon, CodexIcon } from "@/components/icons";
 import { ArrowLeft02Icon, AiMagicIcon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { Terminal } from "lucide-react";
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectLabel,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 interface ServiceStatus {
   label: string;
@@ -251,22 +260,25 @@ export function SettingsDialog({
             <div className="flex items-center gap-3 rounded-xl border bg-card/50 px-3 py-2.5">
               <HugeiconsIcon icon={AiMagicIcon} className="size-4 shrink-0 text-muted-foreground" />
               <p className="shrink-0 text-sm font-medium">Text model</p>
-              <select
-                value={selectedModel}
-                onChange={(e) => handleModelChange(e.target.value)}
-                className="ml-auto rounded-lg border bg-background px-2 py-1.5 text-xs outline-none"
-              >
-                <optgroup label="Claude">
-                  {claudeModels.map((m) => (
-                    <option key={m.value} value={m.value}>{m.label}</option>
-                  ))}
-                </optgroup>
-                <optgroup label="Codex">
-                  {codexModels.map((m) => (
-                    <option key={m.value} value={m.value}>{m.label}</option>
-                  ))}
-                </optgroup>
-              </select>
+              <Select value={selectedModel} onValueChange={handleModelChange}>
+                <SelectTrigger size="sm" className="ml-auto text-xs">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectGroup>
+                    <SelectLabel>Claude</SelectLabel>
+                    {claudeModels.map((m) => (
+                      <SelectItem key={m.value} value={m.value}>{m.label}</SelectItem>
+                    ))}
+                  </SelectGroup>
+                  <SelectGroup>
+                    <SelectLabel>Codex</SelectLabel>
+                    {codexModels.map((m) => (
+                      <SelectItem key={m.value} value={m.value}>{m.label}</SelectItem>
+                    ))}
+                  </SelectGroup>
+                </SelectContent>
+              </Select>
             </div>
           </div>
 
@@ -282,15 +294,18 @@ export function SettingsDialog({
               <div className="flex items-center gap-3 rounded-xl border bg-card/50 px-3 py-2.5">
                 <Terminal className="size-4 shrink-0 text-muted-foreground" />
                 <p className="shrink-0 text-sm font-medium">Terminal</p>
-                <select
-                  value={terminalApp ?? detectedTerminals[0]}
-                  onChange={(e) => setTerminalApp(e.target.value)}
-                  className="ml-auto rounded-lg border bg-background px-2 py-1.5 text-xs outline-none"
-                >
-                  {detectedTerminals.map((t) => (
-                    <option key={t} value={t}>{t}</option>
-                  ))}
-                </select>
+                <Select value={terminalApp ?? detectedTerminals[0]} onValueChange={setTerminalApp}>
+                  <SelectTrigger size="sm" className="ml-auto text-xs">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectGroup>
+                      {detectedTerminals.map((t) => (
+                        <SelectItem key={t} value={t}>{t}</SelectItem>
+                      ))}
+                    </SelectGroup>
+                  </SelectContent>
+                </Select>
               </div>
             </div>
           )}
