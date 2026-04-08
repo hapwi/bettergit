@@ -44,7 +44,7 @@ import { pauseHmr, resumeHmr } from "@/lib/hmr";
 import { CommitDialog } from "./CommitDialog";
 import { DefaultBranchDialog } from "./DefaultBranchDialog";
 import { SwitchBranchDialog } from "./SwitchBranchDialog";
-import { MergeDialog } from "./MergeDialog";
+import { MergeDialog, parseVersion, type SemVer } from "./MergeDialog";
 
 // ---------------------------------------------------------------------------
 // Sub-components
@@ -433,6 +433,34 @@ export function GitPanel() {
     refetchInterval: 10_000,
   });
 
+  // Pre-fetch current version so MergeDialog can show it instantly
+  const { data: currentVersion = null } = useQuery<SemVer | null>({
+    queryKey: ["git", "current-version", repoCwd],
+    queryFn: async () => {
+      if (!repoCwd) return null;
+      await execGit(repoCwd, ["fetch", "--tags", "--quiet", "origin"]).catch(() => {});
+      const result = await execGit(repoCwd, ["tag", "--sort=-v:refname", "-l", "v*"]);
+      const tags = result.stdout.trim().split("\n").filter(Boolean);
+      for (const tag of tags) {
+        const parsed = parseVersion(tag);
+        if (parsed) return parsed;
+      }
+      const pkgResult = await execGit(repoCwd, ["show", "HEAD:package.json"]);
+      if (pkgResult.code === 0) {
+        try {
+          const pkg = JSON.parse(pkgResult.stdout) as { version?: string };
+          if (pkg.version) {
+            const parsed = parseVersion(pkg.version);
+            if (parsed) return parsed;
+          }
+        } catch { /* invalid JSON */ }
+      }
+      return { major: 0, minor: 0, patch: 0 };
+    },
+    enabled: repoCwd !== null,
+    staleTime: 30_000,
+  });
+
   const handleCreateReleasePr = useCallback(async () => {
     if (!repoCwd) return;
     setIsBusy(true);
@@ -730,13 +758,13 @@ export function GitPanel() {
         onDelete={(branch) => setPendingDeleteBranch(branch)}
       />
 
-      {mergeDialogScope && repoCwd && (
+      {mergeDialogScope && (
         <MergeDialog
           open
           onOpenChange={() => setMergeDialogScope(null)}
           scope={mergeDialogScope}
           baseBranch={gitStatus?.pr?.baseBranch ?? ""}
-          repoCwd={repoCwd}
+          currentVersion={currentVersion}
           isBusy={isBusy}
           onConfirm={handleMerge}
         />

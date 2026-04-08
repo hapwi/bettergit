@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import {
@@ -10,21 +10,22 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
-import { execGit } from "@/lib/git/exec";
 
 type BumpType = "patch" | "minor" | "major";
+
+export type SemVer = { major: number; minor: number; patch: number };
 
 interface MergeDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   scope: "current" | "stack";
   baseBranch: string;
-  repoCwd: string;
+  currentVersion: SemVer | null;
   isBusy: boolean;
   onConfirm: (versionBump: BumpType | null) => void;
 }
 
-function parseVersion(tag: string): { major: number; minor: number; patch: number } | null {
+export function parseVersion(tag: string): { major: number; minor: number; patch: number } | null {
   const match = tag.replace(/^v/, "").match(/^(\d+)\.(\d+)\.(\d+)/);
   if (!match) return null;
   return { major: parseInt(match[1], 10), minor: parseInt(match[2], 10), patch: parseInt(match[3], 10) };
@@ -48,44 +49,9 @@ const BUMP_OPTIONS: { type: BumpType; label: string; desc: string }[] = [
   { type: "major", label: "Major", desc: "Breaking changes" },
 ];
 
-export function MergeDialog({ open, onOpenChange, scope, baseBranch, repoCwd, isBusy, onConfirm }: MergeDialogProps) {
+export function MergeDialog({ open, onOpenChange, scope, baseBranch, currentVersion, isBusy, onConfirm }: MergeDialogProps) {
   const isMainMerge = baseBranch === "main" || baseBranch === "master";
-  const [currentVersion, setCurrentVersion] = useState<{ major: number; minor: number; patch: number } | null>(null);
   const [selectedBump, setSelectedBump] = useState<BumpType | null>(null);
-  const [versionLoading, setVersionLoading] = useState(false);
-
-  useEffect(() => {
-    if (!open || !isMainMerge) return;
-    setSelectedBump(null);
-    setVersionLoading(true);
-    (async () => {
-      try {
-        await execGit(repoCwd, ["fetch", "--tags", "--quiet", "origin"]).catch(() => {});
-        const result = await execGit(repoCwd, ["tag", "--sort=-v:refname", "-l", "v*"]);
-        const tags = result.stdout.trim().split("\n").filter(Boolean);
-        for (const tag of tags) {
-          const parsed = parseVersion(tag);
-          if (parsed) { setCurrentVersion(parsed); return; }
-        }
-        // No tags found — try reading version from package.json
-        const pkgResult = await execGit(repoCwd, ["show", "HEAD:package.json"]);
-        if (pkgResult.code === 0) {
-          try {
-            const pkg = JSON.parse(pkgResult.stdout) as { version?: string };
-            if (pkg.version) {
-              const parsed = parseVersion(pkg.version);
-              if (parsed) { setCurrentVersion(parsed); return; }
-            }
-          } catch { /* invalid JSON */ }
-        }
-        setCurrentVersion({ major: 0, minor: 0, patch: 0 });
-      } catch {
-        setCurrentVersion({ major: 0, minor: 0, patch: 0 });
-      } finally {
-        setVersionLoading(false);
-      }
-    })();
-  }, [open, isMainMerge, repoCwd]);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -109,7 +75,7 @@ export function MergeDialog({ open, onOpenChange, scope, baseBranch, repoCwd, is
         </div>
 
         {/* Version release picker — only for merges into main/master */}
-        {isMainMerge && !versionLoading && currentVersion && (
+        {isMainMerge && currentVersion && (
           <div className="flex flex-col gap-2">
             <p className="text-xs font-medium text-muted-foreground">
               Version release{" "}
