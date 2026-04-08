@@ -395,8 +395,10 @@ export function GitPanel() {
     queryKey: ["git", "pre-release-ahead", repoCwd],
     queryFn: async () => {
       if (!repoCwd) return false;
+      // Fetch first so we compare against the latest remote state
+      await execGit(repoCwd, ["fetch", "--quiet", "origin"]);
       const mainExists = branches.some((b) => b.name === "main" || b.name === "origin/main");
-      const target = mainExists ? "main" : "master";
+      const target = mainExists ? "origin/main" : "origin/master";
       const result = await execGit(repoCwd, ["rev-list", "--count", `${target}..pre-release`]);
       if (result.code !== 0) return false;
       return parseInt(result.stdout.trim(), 10) > 0;
