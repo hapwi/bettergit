@@ -17,6 +17,7 @@ import {
   readdirSync,
   statSync,
   copyFileSync,
+  rmSync,
 } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -121,8 +122,9 @@ execSync("bunx electron-builder --mac --arm64 --publish never", {
   env: buildEnv,
 });
 
-// 6. Copy artifacts to release/
+// 6. Copy artifacts to release/ (clean old builds first)
 const outputDir = join(repoRoot, "release");
+rmSync(outputDir, { recursive: true, force: true });
 mkdirSync(outputDir, { recursive: true });
 
 const stageDistOut = join(stageApp, "dist-out");
