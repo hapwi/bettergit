@@ -588,7 +588,7 @@ export function GitPanel() {
               <HugeiconsIcon icon={GitPullRequestIcon} className="size-3.5" />
               Create Release PR → main
               <span className="inline-flex items-center gap-0.5 text-[11px] tabular-nums opacity-70">
-                <HugeiconsIcon icon={Upload04Icon} className="size-3" />
+                <span>↑</span>
                 {preReleaseAheadCount}
               </span>
             </Button>
