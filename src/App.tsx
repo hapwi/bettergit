@@ -15,6 +15,7 @@ import {
   GitPullRequestIcon,
 } from "@hugeicons/core-free-icons"
 import { HugeiconsIcon } from "@hugeicons/react"
+import { Terminal } from "lucide-react"
 
 function Toolbar({
   activeTab,
@@ -26,6 +27,7 @@ function Toolbar({
   const { toggleSidebar, state } = useSidebar()
   const isCollapsed = state === "collapsed"
   const repoCwd = useAppStore((s) => s.repoCwd)
+  const terminalApp = useAppStore((s) => s.terminalApp)
   const repoName = repoCwd?.split("/").pop() ?? ""
   const { data: status } = useQuery(gitStatusQueryOptions(repoCwd))
   const changeCount = status?.workingTree.files.length ?? 0
@@ -78,9 +80,22 @@ function Toolbar({
         )}
       </div>
 
+      {/* Open in Terminal */}
+      {repoCwd && (
+        <button
+          type="button"
+          onClick={() => window.electronAPI?.shell.openTerminal(repoCwd, terminalApp ?? undefined)}
+          className="ml-auto rounded-md p-1.5 text-muted-foreground/50 transition-colors hover:bg-accent hover:text-foreground"
+          style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
+          title="Open in Terminal"
+        >
+          <Terminal className="size-[15px]" />
+        </button>
+      )}
+
       {/* Right: view toggle */}
       <div
-        className="ml-auto flex items-center gap-0.5 rounded-md border bg-muted/50 p-0.5"
+        className={cn("flex items-center gap-0.5 rounded-md border bg-muted/50 p-0.5", !repoCwd && "ml-auto")}
         style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
       >
         <button

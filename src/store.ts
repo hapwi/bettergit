@@ -1,6 +1,7 @@
 import { create } from "zustand";
 
 const RECENT_REPOS_KEY = "bettergit:recent-repos";
+const TERMINAL_APP_KEY = "bettergit:terminal-app";
 const MAX_RECENT = 10;
 
 function loadRecentRepos(): string[] {
@@ -19,11 +20,13 @@ function saveRecentRepos(repos: string[]) {
 interface AppStore {
   repoCwd: string | null;
   recentRepos: string[];
+  terminalApp: string | null;
   gitBusyMap: Record<string, boolean>;
   gitResultMap: Record<string, "success" | "error" | null>;
   setRepoCwd: (cwd: string | null) => void;
   removeRecentRepo: (cwd: string) => void;
   reorderRepos: (from: number, to: number) => void;
+  setTerminalApp: (app: string | null) => void;
   setGitBusy: (cwd: string, busy: boolean) => void;
   flashGitResult: (cwd: string, result: "success" | "error") => void;
 }
@@ -33,6 +36,7 @@ const initialRecent = loadRecentRepos();
 export const useAppStore = create<AppStore>((set, get) => ({
   repoCwd: initialRecent[0] ?? null,
   recentRepos: initialRecent,
+  terminalApp: localStorage.getItem(TERMINAL_APP_KEY),
   gitBusyMap: {},
   gitResultMap: {},
 
@@ -53,6 +57,15 @@ export const useAppStore = create<AppStore>((set, get) => ({
     const recent = get().recentRepos.filter((r) => r !== cwd);
     set({ recentRepos: recent });
     saveRecentRepos(recent);
+  },
+
+  setTerminalApp: (app) => {
+    set({ terminalApp: app });
+    if (app) {
+      localStorage.setItem(TERMINAL_APP_KEY, app);
+    } else {
+      localStorage.removeItem(TERMINAL_APP_KEY);
+    }
   },
 
   reorderRepos: (from, to) => {

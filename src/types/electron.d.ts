@@ -4,6 +4,8 @@ interface ElectronAPI {
   };
   shell: {
     openExternal: (url: string) => Promise<void>;
+    openTerminal: (dirPath: string, terminalApp?: string) => Promise<void>;
+    detectTerminals: () => Promise<string[]>;
   };
   server: {
     getPort: () => Promise<number>;

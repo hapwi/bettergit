@@ -239,4 +239,42 @@ ipcMain.handle("shell:openExternal", async (_event, url: string): Promise<void> 
   await shell.openExternal(url);
 });
 
+const KNOWN_TERMINALS = ["Ghostty", "iTerm", "Warp", "Alacritty", "kitty", "Hyper", "Terminal"];
+let cachedDetected: string[] | null = null;
+
+function detectInstalledTerminals(): string[] {
+  if (cachedDetected) return cachedDetected;
+  if (process.platform !== "darwin") {
+    cachedDetected = ["Terminal"];
+    return cachedDetected;
+  }
+  const found: string[] = [];
+  for (const app of KNOWN_TERMINALS) {
+    try {
+      execFileSync("open", ["-Ra", app], { stdio: "ignore" });
+      found.push(app);
+    } catch { /* not installed */ }
+  }
+  cachedDetected = found.length > 0 ? found : ["Terminal"];
+  return cachedDetected;
+}
+
+ipcMain.handle("shell:detectTerminals", (): string[] => detectInstalledTerminals());
+
+ipcMain.handle("shell:openTerminal", async (_event, dirPath: string, terminalApp?: string): Promise<void> => {
+  if (process.platform === "darwin") {
+    const app = terminalApp ?? detectInstalledTerminals()[0];
+    spawn("open", ["-a", app, dirPath], { detached: true, stdio: "ignore" });
+  } else if (process.platform === "win32") {
+    spawn("cmd.exe", ["/c", "start", "cmd", "/K", `cd /d "${dirPath}"`], { detached: true, stdio: "ignore" });
+  } else {
+    for (const term of ["x-terminal-emulator", "gnome-terminal", "konsole", "xterm"]) {
+      try {
+        spawn(term, [], { cwd: dirPath, detached: true, stdio: "ignore" });
+        break;
+      } catch { /* try next */ }
+    }
+  }
+});
+
 ipcMain.handle("server:getPort", () => serverPort);
