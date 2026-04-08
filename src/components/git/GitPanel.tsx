@@ -38,7 +38,6 @@ import {
 } from "@/lib/git/actions-logic";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { Spinner } from "@/components/ui/spinner";
 import { toast } from "sonner";
 import { CommitDialog } from "./CommitDialog";
@@ -484,7 +483,7 @@ export function GitPanel() {
 
   return (
     <div className="flex h-full flex-col">
-      <ScrollArea className="flex-1">
+      <div className="flex-1 overflow-y-auto overflow-x-hidden" style={{ scrollbarWidth: "none" }}>
         <div className="flex flex-col gap-5 p-6">
           {/* Notices */}
           {progressTitle && (
@@ -660,7 +659,7 @@ export function GitPanel() {
             </Button>
           </div>
         </div>
-      </ScrollArea>
+      </div>
 
       {/* Dialogs */}
       <CommitDialog
