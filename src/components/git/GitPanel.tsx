@@ -42,6 +42,7 @@ import { Spinner } from "@/components/ui/spinner";
 import { toast } from "sonner";
 import { pauseHmr, resumeHmr } from "@/lib/hmr";
 import { CommitDialog } from "./CommitDialog";
+import { DefaultBranchDialog } from "./DefaultBranchDialog";
 import { SwitchBranchDialog } from "./SwitchBranchDialog";
 import { MergeDialog } from "./MergeDialog";
 
@@ -115,11 +116,16 @@ export function GitPanel() {
     gitStatusQueryOptions(repoCwd),
   );
   const { data: branches = [] } = useQuery(gitBranchesQueryOptions(repoCwd));
-  const hasOriginRemote = branches.some((b) => b.name === "origin/HEAD" || b.name.startsWith("origin/"));
+  const hasOriginRemote = branches.some((b) => b.name.startsWith("origin/") || b.upstream?.startsWith("origin/"));
 
   // State
   const [isCommitDialogOpen, setIsCommitDialogOpen] = useState(false);
   const [isSwitchDialogOpen, setIsSwitchDialogOpen] = useState(false);
+  const [pendingDefaultAction, setPendingDefaultAction] = useState<{
+    action: StackedAction;
+    commitMessage?: string;
+    filePaths?: string[];
+  } | null>(null);
   const [mergeDialogScope, setMergeDialogScope] = useState<"current" | "stack" | null>(null);
   const [progressTitle, setProgressTitle] = useState<string | null>(null);
   const [notice, setNotice] = useState<{ type: "info" | "error" | "success"; message: string } | null>(null);
@@ -164,20 +170,23 @@ export function GitPanel() {
     }) => {
       if (!repoCwd || !gitStatus) return;
 
-      // Protected branches — route to feature branch, but only when the repo
-      // already has a remote. New repos with no origin need the initial commit
-      // pushed directly to main so the repo is properly initialized on GitHub.
+      // Protected branches — ask user whether to create a feature branch or
+      // continue on the default branch, but only when the repo already has a
+      // remote. New repos with no origin need the initial commit pushed directly
+      // to main so the repo is properly initialized on GitHub.
       if (
         !input.featureBranch &&
+        !input.skipDefaultBranchPrompt &&
         hasOriginRemote &&
         requiresDefaultBranchConfirmation(input.action, isDefaultBranch) &&
         gitStatus.branch
       ) {
-        return runAction({
-          ...input,
-          featureBranch: true,
-          skipDefaultBranchPrompt: true,
+        setPendingDefaultAction({
+          action: input.action,
+          commitMessage: input.commitMessage,
+          filePaths: input.filePaths,
         });
+        return;
       }
 
       const stages = buildGitActionProgressStages({
@@ -406,18 +415,18 @@ export function GitPanel() {
     (pr) => pr.headBranch === "pre-release" && (pr.baseBranch === "main" || pr.baseBranch === "master"),
   );
 
-  // Check if pre-release is ahead of main (has commits to release)
-  const { data: preReleaseAhead = false } = useQuery({
+  // Check how many commits pre-release is ahead of main
+  const { data: preReleaseAheadCount = 0 } = useQuery({
     queryKey: ["git", "pre-release-ahead", repoCwd],
     queryFn: async () => {
-      if (!repoCwd) return false;
+      if (!repoCwd) return 0;
       // Fetch first so we compare against the latest remote state
       await execGit(repoCwd, ["fetch", "--quiet", "origin"]);
       const mainExists = branches.some((b) => b.name === "main" || b.name === "origin/main");
       const target = mainExists ? "origin/main" : "origin/master";
       const result = await execGit(repoCwd, ["rev-list", "--count", `${target}..pre-release`]);
-      if (result.code !== 0) return false;
-      return parseInt(result.stdout.trim(), 10) > 0;
+      if (result.code !== 0) return 0;
+      return parseInt(result.stdout.trim(), 10);
     },
     enabled: isPreReleaseBranch && repoCwd !== null,
     staleTime: 5_000,
@@ -495,6 +504,7 @@ export function GitPanel() {
     setIsSwitchDialogOpen(false);
     setMergeDialogScope(null);
     setPendingDeleteBranch(null);
+    setPendingDefaultAction(null);
   }, [repoCwd]);
 
   if (!repoCwd) return null;
@@ -568,7 +578,7 @@ export function GitPanel() {
           </div>
 
           {/* Release PR — only on pre-release branch */}
-          {isPreReleaseBranch && !hasExistingReleasePr && preReleaseAhead && !gitStatus?.hasWorkingTreeChanges && (
+          {isPreReleaseBranch && !hasExistingReleasePr && preReleaseAheadCount > 0 && !gitStatus?.hasWorkingTreeChanges && (
             <Button
               variant="outline"
               disabled={isBusy}
@@ -577,6 +587,10 @@ export function GitPanel() {
             >
               <HugeiconsIcon icon={GitPullRequestIcon} className="size-3.5" />
               Create Release PR → main
+              <span className="inline-flex items-center gap-0.5 text-[11px] tabular-nums opacity-70">
+                <span>↑</span>
+                {preReleaseAheadCount}
+              </span>
             </Button>
           )}
 
@@ -727,6 +741,27 @@ export function GitPanel() {
           onConfirm={handleMerge}
         />
       )}
+
+      <DefaultBranchDialog
+        open={pendingDefaultAction !== null}
+        onOpenChange={(open) => { if (!open) setPendingDefaultAction(null); }}
+        branchName={gitStatus?.branch ?? ""}
+        includesCommit={gitStatus?.hasWorkingTreeChanges ?? false}
+        onContinueOnDefault={() => {
+          if (pendingDefaultAction) {
+            const action = pendingDefaultAction;
+            setPendingDefaultAction(null);
+            void runAction({ ...action, skipDefaultBranchPrompt: true });
+          }
+        }}
+        onCreateFeatureBranch={() => {
+          if (pendingDefaultAction) {
+            const action = pendingDefaultAction;
+            setPendingDefaultAction(null);
+            void runAction({ ...action, featureBranch: true, skipDefaultBranchPrompt: true });
+          }
+        }}
+      />
 
       <ConfirmDialog
         open={pendingDeleteBranch !== null}
