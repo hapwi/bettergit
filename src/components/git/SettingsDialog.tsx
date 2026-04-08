@@ -299,9 +299,11 @@ export function SettingsDialog({
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    {detectedTerminals.map((t) => (
-                      <SelectItem key={t} value={t}>{t}</SelectItem>
-                    ))}
+                    <SelectGroup>
+                      {detectedTerminals.map((t) => (
+                        <SelectItem key={t} value={t}>{t}</SelectItem>
+                      ))}
+                    </SelectGroup>
                   </SelectContent>
                 </Select>
               </div>
