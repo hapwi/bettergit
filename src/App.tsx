@@ -161,7 +161,7 @@ export function App() {
   return (
     <SidebarProvider className="overflow-hidden rounded-2xl bg-sidebar">
       <RepoSidebar />
-      <div className="relative z-[11] flex h-screen w-full flex-col overflow-hidden rounded-l-2xl bg-background text-foreground">
+      <div className="relative z-[11] flex h-screen min-w-0 flex-1 flex-col overflow-hidden rounded-l-2xl bg-background text-foreground">
         <AppContent />
       </div>
     </SidebarProvider>
