@@ -177,8 +177,8 @@ export function Dashboard() {
   if (!stats) return null;
 
   return (
-    <ScrollArea className="h-full">
-      <div className="flex flex-col gap-5 p-6">
+    <ScrollArea className="h-full min-w-0">
+      <div className="flex min-w-0 flex-col gap-5 overflow-hidden p-6">
         {/* Fork indicator */}
         {forkInfo && (
           <button
