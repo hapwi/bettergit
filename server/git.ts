@@ -321,13 +321,17 @@ export async function mergePullRequests(input: MergePullRequestsInput): Promise<
       try {
         if (currentBranch === headBranch) {
           await gitRun(cwd, ["reset", "--hard", `origin/${mergeBaseBranch}`]);
+          requireOk(
+            await gitRun(cwd, ["push", "--force-with-lease", "-u", "origin", `HEAD:${headBranch}`]),
+            `sync ${headBranch}`,
+          );
         } else {
           await gitRun(cwd, ["update-ref", `refs/heads/${headBranch}`, `origin/${mergeBaseBranch}`]);
+          requireOk(
+            await gitRun(cwd, ["push", "--force-with-lease", "-u", "origin", `${headBranch}:${headBranch}`]),
+            `sync ${headBranch}`,
+          );
         }
-        requireOk(
-          await gitRun(cwd, ["push", "--force-with-lease", "-u", "origin", `HEAD:${headBranch}`]),
-          `sync ${headBranch}`,
-        );
       } catch { /* best effort */ }
     }
 
