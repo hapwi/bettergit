@@ -109,45 +109,54 @@ export function MergeDialog({ open, onOpenChange, scope, baseBranch, repoCwd, is
         </div>
 
         {/* Version release picker — only for merges into main/master */}
-        {isMainMerge && !versionLoading && currentVersion && (
+        {isMainMerge && (
           <div className="flex flex-col gap-2">
-            <p className="text-xs font-medium text-muted-foreground">
-              Version release{" "}
-              <span className="font-normal">
-                (current: {formatVersion(currentVersion)})
-              </span>
-            </p>
-            <div className="grid grid-cols-3 gap-1.5">
-              {BUMP_OPTIONS.map((opt) => {
-                const preview = bumpVersion(currentVersion, opt.type);
-                const isSelected = selectedBump === opt.type;
-                return (
-                  <button
-                    key={opt.type}
-                    type="button"
-                    onClick={() => setSelectedBump(isSelected ? null : opt.type)}
-                    className={cn(
-                      "flex flex-col items-center gap-0.5 rounded-lg border px-2 py-2 transition-colors",
-                      isSelected
-                        ? "border-primary bg-primary/10"
-                        : "border-border hover:bg-accent",
-                    )}
-                  >
-                    <span className="text-xs font-medium">{opt.label}</span>
-                    <span className={cn(
-                      "font-mono text-[11px]",
-                      isSelected ? "text-primary" : "text-muted-foreground",
-                    )}>
-                      {formatVersion(preview)}
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
-            {!selectedBump && (
-              <p className="text-[11px] text-muted-foreground/60">
-                Select a bump type to tag a release, or merge without a version tag.
-              </p>
+            {versionLoading || !currentVersion ? (
+              <div className="flex items-center gap-2 py-2">
+                <Spinner className="size-3.5" />
+                <p className="text-xs text-muted-foreground">Loading version info…</p>
+              </div>
+            ) : (
+              <>
+                <p className="text-xs font-medium text-muted-foreground">
+                  Version release{" "}
+                  <span className="font-normal">
+                    (current: {formatVersion(currentVersion)})
+                  </span>
+                </p>
+                <div className="grid grid-cols-3 gap-1.5">
+                  {BUMP_OPTIONS.map((opt) => {
+                    const preview = bumpVersion(currentVersion, opt.type);
+                    const isSelected = selectedBump === opt.type;
+                    return (
+                      <button
+                        key={opt.type}
+                        type="button"
+                        onClick={() => setSelectedBump(isSelected ? null : opt.type)}
+                        className={cn(
+                          "flex flex-col items-center gap-0.5 rounded-lg border px-2 py-2 transition-colors",
+                          isSelected
+                            ? "border-primary bg-primary/10"
+                            : "border-border hover:bg-accent",
+                        )}
+                      >
+                        <span className="text-xs font-medium">{opt.label}</span>
+                        <span className={cn(
+                          "font-mono text-[11px]",
+                          isSelected ? "text-primary" : "text-muted-foreground",
+                        )}>
+                          {formatVersion(preview)}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+                {!selectedBump && (
+                  <p className="text-[11px] text-muted-foreground/60">
+                    Select a bump type to tag a release, or merge without a version tag.
+                  </p>
+                )}
+              </>
             )}
           </div>
         )}
