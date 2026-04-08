@@ -227,8 +227,8 @@ export function GitPanel() {
         });
         flashGitResult(actionCwd, "error");
       } finally {
+        await invalidateGitQueries(queryClient);
         setIsBusy(false);
-        void invalidateGitQueries(queryClient);
       }
     },
     [repoCwd, gitStatus, isDefaultBranch, queryClient, flashGitResult],
@@ -245,14 +245,18 @@ export function GitPanel() {
       setIsBusy(true);
       setNotice(null);
       setProgressTitle("Pulling latest changes...");
-      pull(repoCwd)
-        .then(() => setNotice({ type: "success", message: "Pulled from upstream." }))
-        .catch((err) => setNotice({ type: "error", message: err instanceof Error ? err.message : "Pull failed." }))
-        .finally(() => {
-          setIsBusy(false);
+      (async () => {
+        try {
+          await pull(repoCwd);
+          setNotice({ type: "success", message: "Pulled from upstream." });
+        } catch (err) {
+          setNotice({ type: "error", message: err instanceof Error ? err.message : "Pull failed." });
+        } finally {
           setProgressTitle(null);
-          void invalidateGitQueries(queryClient);
-        });
+          await invalidateGitQueries(queryClient);
+          setIsBusy(false);
+        }
+      })();
       return;
     }
     if (quickAction.kind === "show_hint") {
@@ -297,8 +301,8 @@ export function GitPanel() {
       } catch (err) {
         setNotice({ type: "error", message: err instanceof Error ? err.message : "Checkout failed." });
       } finally {
+        await invalidateGitQueries(queryClient);
         setIsBusy(false);
-        void invalidateGitQueries(queryClient);
       }
     },
     [repoCwd, queryClient],
@@ -379,9 +383,9 @@ export function GitPanel() {
       guardedSetNotice({ type: "error", message: err instanceof Error ? err.message : "Merge failed." });
       flashGitResult(actionCwd, "error");
     } finally {
-      setIsBusy(false);
       setProgressTitle(null);
-      void invalidateGitQueries(queryClient);
+      await invalidateGitQueries(queryClient);
+      setIsBusy(false);
     }
   }, [repoCwd, mergeDialogScope, gitStatus?.pr, gitStatus?.branch, prStack, queryClient, flashGitResult]);
 
@@ -448,9 +452,9 @@ export function GitPanel() {
     } catch (err) {
       setNotice({ type: "error", message: err instanceof Error ? err.message : "Failed to create release PR." });
     } finally {
-      setIsBusy(false);
       setProgressTitle(null);
-      void invalidateGitQueries(queryClient);
+      await invalidateGitQueries(queryClient);
+      setIsBusy(false);
     }
   }, [repoCwd, branches, queryClient]);
 
