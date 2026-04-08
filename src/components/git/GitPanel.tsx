@@ -40,6 +40,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Spinner } from "@/components/ui/spinner";
 import { toast } from "sonner";
+import { pauseHmr, resumeHmr } from "@/lib/hmr";
 import { CommitDialog } from "./CommitDialog";
 import { SwitchBranchDialog } from "./SwitchBranchDialog";
 import { MergeDialog } from "./MergeDialog";
@@ -163,9 +164,12 @@ export function GitPanel() {
     }) => {
       if (!repoCwd || !gitStatus) return;
 
-      // Protected branches — always route to feature branch, no direct commits
+      // Protected branches — route to feature branch, but only when the repo
+      // already has a remote. New repos with no origin need the initial commit
+      // pushed directly to main so the repo is properly initialized on GitHub.
       if (
         !input.featureBranch &&
+        hasOriginRemote &&
         requiresDefaultBranchConfirmation(input.action, isDefaultBranch) &&
         gitStatus.branch
       ) {
@@ -187,6 +191,7 @@ export function GitPanel() {
       actionRepoRef.current = actionCwd;
 
       setIsBusy(true);
+      await pauseHmr();
       setNotice(null);
       setProgressTitle(stages[0] ?? "Running...");
 
@@ -227,11 +232,12 @@ export function GitPanel() {
         });
         flashGitResult(actionCwd, "error");
       } finally {
+        await resumeHmr();
         await invalidateGitQueries(queryClient);
         setIsBusy(false);
       }
     },
-    [repoCwd, gitStatus, isDefaultBranch, queryClient, flashGitResult],
+    [repoCwd, gitStatus, isDefaultBranch, hasOriginRemote, queryClient, flashGitResult],
   );
 
   const runQuickAction = useCallback(() => {
@@ -246,6 +252,7 @@ export function GitPanel() {
       setNotice(null);
       setProgressTitle("Pulling latest changes...");
       (async () => {
+        await pauseHmr();
         try {
           await pull(repoCwd);
           setNotice({ type: "success", message: "Pulled from upstream." });
@@ -253,6 +260,7 @@ export function GitPanel() {
           setNotice({ type: "error", message: err instanceof Error ? err.message : "Pull failed." });
         } finally {
           setProgressTitle(null);
+          await resumeHmr();
           await invalidateGitQueries(queryClient);
           setIsBusy(false);
         }
@@ -293,6 +301,7 @@ export function GitPanel() {
     async (branch: string) => {
       if (!repoCwd) return;
       setIsBusy(true);
+      await pauseHmr();
       setNotice(null);
       try {
         await checkoutBranch(repoCwd, branch);
@@ -301,6 +310,7 @@ export function GitPanel() {
       } catch (err) {
         setNotice({ type: "error", message: err instanceof Error ? err.message : "Checkout failed." });
       } finally {
+        await resumeHmr();
         await invalidateGitQueries(queryClient);
         setIsBusy(false);
       }
@@ -331,6 +341,7 @@ export function GitPanel() {
     const scope = mergeDialogScope;
     setMergeDialogScope(null);
     setIsBusy(true);
+    await pauseHmr();
     setNotice(null);
     setProgressTitle(scope === "stack" ? "Merging stack..." : "Merging PR...");
     try {
@@ -384,6 +395,7 @@ export function GitPanel() {
       flashGitResult(actionCwd, "error");
     } finally {
       setProgressTitle(null);
+      await resumeHmr();
       await invalidateGitQueries(queryClient);
       setIsBusy(false);
     }
@@ -537,13 +549,17 @@ export function GitPanel() {
             <Button
               variant={gitStatus?.pr?.state === "open" && gitStatus?.hasWorkingTreeChanges ? "default" : "outline"}
               onClick={() => {
+                if (!hasOriginRemote) {
+                  setNotice({ type: "info", message: "Publish to GitHub first before creating branches." });
+                  return;
+                }
                 if (!gitStatus?.hasWorkingTreeChanges) {
                   setNotice({ type: "info", message: "Make local changes first to create a feature branch." });
                   return;
                 }
                 void runAction({ action: "commit_push", featureBranch: true, skipDefaultBranchPrompt: true });
               }}
-              disabled={isBusy || !gitStatus?.hasWorkingTreeChanges}
+              disabled={isBusy || !hasOriginRemote || !gitStatus?.hasWorkingTreeChanges}
               className="h-auto flex-col gap-1 py-3"
             >
               <HugeiconsIcon icon={GitBranchIcon} className="size-3.5" />
