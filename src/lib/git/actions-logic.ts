@@ -32,7 +32,7 @@ export function buildMenuItems(
   gitStatus: GitStatus | null,
   isBusy: boolean,
   isDefaultBranch: boolean,
-  _hasOriginRemote: boolean,
+  hasOriginRemote: boolean,
 ): GitActionMenuItem[] {
   if (!gitStatus) return [];
 
@@ -43,12 +43,14 @@ export function buildMenuItems(
   const canCommit = !isBusy && hasChanges;
   const canPush =
     !isBusy &&
+    hasOriginRemote &&
     hasBranch &&
     !hasChanges &&
     !isBehind &&
     gitStatus.aheadCount > 0;
   const canCreatePr =
     !isBusy &&
+    hasOriginRemote &&
     hasBranch &&
     !hasChanges &&
     !hasOpenPr &&
@@ -110,6 +112,15 @@ export function resolveQuickAction(
   }
 
   if (hasChanges) {
+    // No remote yet — this is an initial publish, push the current branch directly
+    if (!hasOriginRemote) {
+      return {
+        label: "Commit & publish",
+        disabled: false,
+        kind: "run_action",
+        action: "commit_push",
+      };
+    }
     if (isDefaultBranch) {
       return {
         label: "Commit to new branch",
@@ -127,7 +138,7 @@ export function resolveQuickAction(
       };
     }
     return {
-      label: !hasOriginRemote ? "Commit & publish" : "Commit & push",
+      label: "Commit & push",
       disabled: false,
       kind: "run_action",
       action: "commit_push",

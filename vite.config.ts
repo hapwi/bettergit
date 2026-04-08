@@ -1,11 +1,50 @@
 import path from "path"
 import tailwindcss from "@tailwindcss/vite"
 import react from "@vitejs/plugin-react"
-import { defineConfig } from "vite"
+import { defineConfig, type Plugin } from "vite"
+
+/**
+ * Vite plugin that exposes /__hmr/pause and /__hmr/resume endpoints.
+ * When paused, chokidar file-change events are suppressed so that git
+ * operations (checkout, merge, pull) that modify the working tree don't
+ * trigger HMR reloads — critical when bettergit manages its own repo in dev.
+ */
+function hmrPause(): Plugin {
+  let paused = false
+  return {
+    name: "hmr-pause",
+    apply: "serve",
+    configureServer(server) {
+      const watcher = server.watcher
+      const origEmit = watcher.emit.bind(watcher)
+      ;(watcher as any).emit = function (event: string, ...args: unknown[]) {
+        if (paused && (event === "change" || event === "add" || event === "unlink")) {
+          return false
+        }
+        return origEmit(event, ...args)
+      }
+      server.middlewares.use((req, res, next) => {
+        if (req.url === "/__hmr/pause") {
+          paused = true
+          res.writeHead(200, { "Access-Control-Allow-Origin": "*" })
+          res.end("ok")
+          return
+        }
+        if (req.url === "/__hmr/resume") {
+          paused = false
+          res.writeHead(200, { "Access-Control-Allow-Origin": "*" })
+          res.end("ok")
+          return
+        }
+        next()
+      })
+    },
+  }
+}
 
 // https://vite.dev/config/
 export default defineConfig({
-  plugins: [react(), tailwindcss()],
+  plugins: [react(), tailwindcss(), hmrPause()],
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),
