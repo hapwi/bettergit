@@ -31,19 +31,18 @@ export function DefaultBranchDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-md">
         <DialogHeader>
-          <DialogTitle>{actionLabel} to default branch?</DialogTitle>
+          <DialogTitle>You&apos;re on {branchName}</DialogTitle>
           <DialogDescription>
-            This will {includesCommit ? "commit and push changes" : "push local commits"} directly
-            to "{branchName}". You can continue here or create a feature branch instead.
+            Create a feature branch for your changes, or {includesCommit ? "commit and push" : "push"} directly to &ldquo;{branchName}&rdquo;.
           </DialogDescription>
         </DialogHeader>
 
         <DialogFooter className="flex-col gap-2 sm:flex-row">
-          <Button variant="outline" onClick={onCreateFeatureBranch}>
-            Create feature branch
-          </Button>
-          <Button onClick={onContinueOnDefault}>
+          <Button variant="outline" onClick={onContinueOnDefault}>
             {actionLabel} to {branchName}
+          </Button>
+          <Button onClick={onCreateFeatureBranch}>
+            Create feature branch
           </Button>
         </DialogFooter>
       </DialogContent>
