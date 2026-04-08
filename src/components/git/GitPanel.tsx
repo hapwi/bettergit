@@ -38,13 +38,11 @@ import {
 } from "@/lib/git/actions-logic";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { Spinner } from "@/components/ui/spinner";
 import { toast } from "sonner";
 import { CommitDialog } from "./CommitDialog";
 import { SwitchBranchDialog } from "./SwitchBranchDialog";
 import { MergeDialog } from "./MergeDialog";
-import { DefaultBranchDialog } from "./DefaultBranchDialog";
 
 // ---------------------------------------------------------------------------
 // Sub-components
@@ -122,13 +120,6 @@ export function GitPanel() {
   const [isCommitDialogOpen, setIsCommitDialogOpen] = useState(false);
   const [isSwitchDialogOpen, setIsSwitchDialogOpen] = useState(false);
   const [mergeDialogScope, setMergeDialogScope] = useState<"current" | "stack" | null>(null);
-  const [pendingDefaultAction, setPendingDefaultAction] = useState<{
-    action: StackedAction;
-    branchName: string;
-    includesCommit: boolean;
-    commitMessage?: string;
-    filePaths?: string[];
-  } | null>(null);
   const [progressTitle, setProgressTitle] = useState<string | null>(null);
   const [notice, setNotice] = useState<{ type: "info" | "error" | "success"; message: string } | null>(null);
   const [isBusyLocal, setIsBusyLocal] = useState(false);
@@ -172,21 +163,17 @@ export function GitPanel() {
     }) => {
       if (!repoCwd || !gitStatus) return;
 
-      // Default branch confirmation
+      // Protected branches — always route to feature branch, no direct commits
       if (
-        !input.skipDefaultBranchPrompt &&
         !input.featureBranch &&
         requiresDefaultBranchConfirmation(input.action, isDefaultBranch) &&
         gitStatus.branch
       ) {
-        setPendingDefaultAction({
-          action: input.action,
-          branchName: gitStatus.branch,
-          includesCommit: input.action === "commit" || gitStatus.hasWorkingTreeChanges,
-          commitMessage: input.commitMessage,
-          filePaths: input.filePaths,
+        return runAction({
+          ...input,
+          featureBranch: true,
+          skipDefaultBranchPrompt: true,
         });
-        return;
       }
 
       const stages = buildGitActionProgressStages({
@@ -489,7 +476,6 @@ export function GitPanel() {
     setIsCommitDialogOpen(false);
     setIsSwitchDialogOpen(false);
     setMergeDialogScope(null);
-    setPendingDefaultAction(null);
     setPendingDeleteBranch(null);
   }, [repoCwd]);
 
@@ -497,7 +483,7 @@ export function GitPanel() {
 
   return (
     <div className="flex h-full flex-col">
-      <ScrollArea className="flex-1">
+      <div className="flex-1 overflow-y-auto overflow-x-hidden" style={{ scrollbarWidth: "none" }}>
         <div className="flex flex-col gap-5 p-6">
           {/* Notices */}
           {progressTitle && (
@@ -673,7 +659,7 @@ export function GitPanel() {
             </Button>
           </div>
         </div>
-      </ScrollArea>
+      </div>
 
       {/* Dialogs */}
       <CommitDialog
@@ -717,36 +703,6 @@ export function GitPanel() {
           repoCwd={repoCwd}
           isBusy={isBusy}
           onConfirm={handleMerge}
-        />
-      )}
-
-      {pendingDefaultAction && (
-        <DefaultBranchDialog
-          open
-          onOpenChange={() => setPendingDefaultAction(null)}
-          branchName={pendingDefaultAction.branchName}
-          includesCommit={pendingDefaultAction.includesCommit}
-          onContinueOnDefault={() => {
-            const action = pendingDefaultAction;
-            setPendingDefaultAction(null);
-            void runAction({
-              action: action.action,
-              commitMessage: action.commitMessage,
-              skipDefaultBranchPrompt: true,
-              filePaths: action.filePaths,
-            });
-          }}
-          onCreateFeatureBranch={() => {
-            const action = pendingDefaultAction;
-            setPendingDefaultAction(null);
-            void runAction({
-              action: action.action,
-              commitMessage: action.commitMessage,
-              featureBranch: true,
-              skipDefaultBranchPrompt: true,
-              filePaths: action.filePaths,
-            });
-          }}
         />
       )}
 

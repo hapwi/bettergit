@@ -217,9 +217,17 @@ export async function runStackedAction(input: StackedActionInput): Promise<Stack
   if (action === "commit_push_pr" && currentBranch) {
     // Use the stored parent branch (for stacked PRs) or fall back to default
     const configResult = await execGit(cwd, ["config", `branch.${currentBranch}.gh-merge-base`]);
-    const baseBranch = configResult.code === 0 && configResult.stdout.trim()
+    let baseBranch = configResult.code === 0 && configResult.stdout.trim()
       ? configResult.stdout.trim()
       : await getDefaultBranch(cwd);
+
+    // If pre-release exists, feature branches should target it instead of main/master
+    if ((baseBranch === "main" || baseBranch === "master") && currentBranch !== "pre-release") {
+      const preReleaseCheck = await execGit(cwd, ["rev-parse", "--verify", "pre-release"]);
+      if (preReleaseCheck.code === 0) {
+        baseBranch = "pre-release";
+      }
+    }
 
     // Generate PR content
     let prTitle: string;

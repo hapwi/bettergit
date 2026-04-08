@@ -40,7 +40,6 @@ import {
   ChartTooltipContent,
   type ChartConfig,
 } from "@/components/ui/chart";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 
@@ -177,8 +176,8 @@ export function Dashboard() {
   if (!stats) return null;
 
   return (
-    <ScrollArea className="h-full min-w-0">
-      <div className="flex min-w-0 flex-col gap-5 overflow-hidden p-6">
+    <div className="h-full overflow-y-auto overflow-x-hidden" style={{ scrollbarWidth: "none" }}>
+      <div className="flex flex-col gap-5 p-6">
         {/* Fork indicator */}
         {forkInfo && (
           <button
@@ -442,6 +441,6 @@ export function Dashboard() {
           </Card>
         </div>
       </div>
-    </ScrollArea>
+    </div>
   );
 }

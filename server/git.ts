@@ -306,13 +306,16 @@ export async function mergePullRequests(input: MergePullRequestsInput): Promise<
 
     await gitRun(cwd, ["fetch", "--quiet", "--prune", "origin"]);
 
-    const mergedProtectedHead = merged.find((m) => isProtectedBranch(m.headBranch));
+    const mergedProtectedHead = merged.find(
+      (m) => isProtectedBranch(m.headBranch) && m.headBranch !== mergeBaseBranch,
+    );
     const shouldCheckoutBaseAfterMerge =
-      currentBranch.length > 0 &&
-      (
-        merged.some((m) => m.headBranch === currentBranch && m.headBranch !== mergeBaseBranch) ||
-        autoClosedBranches.includes(currentBranch)
-      );
+      mergedProtectedHead !== undefined ||
+      (currentBranch.length > 0 &&
+        (
+          merged.some((m) => m.headBranch === currentBranch && m.headBranch !== mergeBaseBranch) ||
+          autoClosedBranches.includes(currentBranch)
+        ));
 
     for (const { headBranch } of merged) {
       if (!isProtectedBranch(headBranch)) continue;
