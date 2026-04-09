@@ -275,9 +275,8 @@ export const TerminalPanel = forwardRef<TerminalPanelHandle, TerminalPanelProps>
       setTabs((prev) => {
         const next = prev.filter((t) => t.id !== id)
         if (next.length === 0) {
-          const newId = String(++tabCounter)
-          setActiveTabId(newId)
-          return [{ id: newId, title: "Terminal" }]
+          setActiveTabId("")
+          return []
         }
         if (activeTabId === id) {
           setActiveTabId(next[next.length - 1].id)
@@ -309,8 +308,8 @@ export const TerminalPanel = forwardRef<TerminalPanelHandle, TerminalPanelProps>
       }
     }
 
-    // Then close the active tab (if more than one)
-    if (tabs.length > 1) {
+    // Close the active tab
+    if (tabs.length >= 1) {
       closeTab(activeTabId)
       return true
     }
@@ -353,15 +352,13 @@ export const TerminalPanel = forwardRef<TerminalPanelHandle, TerminalPanelProps>
                 )}
               >
                 <span className="truncate">{tab.title}</span>
-                {tabs.length > 1 && (
-                  <span
-                    role="button"
-                    onClick={(e) => { e.stopPropagation(); closeTab(tab.id) }}
-                    className="rounded p-0.5 opacity-0 transition-opacity hover:bg-white/[0.08] group-hover:opacity-100"
-                  >
-                    <X className="size-2.5" />
-                  </span>
-                )}
+                <span
+                  role="button"
+                  onClick={(e) => { e.stopPropagation(); closeTab(tab.id) }}
+                  className="rounded p-0.5 opacity-0 transition-opacity hover:bg-white/[0.08] group-hover:opacity-100"
+                >
+                  <X className="size-2.5" />
+                </span>
               </button>
             ))}
           </div>
@@ -397,16 +394,29 @@ export const TerminalPanel = forwardRef<TerminalPanelHandle, TerminalPanelProps>
 
         {/* Terminal instances */}
         <div className="relative min-h-0 flex-1 overflow-hidden rounded-b-[11px] m-2 mt-0">
-          {tabs.map((tab) => (
-            <TerminalInstance
-              key={tab.id}
-              cwd={cwd}
-              isActive={isVisible && activeTabId === tab.id}
-              serverPort={serverPort}
-              ghosttyConfig={ghosttyConfig}
-              resttyRef={getResttyRef(tab.id)}
-            />
-          ))}
+          {tabs.length === 0 ? (
+            <div className="flex h-full items-center justify-center">
+              <button
+                type="button"
+                onClick={addTab}
+                className="flex items-center gap-2 rounded-lg px-4 py-2 text-sm text-white/30 transition-colors hover:bg-white/[0.06] hover:text-white/50"
+              >
+                <Plus className="size-4" />
+                New Terminal
+              </button>
+            </div>
+          ) : (
+            tabs.map((tab) => (
+              <TerminalInstance
+                key={tab.id}
+                cwd={cwd}
+                isActive={isVisible && activeTabId === tab.id}
+                serverPort={serverPort}
+                ghosttyConfig={ghosttyConfig}
+                resttyRef={getResttyRef(tab.id)}
+              />
+            ))
+          )}
         </div>
       </div>
     </div>
