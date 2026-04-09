@@ -62,16 +62,16 @@ function isUpToDate() {
   });
 }
 
-if (process.argv.includes("--force") || !isUpToDate()) {
-  const nativeBuild = spawnSync(process.execPath, ["scripts/build-native-terminal.mjs"], {
-    cwd: projectRoot,
-    stdio: "inherit",
-    env: process.env,
-  });
-  if (nativeBuild.status !== 0) {
-    process.exit(nativeBuild.status ?? 1);
-  }
+const nativeBuild = spawnSync(process.execPath, ["scripts/build-native-terminal.mjs"], {
+  cwd: projectRoot,
+  stdio: "inherit",
+  env: process.env,
+});
+if (nativeBuild.status !== 0) {
+  process.exit(nativeBuild.status ?? 1);
+}
 
+if (process.argv.includes("--force") || !isUpToDate()) {
   await Promise.all(
     builds.map(({ entryPoint, options }) =>
       build({

@@ -4,7 +4,11 @@ import os from "node:os";
 import fs from "node:fs";
 import { execFileSync, spawn, type ChildProcess } from "node:child_process";
 import { createServer } from "node:net";
-import { loadNativeTerminalAddon, type NativeTerminalBounds } from "./nativeTerminalHost";
+import {
+  getNativeTerminalHostFailure,
+  loadNativeTerminalAddon,
+  type NativeTerminalBounds,
+} from "./nativeTerminalHost";
 
 // Resolve the user's full shell PATH before anything else — macOS GUI apps
 // don't inherit the login shell's environment, so tools like git/gh/claude
@@ -192,6 +196,11 @@ function createWindow() {
     win.on("focus", () => nativeTerminalAddon.setAppFocused(true));
     win.on("blur", () => nativeTerminalAddon.setAppFocused(false));
     win.on("closed", () => nativeTerminalAddon.shutdownHost());
+  } else {
+    const failure = getNativeTerminalHostFailure();
+    if (failure) {
+      appendMainLog(`native terminal host unavailable: ${failure}`);
+    }
   }
 }
 

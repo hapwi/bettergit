@@ -1,3 +1,4 @@
+import fs from "node:fs";
 import path from "node:path";
 import { createRequire } from "node:module";
 
@@ -36,9 +37,46 @@ export function loadNativeTerminalAddon(): NativeTerminalAddon | null {
 
   try {
     const require = createRequire(__filename);
-    const addonPath = path.join(__dirname, "../native/native_terminal_host/build/Release/native_terminal_host.node");
-    cachedAddon = require(addonPath) as NativeTerminalAddon;
-    return cachedAddon;
+    const candidatePaths = [
+      path.join(__dirname, "../native/native_terminal_host/build/Release/native_terminal_host.node"),
+      path.join(
+        process.resourcesPath,
+        "app.asar.unpacked",
+        "native",
+        "native_terminal_host",
+        "build",
+        "Release",
+        "native_terminal_host.node",
+      ),
+      path.join(
+        process.resourcesPath,
+        "native",
+        "native_terminal_host",
+        "build",
+        "Release",
+        "native_terminal_host.node",
+      ),
+    ];
+
+    const attempted: string[] = [];
+    for (const addonPath of candidatePaths) {
+      if (!fs.existsSync(addonPath)) {
+        attempted.push(`${addonPath} (missing)`);
+        continue;
+      }
+
+      try {
+        cachedAddon = require(addonPath) as NativeTerminalAddon;
+        return cachedAddon;
+      } catch (error) {
+        attempted.push(
+          `${addonPath} (${error instanceof Error ? error.message : String(error)})`,
+        );
+      }
+    }
+
+    cachedFailure = `native terminal host addon could not be loaded: ${attempted.join("; ")}`;
+    return null;
   } catch (error) {
     cachedFailure = error instanceof Error ? error.message : String(error);
     return null;

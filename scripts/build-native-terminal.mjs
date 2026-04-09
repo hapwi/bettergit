@@ -4,6 +4,7 @@ import { spawnSync } from "node:child_process";
 
 const projectRoot = new URL("..", import.meta.url).pathname.replace(/\/$/, "");
 const ghosttyDir = resolve(projectRoot, "vendor/ghostty");
+const ghosttyPatch = resolve(projectRoot, "patches/ghostty-static-lib-build.patch");
 const addonSource = resolve(projectRoot, "native/native_terminal_host/src/native_terminal_host.mm");
 const addonOutput = resolve(projectRoot, "native/native_terminal_host/build/Release/native_terminal_host.node");
 const ghosttyStaticLib = resolve(ghosttyDir, "zig-out/lib/libghostty.a");
@@ -21,6 +22,35 @@ function run(command, args, cwd = projectRoot, envOverrides = {}) {
   if (result.status !== 0) {
     throw new Error(`${command} ${args.join(" ")} failed with exit code ${result.status ?? 1}`);
   }
+}
+
+function runQuiet(command, args, cwd = projectRoot, envOverrides = {}) {
+  return spawnSync(command, args, {
+    cwd,
+    stdio: "pipe",
+    env: {
+      ...process.env,
+      ...envOverrides,
+    },
+  });
+}
+
+function ensureGhosttyPatchApplied() {
+  const patchCheck = runQuiet("git", ["apply", "--check", ghosttyPatch], ghosttyDir);
+  if (patchCheck.status === 0) {
+    run("git", ["apply", ghosttyPatch], ghosttyDir);
+    return;
+  }
+
+  const reverseCheck = runQuiet("git", ["apply", "--reverse", "--check", ghosttyPatch], ghosttyDir);
+  if (reverseCheck.status === 0) {
+    return;
+  }
+
+  throw new Error(
+    "Ghostty build patch is neither cleanly applicable nor already applied. " +
+      "Check vendor/ghostty for unexpected local changes.",
+  );
 }
 
 function getMetalToolchainEnv() {
@@ -57,6 +87,8 @@ function needsRebuild(outputPath, inputs) {
   const outputMtime = statSync(outputPath).mtimeMs;
   return inputs.some((input) => statSync(input).mtimeMs > outputMtime);
 }
+
+ensureGhosttyPatchApplied();
 
 run(
   "zig",
