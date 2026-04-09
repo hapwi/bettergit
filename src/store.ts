@@ -101,7 +101,6 @@ export const useAppStore = create<AppStore>((set, get) => ({
 
 // Async: load from file and merge if localStorage was empty
 window.electronAPI?.settings.load().then((file) => {
-  fileSettings = file;
   const state = useAppStore.getState();
   const fileRepos = (file.recentRepos as string[] | undefined) ?? [];
   const fileTermApp = (file.terminalApp as string | null) ?? null;
