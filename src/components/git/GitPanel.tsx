@@ -598,7 +598,7 @@ export function GitPanel() {
             {menuItems.map((item) => (
               <Button
                 key={item.id}
-                variant="outline"
+                variant={item.highlighted ? "default" : "outline"}
                 disabled={isBusy || item.disabled}
                 onClick={() => handleMenuItem(item)}
                 className="h-auto flex-col gap-1 py-3"
