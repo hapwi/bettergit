@@ -20,10 +20,14 @@ export function sanitizeBranchFragment(raw: string): string {
   return branchFragment.length > 0 ? branchFragment : "update";
 }
 
+const BRANCH_TYPE_PREFIXES = [
+  "feature/", "fix/", "bug/", "chore/", "refactor/", "hotfix/", "docs/", "test/", "style/",
+];
+
 export function sanitizeFeatureBranchName(raw: string): string {
   const sanitized = sanitizeBranchFragment(raw);
-  if (sanitized.includes("/")) {
-    return sanitized.startsWith("feature/") ? sanitized : `feature/${sanitized}`;
+  if (BRANCH_TYPE_PREFIXES.some((p) => sanitized.startsWith(p))) {
+    return sanitized;
   }
   return `feature/${sanitized}`;
 }

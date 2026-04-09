@@ -76,7 +76,7 @@ function shouldRetryMerge(error: unknown): boolean {
   );
 }
 
-const MERGE_RETRY_DELAYS = [250, 500, 1_000, 2_000];
+const MERGE_RETRY_DELAYS = [2_000, 4_000, 6_000, 8_000];
 
 async function sleep(ms: number) {
   return new Promise<void>((resolve) => setTimeout(resolve, ms));
@@ -288,6 +288,8 @@ export async function mergePullRequests(input: MergePullRequestsInput): Promise<
             await gitRun(cwd, ["push", "--force-with-lease", "-u", "origin", `HEAD:${pr.headBranch}`]),
             `push rebased ${pr.headBranch}`,
           );
+          // Give GitHub time to process the force push and recalculate mergeability
+          await sleep(3_000);
         }
       }
 

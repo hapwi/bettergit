@@ -81,6 +81,43 @@ export async function getDiff(
   return result.stdout;
 }
 
+export async function discardAllChanges(cwd: string): Promise<void> {
+  // Reset any staged changes
+  await execGit(cwd, ["reset", "HEAD"]);
+  // Discard all tracked file modifications
+  requireSuccess(await execGit(cwd, ["checkout", "--", "."]), "discard tracked changes");
+  // Remove untracked files and directories
+  requireSuccess(await execGit(cwd, ["clean", "-fd"]), "discard untracked files");
+}
+
+/**
+ * Get unified diff patch for all local changes (tracked + untracked).
+ * Returns a single string suitable for parsePatchFiles from @pierre/diffs.
+ */
+export async function getFullDiffPatch(cwd: string): Promise<string> {
+  // Get diff for tracked changes against HEAD
+  const trackedResult = await execGit(cwd, ["diff", "HEAD"]);
+  const trackedPatch = trackedResult.stdout;
+
+  // Find untracked files
+  const untrackedResult = await execGit(cwd, [
+    "ls-files", "--others", "--exclude-standard",
+  ]);
+  const untrackedFiles = untrackedResult.stdout.trim().split("\n").filter(Boolean);
+
+  // Generate diffs for untracked files (as new file patches)
+  const untrackedPatches: string[] = [];
+  for (const file of untrackedFiles) {
+    const result = await execGit(cwd, ["diff", "--no-index", "/dev/null", file]);
+    // --no-index returns exit code 1 when there are differences, which is expected
+    if (result.stdout) {
+      untrackedPatches.push(result.stdout);
+    }
+  }
+
+  return [trackedPatch, ...untrackedPatches].filter(Boolean).join("\n");
+}
+
 export async function getDiffStat(
   cwd: string,
   staged = false,

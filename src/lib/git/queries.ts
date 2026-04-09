@@ -4,11 +4,13 @@
 import { queryOptions, keepPreviousData, type QueryClient } from "@tanstack/react-query";
 import { getStatus } from "./status";
 import { listBranches } from "./branches";
+import { getFullDiffPatch } from "./commits";
 
 export const gitQueryKeys = {
   all: ["git"] as const,
   status: (cwd: string | null) => ["git", "status", cwd] as const,
   branches: (cwd: string | null) => ["git", "branches", cwd] as const,
+  diffPatch: (cwd: string | null) => ["git", "diffPatch", cwd] as const,
 };
 
 export function invalidateGitQueries(queryClient: QueryClient) {
@@ -28,6 +30,16 @@ export function gitStatusQueryOptions(cwd: string | null) {
     refetchInterval: 5_000,
     refetchOnWindowFocus: "always" as const,
     placeholderData: keepPreviousData,
+  });
+}
+
+export function gitDiffPatchQueryOptions(cwd: string | null, enabled: boolean) {
+  return queryOptions({
+    queryKey: gitQueryKeys.diffPatch(cwd),
+    queryFn: () => getFullDiffPatch(cwd!),
+    enabled: cwd !== null && enabled,
+    staleTime: 5_000,
+    gcTime: 60_000,
   });
 }
 

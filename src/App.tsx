@@ -1,5 +1,4 @@
-import { useState } from "react"
-import { useQuery } from "@tanstack/react-query"
+import { useState, useRef, useEffect } from "react"
 import { useAppStore } from "@/store"
 import { RepoSidebar } from "@/components/git/RepoSidebar"
 import { GitPanel } from "@/components/git/GitPanel"
@@ -7,30 +6,31 @@ import { Dashboard } from "@/components/git/Dashboard"
 import { WelcomeScreen } from "@/components/git/WelcomeScreen"
 import { SidebarProvider, useSidebar } from "@/components/ui/sidebar"
 import { cn } from "@/lib/utils"
-import { gitStatusQueryOptions } from "@/lib/git/queries"
 import {
   LayoutDashboard,
   GitBranchIcon,
   SidebarLeftIcon,
-  GitPullRequestIcon,
 } from "@hugeicons/core-free-icons"
 import { HugeiconsIcon } from "@hugeicons/react"
-import { Terminal } from "lucide-react"
+import { Terminal, FileDiff } from "lucide-react"
+import { DiffViewer } from "@/components/git/DiffViewer"
+import { TerminalPanel, type TerminalPanelHandle } from "@/components/terminal/TerminalPanel"
+
+type ActiveTab = "dashboard" | "git" | "terminal"
 
 function Toolbar({
   activeTab,
   onTabChange,
+  onDiffOpen,
 }: {
-  activeTab: "dashboard" | "git"
-  onTabChange: (tab: "dashboard" | "git") => void
+  activeTab: ActiveTab
+  onTabChange: (tab: ActiveTab) => void
+  onDiffOpen: () => void
 }) {
   const { toggleSidebar, state } = useSidebar()
   const isCollapsed = state === "collapsed"
   const repoCwd = useAppStore((s) => s.repoCwd)
-  const terminalApp = useAppStore((s) => s.terminalApp)
   const repoName = repoCwd?.split("/").pop() ?? ""
-  const { data: status } = useQuery(gitStatusQueryOptions(repoCwd))
-  const changeCount = status?.workingTree.files.length ?? 0
 
   return (
     <div
@@ -41,7 +41,7 @@ function Toolbar({
         height: 52,
       } as React.CSSProperties}
     >
-      {/* Left: sidebar toggle + repo name + branch info */}
+      {/* Left: sidebar toggle + repo name */}
       <div className="flex items-center gap-2.5" style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}>
         <button
           type="button"
@@ -53,44 +53,20 @@ function Toolbar({
         {repoName && (
           <span className="text-sm font-semibold">{repoName}</span>
         )}
-        {status?.branch && (
-          <>
-            <span className="text-muted-foreground/30">/</span>
-            <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
-              <HugeiconsIcon icon={GitBranchIcon} className="size-3" />
-              {status.branch}
-            </span>
-            <span className={cn(
-              "flex items-center gap-1 text-xs",
-              changeCount > 0 ? "text-amber-500" : "text-emerald-500",
-            )}>
-              <span className={cn(
-                "size-1.5 rounded-full",
-                changeCount > 0 ? "bg-amber-500" : "bg-emerald-500",
-              )} />
-              {changeCount > 0 ? `${changeCount} changes` : "Clean"}
-            </span>
-            {status.pr && (
-              <span className="flex items-center gap-1 text-xs text-muted-foreground">
-                <HugeiconsIcon icon={GitPullRequestIcon} className="size-3 text-emerald-500" />
-                #{status.pr.number}
-              </span>
-            )}
-          </>
-        )}
       </div>
 
-      {/* Open in Terminal */}
+      {/* Toolbar actions */}
       {repoCwd && (
-        <button
-          type="button"
-          onClick={() => window.electronAPI?.shell.openTerminal(repoCwd, terminalApp ?? undefined)}
-          className="ml-auto rounded-md p-1.5 text-muted-foreground/50 transition-colors hover:bg-accent hover:text-foreground"
-          style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
-          title="Open in Terminal"
-        >
-          <Terminal className="size-[15px]" />
-        </button>
+        <div className="ml-auto flex items-center gap-0.5" style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}>
+          <button
+            type="button"
+            onClick={onDiffOpen}
+            className="rounded-md p-1.5 text-muted-foreground/50 transition-colors hover:bg-accent hover:text-foreground"
+            title="View diff"
+          >
+            <FileDiff className="size-[15px]" />
+          </button>
+        </div>
       )}
 
       {/* Right: view toggle */}
@@ -124,21 +100,98 @@ function Toolbar({
           <HugeiconsIcon icon={GitBranchIcon} className="size-3" />
           Git
         </button>
+        <button
+          type="button"
+          onClick={() => onTabChange("terminal")}
+          className={cn(
+            "flex items-center gap-1.5 rounded-[5px] px-2.5 py-1 text-xs font-medium transition-colors",
+            activeTab === "terminal"
+              ? "bg-background text-foreground shadow-sm"
+              : "text-muted-foreground hover:text-foreground",
+          )}
+        >
+          <Terminal className="size-3" />
+          Terminal
+        </button>
       </div>
     </div>
   )
 }
 
 function AppContent() {
-  const [activeTab, setActiveTab] = useState<"dashboard" | "git">("dashboard")
+  const [activeTab, setActiveTab] = useState<ActiveTab>("dashboard")
+  const [isDiffOpen, setIsDiffOpen] = useState(false)
+  const [terminalMounted, setTerminalMounted] = useState(false)
+  const repoCwd = useAppStore((s) => s.repoCwd)
+  const terminalRef = useRef<TerminalPanelHandle>(null)
+
+  // Lazy-mount: only render the terminal once it's been activated
+  if (activeTab === "terminal" && !terminalMounted) {
+    setTerminalMounted(true)
+  }
+
+  // Cmd+W: close pane/tab in terminal first, then close window
+  useEffect(() => {
+    const cleanup = window.electronAPI?.onClosePaneOrWindow(() => {
+      if (activeTab === "terminal" && terminalRef.current) {
+        const handled = terminalRef.current.closePaneOrTab()
+        if (handled) return
+      }
+      window.close()
+    })
+    return cleanup
+  }, [activeTab])
+
+  // Cmd+D / Cmd+Shift+D / Cmd+T: terminal split & tab shortcuts
+  useEffect(() => {
+    const cleanup = window.electronAPI?.onTerminalAction((action) => {
+      // Switch to terminal tab if not already there
+      if (activeTab !== "terminal") {
+        setActiveTab("terminal")
+        if (!terminalMounted) setTerminalMounted(true)
+      }
+      // Defer action to next tick so terminal is mounted
+      setTimeout(() => {
+        const t = terminalRef.current
+        if (!t) return
+        switch (action) {
+          case "terminal:split-vertical": t.splitVertical(); break
+          case "terminal:split-horizontal": t.splitHorizontal(); break
+          case "terminal:new-tab": t.addTab(); break
+        }
+      }, 0)
+    })
+    return cleanup
+  }, [activeTab, terminalMounted])
 
   return (
     <>
-      <Toolbar activeTab={activeTab} onTabChange={setActiveTab} />
+      <Toolbar activeTab={activeTab} onTabChange={setActiveTab} onDiffOpen={() => setIsDiffOpen(true)} />
       <main className="flex min-h-0 flex-1 flex-col overflow-hidden pt-[52px]">
-        {activeTab === "dashboard" && <Dashboard />}
-        {activeTab === "git" && <GitPanel />}
+        <div className="relative min-h-0 flex-1">
+          <div className={cn(
+            "absolute inset-0 overflow-hidden",
+            activeTab === "dashboard" ? "z-10" : "hidden"
+          )}>
+            <Dashboard />
+          </div>
+          <div className={cn(
+            "absolute inset-0 overflow-hidden",
+            activeTab === "git" ? "z-10" : "hidden"
+          )}>
+            <GitPanel />
+          </div>
+          {terminalMounted && repoCwd && (
+            <div className={cn(
+              "absolute inset-0 overflow-hidden",
+              activeTab === "terminal" ? "z-10" : "pointer-events-none invisible"
+            )}>
+              <TerminalPanel ref={terminalRef} cwd={repoCwd} isVisible={activeTab === "terminal"} />
+            </div>
+          )}
+        </div>
       </main>
+      <DiffViewer open={isDiffOpen} onOpenChange={setIsDiffOpen} />
     </>
   )
 }
