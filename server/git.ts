@@ -61,6 +61,29 @@ function requireOk(result: ExecResult, label: string) {
   return result.stdout;
 }
 
+/**
+ * Ensure a local branch matches its origin counterpart. Compares refs and
+ * hard-resets (or update-refs) when they diverge, so stale local-only commits
+ * from prior failed pushes don't accumulate.
+ */
+async function syncLocalToOrigin(cwd: string, branch: string, currentBranch: string) {
+  try {
+    const localRes = await gitRun(cwd, ["rev-parse", branch]);
+    const remoteRes = await gitRun(cwd, ["rev-parse", `origin/${branch}`]);
+    if (localRes.code !== 0 || remoteRes.code !== 0) return;
+
+    const localSha = localRes.stdout.trim();
+    const remoteSha = remoteRes.stdout.trim();
+    if (localSha === remoteSha) return;
+
+    if (currentBranch === branch) {
+      await gitRun(cwd, ["reset", "--hard", `origin/${branch}`]);
+    } else {
+      await gitRun(cwd, ["update-ref", `refs/heads/${branch}`, `origin/${branch}`]);
+    }
+  } catch { /* best effort — don't break the merge flow */ }
+}
+
 function shouldRetryMerge(error: unknown): boolean {
   if (!(error instanceof Error)) return false;
   const msg = error.message.toLowerCase();
@@ -340,6 +363,13 @@ export async function mergePullRequests(input: MergePullRequestsInput): Promise<
       } catch { /* best effort */ }
     }
 
+    // Ensure mergeBaseBranch (e.g. main) itself is in sync with origin.
+    // After a squash merge, origin has a new commit that local may lack. A
+    // pull --ff-only fails silently when local has diverged (old local-only
+    // commits from prior failed pushes), so we compare refs and hard-reset
+    // when they differ.
+    await syncLocalToOrigin(cwd, mergeBaseBranch, currentBranch);
+
     if (shouldCheckoutBaseAfterMerge) {
       // If we merged a protected branch (e.g. pre-release → main), go back to
       // that branch instead of staying on the merge base.
@@ -348,7 +378,7 @@ export async function mergePullRequests(input: MergePullRequestsInput): Promise<
       );
       const checkoutTarget = mergedProtected ? mergedProtected.headBranch : mergeBaseBranch;
       await gitRun(cwd, ["checkout", checkoutTarget]).catch(() => {});
-      await gitRun(cwd, ["pull", "--ff-only"]).catch(() => {});
+      await syncLocalToOrigin(cwd, checkoutTarget, checkoutTarget);
       currentBranch = checkoutTarget;
       finalBranch = checkoutTarget;
     }
@@ -363,7 +393,7 @@ export async function mergePullRequests(input: MergePullRequestsInput): Promise<
     }
 
     if (!finalBranch) {
-      await gitRun(cwd, ["pull", "--ff-only"]).catch(() => {});
+      await syncLocalToOrigin(cwd, currentBranch, currentBranch);
       finalBranch = currentBranch;
     }
   }
