@@ -1,15 +1,11 @@
 import { useEffect, useRef, useState, useCallback, forwardRef, useImperativeHandle } from "react"
 import { Restty, getBuiltinTheme } from "restty"
 import type { GhosttyTheme } from "restty"
-import { Plus, X, Columns2, Rows2 } from "lucide-react"
+import { Plus, X } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { serverFetch } from "@/lib/server"
 
-function themeColorToHex(color: { r: number; g: number; b: number } | undefined): string | null {
-  if (!color) return null
-  const hex = (n: number) => n.toString(16).padStart(2, "0")
-  return `#${hex(color.r)}${hex(color.g)}${hex(color.b)}`
-}
+const TERMINAL_SHELL_BG = "#3b3d46"
 
 // ---------------------------------------------------------------------------
 // WebSocket PtyTransport — one per pane (including splits)
@@ -21,16 +17,14 @@ function createWsPtyTransport(serverPort: number, cwd: string) {
   let sessionId: string | null = null
   let destroyed = false
   let reconnectTimer: ReturnType<typeof setTimeout> | null = null
-  let savedCallbacks: {
+
+  function connectWs(callbacks: {
     onConnect?: () => void
     onDisconnect?: () => void
     onData?: (data: string) => void
     onExit?: (code: number) => void
-  } | null = null
-
-  function connectWs(callbacks: NonNullable<typeof savedCallbacks>) {
+  }) {
     if (destroyed) return
-    savedCallbacks = callbacks
 
     ws = new WebSocket(`ws://127.0.0.1:${serverPort}/ws/pty?cwd=${encodeURIComponent(cwd)}`)
 
@@ -74,7 +68,7 @@ function createWsPtyTransport(serverPort: number, cwd: string) {
   }
 
   return {
-    async connect(options: { callbacks: NonNullable<typeof savedCallbacks> }) {
+    async connect(options: { callbacks: Parameters<typeof connectWs>[0] }) {
       connectWs(options.callbacks)
     },
 
@@ -116,11 +110,42 @@ interface GhosttyConfig {
   fontFamily: string | null
   fontSize: number | null
   background: string | null
+  backgroundOpacity?: number | null
   foreground: string | null
   raw: Record<string, string>
 }
 
 let cachedConfig: GhosttyConfig | null = null
+const MAX_SCROLLBACK_BYTES = 2_000_000
+let resttyScrollbarWorkaroundInstalled = false
+
+function installResttyScrollbarWorkaround() {
+  if (resttyScrollbarWorkaroundInstalled || typeof window === "undefined" || typeof window.matchMedia !== "function") {
+    return
+  }
+
+  const originalMatchMedia = window.matchMedia.bind(window)
+  window.matchMedia = ((query: string) => {
+    const result = originalMatchMedia(query)
+    if (query.trim() !== "(any-pointer: coarse)") {
+      return result
+    }
+
+    return {
+      ...result,
+      matches: true,
+      media: query,
+      onchange: result.onchange,
+      addListener: result.addListener ? result.addListener.bind(result) : undefined,
+      removeListener: result.removeListener ? result.removeListener.bind(result) : undefined,
+      addEventListener: result.addEventListener.bind(result),
+      removeEventListener: result.removeEventListener.bind(result),
+      dispatchEvent: result.dispatchEvent.bind(result),
+    } as MediaQueryList
+  }) as typeof window.matchMedia
+
+  resttyScrollbarWorkaroundInstalled = true
+}
 
 async function loadGhosttyConfig(): Promise<GhosttyConfig> {
   if (cachedConfig) return cachedConfig
@@ -128,7 +153,7 @@ async function loadGhosttyConfig(): Promise<GhosttyConfig> {
     cachedConfig = await serverFetch<GhosttyConfig>("/api/ghostty-config")
     return cachedConfig
   } catch {
-    return { theme: null, fontFamily: null, fontSize: null, background: null, foreground: null, raw: {} }
+    return { theme: null, fontFamily: null, fontSize: null, background: null, backgroundOpacity: null, foreground: null, raw: {} }
   }
 }
 
@@ -157,10 +182,35 @@ function TerminalInstance({
   resttyRef: React.MutableRefObject<Restty | null>
 }) {
   const containerRef = useRef<HTMLDivElement>(null)
+  const layoutFrameRef = useRef<number | null>(null)
+
+  const cancelScheduledLayoutSync = useCallback(() => {
+    if (layoutFrameRef.current !== null) {
+      cancelAnimationFrame(layoutFrameRef.current)
+      layoutFrameRef.current = null
+    }
+  }, [])
+
+  const scheduleLayoutSync = useCallback((focusActivePane = false) => {
+    cancelScheduledLayoutSync()
+    layoutFrameRef.current = requestAnimationFrame(() => {
+      layoutFrameRef.current = null
+      const restty = resttyRef.current
+      if (!restty) return
+      restty.forEachPane((pane) => {
+        pane.updateSize(true)
+      })
+      if (focusActivePane) {
+        restty.activePane()?.focus()
+      }
+    })
+  }, [cancelScheduledLayoutSync, resttyRef])
 
   useEffect(() => {
     const container = containerRef.current
     if (!container || !serverPort || !ghosttyConfig) return
+
+    installResttyScrollbarWorkaround()
 
     let destroyed = false
     const fontSize = ghosttyConfig.fontSize ?? 16
@@ -176,6 +226,9 @@ function TerminalInstance({
       defaultContextMenu: false,
       searchUi: false,
       shortcuts: false,
+      onLayoutChanged: () => {
+        scheduleLayoutSync()
+      },
       // Factory: called for each pane (initial + every split)
       appOptions: () => ({
         ptyTransport: createWsPtyTransport(serverPort, cwd),
@@ -183,6 +236,9 @@ function TerminalInstance({
         fontSizeMode: "height" as const,
         autoResize: true,
         attachWindowEvents: true,
+        // Keep long-running sessions responsive instead of letting scrollback
+        // grow until the native scroll host and renderer bog down.
+        maxScrollbackBytes: MAX_SCROLLBACK_BYTES,
       }),
       onPaneCreated: (pane) => {
         pane.app.init().then(() => {
@@ -197,10 +253,11 @@ function TerminalInstance({
 
     return () => {
       destroyed = true
+      cancelScheduledLayoutSync()
       restty.destroy()
       resttyRef.current = null
     }
-  }, [cwd, serverPort, ghosttyConfig])
+  }, [cancelScheduledLayoutSync, cwd, ghosttyConfig, resttyRef, scheduleLayoutSync, serverPort])
 
   // Pause/resume when visibility changes
   useEffect(() => {
@@ -208,21 +265,113 @@ function TerminalInstance({
     if (!restty) return
 
     restty.forEachPane((pane) => {
-      pane.getRawPane().app.setPaused(!isActive)
+      pane.setPaused(!isActive)
     })
-    if (isActive) {
-      // The container was invisible (visibility:hidden) while inactive. Even
-      // though it keeps its layout, the terminal renderer may have stale
-      // dimensions. Wait one frame for the browser to remove the invisible
-      // class, then trigger a layout sync so Restty re-measures and repaints.
-      requestAnimationFrame(() => {
-        const r = resttyRef.current
-        if (!r) return
-        r.requestLayoutSync()
-        r.activePane()?.focus()
-      })
+
+    if (!isActive) {
+      cancelScheduledLayoutSync()
+      restty.activePane()?.blur()
+      return
     }
-  }, [isActive])
+
+    scheduleLayoutSync(true)
+  }, [cancelScheduledLayoutSync, isActive, resttyRef, scheduleLayoutSync])
+
+  useEffect(() => {
+    const container = containerRef.current
+    if (!container || typeof ResizeObserver === "undefined") return
+
+    const observer = new ResizeObserver(() => {
+      if (!isActive) return
+      scheduleLayoutSync()
+    })
+
+    observer.observe(container)
+    return () => observer.disconnect()
+  }, [isActive, scheduleLayoutSync])
+
+  return (
+    <div
+      ref={containerRef}
+      className={cn(
+        "absolute inset-0",
+        !isActive && "pointer-events-none invisible",
+      )}
+    />
+  )
+}
+
+function NativeTerminalInstance({
+  surfaceId,
+  cwd,
+  isActive,
+  backgroundColor,
+}: {
+  surfaceId: string
+  cwd: string
+  isActive: boolean
+  backgroundColor: string
+}) {
+  const containerRef = useRef<HTMLDivElement>(null)
+  const [created, setCreated] = useState(false)
+
+  const syncBounds = useCallback(() => {
+    if (!created) return
+    const container = containerRef.current
+    if (!container) return
+    const rect = container.getBoundingClientRect()
+    if (rect.width <= 0 || rect.height <= 0) return
+    void window.electronAPI?.terminalHost.setSurfaceBounds(surfaceId, {
+      x: Math.round(rect.left),
+      y: Math.round(rect.top),
+      width: Math.round(rect.width),
+      height: Math.round(rect.height),
+    })
+  }, [created, surfaceId])
+
+  useEffect(() => {
+    let cancelled = false
+    window.electronAPI?.terminalHost.createSurface(surfaceId, cwd).then((ok) => {
+      if (!cancelled) {
+        setCreated(ok)
+      }
+    }).catch(() => {
+      if (!cancelled) {
+        setCreated(false)
+      }
+    })
+
+    return () => {
+      cancelled = true
+      setCreated(false)
+      void window.electronAPI?.terminalHost.destroySurface(surfaceId)
+    }
+  }, [cwd, surfaceId])
+
+  useEffect(() => {
+    if (!created) return
+    syncBounds()
+    void window.electronAPI?.terminalHost.setSurfaceBackground(surfaceId, backgroundColor)
+    void window.electronAPI?.terminalHost.setSurfaceVisible(surfaceId, isActive)
+    if (isActive) {
+      void window.electronAPI?.terminalHost.focusSurface(surfaceId)
+    }
+  }, [backgroundColor, created, isActive, surfaceId, syncBounds])
+
+  useEffect(() => {
+    const container = containerRef.current
+    if (!container || typeof ResizeObserver === "undefined") return
+
+    const observer = new ResizeObserver(() => {
+      syncBounds()
+    })
+    observer.observe(container)
+    window.addEventListener("resize", syncBounds)
+    return () => {
+      observer.disconnect()
+      window.removeEventListener("resize", syncBounds)
+    }
+  }, [syncBounds])
 
   return (
     <div
@@ -259,7 +408,8 @@ export const TerminalPanel = forwardRef<TerminalPanelHandle, TerminalPanelProps>
   const [activeTabId, setActiveTabId] = useState(() => tabs[0].id)
   const [serverPort, setServerPort] = useState(0)
   const [ghosttyConfig, setGhosttyConfig] = useState<GhosttyConfig | null>(null)
-  const [cardBg, setCardBg] = useState("#0d1117")
+  const [cardBg] = useState(TERMINAL_SHELL_BG)
+  const [nativeHostAvailable, setNativeHostAvailable] = useState(false)
 
   // One restty ref per tab
   const resttyRefs = useRef(new Map<string, React.MutableRefObject<Restty | null>>())
@@ -276,14 +426,11 @@ export const TerminalPanel = forwardRef<TerminalPanelHandle, TerminalPanelProps>
   // Load server port + Ghostty config once
   useEffect(() => {
     window.electronAPI?.server.getPort().then((port) => setServerPort(port))
+    window.electronAPI?.terminalHost.isAvailable().then(async (available) => {
+      setNativeHostAvailable(available)
+    }).catch(() => setNativeHostAvailable(false))
     loadGhosttyConfig().then((config) => {
       setGhosttyConfig(config)
-      let resolvedTheme: GhosttyTheme | null = null
-      if (config.theme) resolvedTheme = getBuiltinTheme(config.theme)
-      if (!resolvedTheme) resolvedTheme = getBuiltinTheme("GitHub Dark")
-      const bg = themeColorToHex(resolvedTheme?.colors?.background as { r: number; g: number; b: number } | undefined)
-      if (bg) setCardBg(bg)
-      else if (config.background) setCardBg(config.background)
     })
   }, [])
 
@@ -331,6 +478,14 @@ export const TerminalPanel = forwardRef<TerminalPanelHandle, TerminalPanelProps>
 
   // Expose closePaneOrTab to parent via ref
   const closePaneOrTab = useCallback((): boolean => {
+    if (nativeHostAvailable) {
+      if (tabs.length >= 1) {
+        closeTab(activeTabId)
+        return true
+      }
+      return false
+    }
+
     const resttyRefObj = resttyRefs.current.get(activeTabId)
     const restty = resttyRefObj?.current
 
@@ -354,17 +509,15 @@ export const TerminalPanel = forwardRef<TerminalPanelHandle, TerminalPanelProps>
 
     // Nothing left to close — signal to caller
     return false
-  }, [activeTabId, tabs.length, closeTab])
+  }, [activeTabId, tabs.length, closeTab, nativeHostAvailable])
 
   const splitVertical = useCallback(() => {
-    const ref = resttyRefs.current.get(activeTabId)
-    ref?.current?.splitActivePane("vertical")
-  }, [activeTabId])
+    return
+  }, [])
 
   const splitHorizontal = useCallback(() => {
-    const ref = resttyRefs.current.get(activeTabId)
-    ref?.current?.splitActivePane("horizontal")
-  }, [activeTabId])
+    return
+  }, [])
 
   useImperativeHandle(ref, () => ({ closePaneOrTab, splitVertical, splitHorizontal, addTab }), [closePaneOrTab, splitVertical, splitHorizontal, addTab])
 
@@ -401,24 +554,8 @@ export const TerminalPanel = forwardRef<TerminalPanelHandle, TerminalPanelProps>
             ))}
           </div>
 
-          {/* Split + add buttons */}
+          {/* Add button */}
           <div className="flex shrink-0 items-center gap-0.5">
-            <button
-              type="button"
-              onClick={splitVertical}
-              className="rounded-md p-1 text-white/30 transition-colors hover:bg-white/[0.06] hover:text-white/60"
-              title="Split right"
-            >
-              <Columns2 className="size-3.5" />
-            </button>
-            <button
-              type="button"
-              onClick={splitHorizontal}
-              className="rounded-md p-1 text-white/30 transition-colors hover:bg-white/[0.06] hover:text-white/60"
-              title="Split down"
-            >
-              <Rows2 className="size-3.5" />
-            </button>
             <button
               type="button"
               onClick={addTab}
@@ -445,14 +582,24 @@ export const TerminalPanel = forwardRef<TerminalPanelHandle, TerminalPanelProps>
             </div>
           ) : (
             tabs.map((tab) => (
-              <TerminalInstance
-                key={tab.id}
-                cwd={cwd}
-                isActive={isVisible && activeTabId === tab.id}
-                serverPort={serverPort}
-                ghosttyConfig={ghosttyConfig}
-                resttyRef={getResttyRef(tab.id)}
-              />
+              nativeHostAvailable ? (
+                <NativeTerminalInstance
+                  key={tab.id}
+                  surfaceId={tab.id}
+                  cwd={cwd}
+                  isActive={isVisible && activeTabId === tab.id}
+                  backgroundColor={cardBg}
+                />
+              ) : (
+                <TerminalInstance
+                  key={tab.id}
+                  cwd={cwd}
+                  isActive={isVisible && activeTabId === tab.id}
+                  serverPort={serverPort}
+                  ghosttyConfig={ghosttyConfig}
+                  resttyRef={getResttyRef(tab.id)}
+                />
+              )
             ))
           )}
         </div>

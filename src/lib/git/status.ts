@@ -72,8 +72,26 @@ export async function getStatus(cwd: string): Promise<GitStatus> {
       const parts = line.split(" ");
       // Path is everything after the 8th space-separated field
       if (parts.length >= 9) {
+        const xy = parts[1] ?? "";
+        const sub = parts[2] ?? "";
+        const headMode = parts[3] ?? "";
+        const indexMode = parts[4] ?? "";
+        const worktreeMode = parts[5] ?? "";
         const filePath = parts.slice(8).join(" ");
-        if (filePath) changedPaths.push(filePath);
+        const isGitLink =
+          headMode === "160000" &&
+          indexMode === "160000" &&
+          worktreeMode === "160000";
+        const isNestedRepoDirtyOnly =
+          isGitLink &&
+          xy.startsWith(".") &&
+          sub.startsWith("S.") &&
+          (sub[2] !== "." || sub[3] !== ".");
+
+        // Nested repos/gitlinks can report a dirty working tree in porcelain v2
+        // without any parent-repo diff to stage or commit. Ignore those entries
+        // so the parent repo only reports committable changes.
+        if (filePath && !isNestedRepoDirtyOnly) changedPaths.push(filePath);
       }
     } else if (line.startsWith("2 ")) {
       // Rename/copy entry: "2 XY sub m1 m2 m3 h1 h2 Xscore\tpath\torigPath"

@@ -12,6 +12,27 @@ contextBridge.exposeInMainWorld("electronAPI", {
   server: {
     getPort: (): Promise<number> => ipcRenderer.invoke("server:getPort"),
   },
+  terminalHost: {
+    isAvailable: (): Promise<boolean> => ipcRenderer.invoke("terminal-host:isAvailable"),
+    createSurface: (surfaceId: string, cwd: string): Promise<boolean> =>
+      ipcRenderer.invoke("terminal-host:createSurface", surfaceId, cwd),
+    destroySurface: (surfaceId: string): Promise<void> =>
+      ipcRenderer.invoke("terminal-host:destroySurface", surfaceId),
+    setSurfaceBounds: (
+      surfaceId: string,
+      bounds: { x: number; y: number; width: number; height: number },
+    ): Promise<void> => ipcRenderer.invoke("terminal-host:setSurfaceBounds", surfaceId, bounds),
+    getResolvedAppearance: (): Promise<{ backgroundColor?: string; backgroundOpacity?: number } | undefined> =>
+      ipcRenderer.invoke("terminal-host:getResolvedAppearance"),
+    setSurfaceBackground: (surfaceId: string, color: string): Promise<void> =>
+      ipcRenderer.invoke("terminal-host:setSurfaceBackground", surfaceId, color),
+    setSurfaceVisible: (surfaceId: string, visible: boolean): Promise<void> =>
+      ipcRenderer.invoke("terminal-host:setSurfaceVisible", surfaceId, visible),
+    focusSurface: (surfaceId: string): Promise<void> =>
+      ipcRenderer.invoke("terminal-host:focusSurface", surfaceId),
+    splitSurface: (surfaceId: string, direction: "right" | "down" | "left" | "up"): Promise<void> =>
+      ipcRenderer.invoke("terminal-host:splitSurface", surfaceId, direction),
+  },
   settings: {
     load: (): Promise<Record<string, unknown>> => ipcRenderer.invoke("settings:load"),
     save: (data: Record<string, unknown>): Promise<void> => ipcRenderer.invoke("settings:save", data),

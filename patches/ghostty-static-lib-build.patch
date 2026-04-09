@@ -1,0 +1,78 @@
+diff --git a/build.zig b/build.zig
+index 2d7319971..d72fb2559 100644
+--- a/build.zig
++++ b/build.zig
+@@ -157,7 +157,10 @@ pub fn build(b: *std.Build) !void {
+     // libghostty-vt xcframework (Apple only, universal binary).
+     // Only when building on macOS (not cross-compiling) since
+     // xcodebuild is required.
+-    if (builtin.os.tag.isDarwin() and config.target.result.os.tag.isDarwin()) {
++    if (builtin.os.tag.isDarwin() and
++        config.target.result.os.tag.isDarwin() and
++        config.emit_xcframework)
++    {
+         const apple_libs = try buildpkg.GhosttyLibVt.initStaticAppleUniversal(
+             b,
+             &config,
+@@ -184,12 +187,13 @@ pub fn build(b: *std.Build) !void {
+         // This is NOT libghostty (even though its named that for historical
+         // reasons). It is just the glue between Ghostty GUI on macOS and
+         // the full Ghostty GUI core.
+-        const lib_shared = try buildpkg.GhosttyLib.initShared(b, &deps);
+         const lib_static = try buildpkg.GhosttyLib.initStatic(b, &deps);
+ 
+-        // We shouldn't have this guard but we don't currently
+-        // build on macOS this way ironically so we need to fix that.
+-        if (!config.target.result.os.tag.isDarwin()) {
++        if (config.target.result.os.tag.isDarwin()) {
++            lib_static.installHeader();
++            lib_static.install("libghostty.a");
++        } else {
++            const lib_shared = try buildpkg.GhosttyLib.initShared(b, &deps);
+             lib_shared.installHeader(); // Only need one header
+             if (config.target.result.os.tag == .windows) {
+                 lib_shared.install("ghostty.dll");
+diff --git a/src/build/SharedDeps.zig b/src/build/SharedDeps.zig
+index cb4bf7619..232b7dbb4 100644
+--- a/src/build/SharedDeps.zig
++++ b/src/build/SharedDeps.zig
+@@ -82,12 +82,15 @@ fn initTarget(
+     b: *std.Build,
+     target: std.Build.ResolvedTarget,
+ ) !void {
+-    // Update our metallib
+-    self.metallib = .create(b, .{
+-        .name = "Ghostty",
+-        .target = target,
+-        .sources = &.{b.path("src/renderer/shaders/shaders.metal")},
+-    });
++    // Only build the Metal shader bundle when the selected renderer needs it.
++    self.metallib = if (target.result.os.tag.isDarwin() and self.config.renderer == .metal)
++        .create(b, .{
++            .name = "Ghostty",
++            .target = target,
++            .sources = &.{b.path("src/renderer/shaders/shaders.metal")},
++        })
++    else
++        null;
+ 
+     // Change our config
+     const config = try b.allocator.create(Config);
+@@ -432,11 +435,12 @@ pub fn add(
+     if (step.rootModuleTarget().os.tag.isDarwin()) {
+         try @import("apple_sdk").addPaths(b, step);
+ 
+-        const metallib = self.metallib.?;
+-        metallib.output.addStepDependencies(&step.step);
+-        step.root_module.addAnonymousImport("ghostty_metallib", .{
+-            .root_source_file = metallib.output,
+-        });
++        if (self.metallib) |metallib| {
++            metallib.output.addStepDependencies(&step.step);
++            step.root_module.addAnonymousImport("ghostty_metallib", .{
++                .root_source_file = metallib.output,
++            });
++        }
+     }
+ 
+     // Other dependencies, mostly pure Zig
