@@ -40,7 +40,6 @@ import {
 } from "@/lib/git/actions-logic";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Spinner } from "@/components/ui/spinner";
 import { toast } from "sonner";
 import { pauseHmr, resumeHmr } from "@/lib/hmr";
 import { CommitDialog } from "./CommitDialog";
@@ -62,29 +61,6 @@ function SectionHeader({ children, count }: { children: React.ReactNode; count?:
       {count !== undefined && count > 0 && (
         <span className="text-[10px] tabular-nums text-muted-foreground/40">{count}</span>
       )}
-    </div>
-  );
-}
-
-function StatusCard({
-  title,
-  badgeLabel,
-  badgeVariant,
-  loading,
-}: {
-  title: string;
-  badgeLabel: string;
-  badgeVariant: "default" | "secondary" | "destructive" | "outline";
-  loading?: boolean;
-}) {
-  return (
-    <div className="flex items-center gap-2.5 rounded-xl border bg-card/50 px-3 py-2.5">
-      {loading ? (
-        <Spinner className="size-3.5" />
-      ) : (
-        <Badge variant={badgeVariant} className="shrink-0">{badgeLabel}</Badge>
-      )}
-      <p className="line-clamp-2 text-[13px] leading-snug">{title}</p>
     </div>
   );
 }
@@ -129,8 +105,6 @@ export function GitPanel() {
     filePaths?: string[];
   } | null>(null);
   const [mergeDialogScope, setMergeDialogScope] = useState<"current" | "stack" | null>(null);
-  const [progressTitle, setProgressTitle] = useState<string | null>(null);
-  const [notice, setNotice] = useState<{ type: "info" | "error" | "success"; message: string } | null>(null);
   const [isBusyLocal, setIsBusyLocal] = useState(false);
   const setGitBusy = useAppStore((s) => s.setGitBusy);
   const flashGitResult = useAppStore((s) => s.flashGitResult);
@@ -203,13 +177,12 @@ export function GitPanel() {
 
       setIsBusy(true);
       await pauseHmr();
-      setNotice(null);
-      setProgressTitle(stages[0] ?? "Running...");
+      const toastId = toast.loading(stages[0] ?? "Running...");
 
       let stageIndex = 0;
       const interval = setInterval(() => {
         stageIndex = Math.min(stageIndex + 1, stages.length - 1);
-        guardedSetProgressTitle(stages[stageIndex] ?? "Running...");
+        toast.loading(stages[stageIndex] ?? "Running...", { id: toastId });
       }, 1100);
 
       try {
@@ -221,26 +194,21 @@ export function GitPanel() {
           filePaths: input.filePaths,
         });
         clearInterval(interval);
-        guardedSetProgressTitle(null);
 
         const summary = summarizeGitResult(result);
         if (summary.noChanges) {
-          guardedSetNotice({ type: "error", message: summary.description ?? summary.title });
+          toast.error(summary.description ?? summary.title, { id: toastId });
           flashGitResult(actionCwd, "error");
         } else {
-          guardedSetNotice({
-            type: "success",
-            message: summary.description ? `${summary.title} · ${summary.description}` : summary.title,
-          });
+          toast.success(
+            summary.description ? `${summary.title} · ${summary.description}` : summary.title,
+            { id: toastId },
+          );
           flashGitResult(actionCwd, "success");
         }
       } catch (err) {
         clearInterval(interval);
-        guardedSetProgressTitle(null);
-        guardedSetNotice({
-          type: "error",
-          message: err instanceof Error ? err.message : "Action failed.",
-        });
+        toast.error(err instanceof Error ? err.message : "Action failed.", { id: toastId });
         flashGitResult(actionCwd, "error");
       } finally {
         await resumeHmr();
@@ -260,17 +228,15 @@ export function GitPanel() {
     if (quickAction.kind === "run_pull") {
       if (!repoCwd) return;
       setIsBusy(true);
-      setNotice(null);
-      setProgressTitle("Pulling latest changes...");
+      const toastId = toast.loading("Pulling latest changes...");
       (async () => {
         await pauseHmr();
         try {
           await pull(repoCwd);
-          setNotice({ type: "success", message: "Pulled from upstream." });
+          toast.success("Pulled from upstream.", { id: toastId });
         } catch (err) {
-          setNotice({ type: "error", message: err instanceof Error ? err.message : "Pull failed." });
+          toast.error(err instanceof Error ? err.message : "Pull failed.", { id: toastId });
         } finally {
-          setProgressTitle(null);
           await resumeHmr();
           await invalidateGitQueries(queryClient);
           setIsBusy(false);
@@ -279,7 +245,7 @@ export function GitPanel() {
       return;
     }
     if (quickAction.kind === "show_hint") {
-      setNotice({ type: "info", message: quickAction.hint ?? quickAction.label });
+      toast.info(quickAction.hint ?? quickAction.label);
       return;
     }
     if (quickAction.action) {
@@ -313,13 +279,12 @@ export function GitPanel() {
       if (!repoCwd) return;
       setIsBusy(true);
       await pauseHmr();
-      setNotice(null);
       try {
         await checkoutBranch(repoCwd, branch);
-        setNotice({ type: "success", message: `Switched to ${branch}` });
+        toast.success(`Switched to ${branch}`);
         setIsSwitchDialogOpen(false);
       } catch (err) {
-        setNotice({ type: "error", message: err instanceof Error ? err.message : "Checkout failed." });
+        toast.error(err instanceof Error ? err.message : "Checkout failed.");
       } finally {
         await resumeHmr();
         await invalidateGitQueries(queryClient);
@@ -349,17 +314,15 @@ export function GitPanel() {
   const handleDiscardAll = useCallback(async () => {
     if (!repoCwd) return;
     setIsBusy(true);
-    setNotice(null);
-    setProgressTitle("Discarding all changes...");
+    const toastId = toast.loading("Discarding all changes...");
     try {
       await discardAllChanges(repoCwd);
-      setNotice({ type: "success", message: "All local changes discarded." });
+      toast.success("All local changes discarded.", { id: toastId });
       flashGitResult(repoCwd, "success");
     } catch (err) {
-      setNotice({ type: "error", message: err instanceof Error ? err.message : "Discard failed." });
+      toast.error(err instanceof Error ? err.message : "Discard failed.", { id: toastId });
       flashGitResult(repoCwd, "error");
     } finally {
-      setProgressTitle(null);
       await invalidateGitQueries(queryClient);
       setIsBusy(false);
     }
@@ -373,8 +336,7 @@ export function GitPanel() {
     setMergeDialogScope(null);
     setIsBusy(true);
     await pauseHmr();
-    setNotice(null);
-    setProgressTitle(scope === "stack" ? "Merging stack..." : "Merging PR...");
+    const toastId = toast.loading(scope === "stack" ? "Merging stack..." : "Merging PR...");
     try {
       const pr = gitStatus?.pr;
       if (!pr?.number) throw new Error("No PR to merge");
@@ -416,16 +378,15 @@ export function GitPanel() {
 
       const label = result.merged.map((n) => `#${n}`).join(", ");
       if (result.tag) {
-        guardedSetNotice({ type: "success", message: `Merged ${label} · Released ${result.tag}` });
+        toast.success(`Merged ${label} · Released ${result.tag}`, { id: toastId });
       } else {
-        guardedSetNotice({ type: "success", message: `Merged ${label}` });
+        toast.success(`Merged ${label}`, { id: toastId });
       }
       flashGitResult(actionCwd, "success");
     } catch (err) {
-      guardedSetNotice({ type: "error", message: err instanceof Error ? err.message : "Merge failed." });
+      toast.error(err instanceof Error ? err.message : "Merge failed.", { id: toastId });
       flashGitResult(actionCwd, "error");
     } finally {
-      setProgressTitle(null);
       await resumeHmr();
       await invalidateGitQueries(queryClient);
       setIsBusy(false);
@@ -486,8 +447,7 @@ export function GitPanel() {
   const handleCreateReleasePr = useCallback(async () => {
     if (!repoCwd) return;
     setIsBusy(true);
-    setNotice(null);
-    setProgressTitle("Creating release PR...");
+    const toastId = toast.loading("Creating release PR...");
     try {
       // Determine target branch
       const mainExists = branches.some((b) => b.name === "main" || b.name === "origin/main");
@@ -519,36 +479,23 @@ export function GitPanel() {
       }
 
       const pr = await createPullRequest(repoCwd, targetBranch, prTitle, prBody);
-      setNotice({ type: "success", message: `Created release PR #${pr.number}` });
+      toast.success(`Created release PR #${pr.number}`, { id: toastId });
     } catch (err) {
-      setNotice({ type: "error", message: err instanceof Error ? err.message : "Failed to create release PR." });
+      toast.error(err instanceof Error ? err.message : "Failed to create release PR.", { id: toastId });
     } finally {
-      setProgressTitle(null);
       await invalidateGitQueries(queryClient);
       setIsBusy(false);
     }
   }, [repoCwd, branches, queryClient]);
 
-  // Clear stale progress
-  useEffect(() => {
-    if (!isBusy) setProgressTitle(null);
-  }, [isBusy]);
-
-  // Track which repo owns the current action — guarded setters only apply if repo hasn't changed
+  // Track which repo owns the current action
   const actionRepoRef = useRef<string | null>(null);
   const repoCwdRef = useRef(repoCwd);
   repoCwdRef.current = repoCwd;
-  const guardedSetNotice = useCallback((v: { type: "info" | "error" | "success"; message: string } | null) => {
-    if (actionRepoRef.current === repoCwdRef.current) setNotice(v);
-  }, []);
-  const guardedSetProgressTitle = useCallback((v: string | null) => {
-    if (actionRepoRef.current === repoCwdRef.current) setProgressTitle(v);
-  }, []);
 
   // Clear all local state when switching projects
   useEffect(() => {
-    setNotice(null);
-    setProgressTitle(null);
+    toast.dismiss();
     setIsBusyLocal(false);
     setIsCommitDialogOpen(false);
     setIsSwitchDialogOpen(false);
@@ -618,23 +565,6 @@ export function GitPanel() {
             </div>
           )}
 
-          {/* Notices */}
-          {progressTitle && (
-            <StatusCard title={progressTitle} badgeLabel="in progress" badgeVariant="default" loading />
-          )}
-          {notice && !progressTitle && (
-            <StatusCard
-              title={notice.message}
-              badgeLabel={notice.type}
-              badgeVariant={
-                notice.type === "success" ? "default" : notice.type === "error" ? "destructive" : "secondary"
-              }
-            />
-          )}
-          {!notice && !progressTitle && quickAction.kind === "show_hint" && quickAction.hint && (
-            <StatusCard title={quickAction.hint} badgeLabel="info" badgeVariant="secondary" />
-          )}
-
           {/* Actions row */}
           <div className="grid grid-cols-5 gap-2">
             {/* Primary action — spans full width */}
@@ -665,11 +595,11 @@ export function GitPanel() {
               variant={gitStatus?.pr?.state === "open" && gitStatus?.hasWorkingTreeChanges ? "default" : "outline"}
               onClick={() => {
                 if (!hasOriginRemote) {
-                  setNotice({ type: "info", message: "Publish to GitHub first before creating branches." });
+                  toast.info("Publish to GitHub first before creating branches.");
                   return;
                 }
                 if (!gitStatus?.hasWorkingTreeChanges) {
-                  setNotice({ type: "info", message: "Make local changes first to create a feature branch." });
+                  toast.info("Make local changes first to create a feature branch.");
                   return;
                 }
                 void runAction({ action: "commit_push", featureBranch: true, skipDefaultBranchPrompt: true });
