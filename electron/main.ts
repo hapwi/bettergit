@@ -4,6 +4,7 @@ import os from "node:os";
 import fs from "node:fs";
 import { execFileSync, spawn, type ChildProcess } from "node:child_process";
 import { createServer } from "node:net";
+import { loadNativeTerminalAddon, type NativeTerminalBounds } from "./nativeTerminalHost";
 
 // Resolve the user's full shell PATH before anything else — macOS GUI apps
 // don't inherit the login shell's environment, so tools like git/gh/claude
@@ -148,6 +149,7 @@ function stopServer() {
 // ---------------------------------------------------------------------------
 
 function createWindow() {
+  const devServerUrl = process.env.BETTERGIT_DEV_SERVER_URL ?? "http://localhost:5173";
   const win = new BrowserWindow({
     width: 1200,
     height: 800,
@@ -174,7 +176,7 @@ function createWindow() {
   win.once("ready-to-show", () => win.show());
 
   if (isDev) {
-    win.loadURL("http://localhost:5173");
+    win.loadURL(devServerUrl);
   } else {
     win.loadFile(path.join(__dirname, "../dist/index.html"));
   }
@@ -183,6 +185,14 @@ function createWindow() {
     shell.openExternal(url);
     return { action: "deny" };
   });
+
+  const nativeTerminalAddon = loadNativeTerminalAddon();
+  if (nativeTerminalAddon) {
+    nativeTerminalAddon.initializeHost(win.getNativeWindowHandle());
+    win.on("focus", () => nativeTerminalAddon.setAppFocused(true));
+    win.on("blur", () => nativeTerminalAddon.setAppFocused(false));
+    win.on("closed", () => nativeTerminalAddon.shutdownHost());
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -217,17 +227,6 @@ function setupApplicationMenu() {
     {
       label: "View",
       submenu: [
-        {
-          label: "Split Right",
-          accelerator: "CmdOrCtrl+D",
-          click: () => sendToRenderer("terminal:split-vertical"),
-        },
-        {
-          label: "Split Down",
-          accelerator: "CmdOrCtrl+Shift+D",
-          click: () => sendToRenderer("terminal:split-horizontal"),
-        },
-        { type: "separator" },
         { role: "reload" },
         { role: "forceReload" },
         { role: "toggleDevTools" },
@@ -340,6 +339,60 @@ ipcMain.handle("shell:openTerminal", async (_event, dirPath: string, terminalApp
 
 ipcMain.handle("server:getPort", () => serverPort);
 
+ipcMain.handle("terminal-host:isAvailable", () => loadNativeTerminalAddon() !== null);
+
+ipcMain.handle("terminal-host:createSurface", (event, surfaceId: string, cwd: string) => {
+  const addon = loadNativeTerminalAddon();
+  if (!addon) return false;
+  return addon.createSurface(surfaceId, cwd);
+});
+
+ipcMain.handle("terminal-host:destroySurface", (_event, surfaceId: string) => {
+  const addon = loadNativeTerminalAddon();
+  addon?.destroySurface(surfaceId);
+});
+
+ipcMain.handle(
+  "terminal-host:setSurfaceBounds",
+  (event, surfaceId: string, bounds: NativeTerminalBounds) => {
+    const addon = loadNativeTerminalAddon();
+    const win = BrowserWindow.fromWebContents(event.sender);
+    if (!addon || !win) return;
+    const [, contentHeight] = win.getContentSize();
+    addon.setSurfaceBounds(surfaceId, {
+      x: bounds.x,
+      y: contentHeight - bounds.y - bounds.height,
+      width: bounds.width,
+      height: bounds.height,
+    });
+  },
+);
+
+ipcMain.handle("terminal-host:setSurfaceBackground", (_event, surfaceId: string, color: string) => {
+  const addon = loadNativeTerminalAddon();
+  addon?.setSurfaceBackground(surfaceId, color);
+});
+
+ipcMain.handle("terminal-host:getResolvedAppearance", () => {
+  const addon = loadNativeTerminalAddon();
+  return addon?.getResolvedAppearance();
+});
+
+ipcMain.handle("terminal-host:setSurfaceVisible", (_event, surfaceId: string, visible: boolean) => {
+  const addon = loadNativeTerminalAddon();
+  addon?.setSurfaceVisible(surfaceId, visible);
+});
+
+ipcMain.handle("terminal-host:focusSurface", (_event, surfaceId: string) => {
+  const addon = loadNativeTerminalAddon();
+  addon?.focusSurface(surfaceId);
+});
+
+ipcMain.handle("terminal-host:splitSurface", (_event, surfaceId: string, direction: "right" | "down" | "left" | "up") => {
+  const addon = loadNativeTerminalAddon();
+  addon?.splitSurface(surfaceId, direction);
+});
+
 // ---------------------------------------------------------------------------
 // Persistent settings — survives dev restarts (file-backed, not localStorage)
 // ---------------------------------------------------------------------------
@@ -363,4 +416,3 @@ ipcMain.handle("settings:load", () => loadSettings());
 ipcMain.handle("settings:save", (_event, data: Record<string, unknown>) => {
   saveSettings(data);
 });
-

@@ -104,11 +104,48 @@ function resolveElectronPath() {
 }
 
 const electronPath = resolveElectronPath();
+
+async function detectDevServerUrl() {
+  const configuredUrl = process.env.BETTERGIT_DEV_SERVER_URL;
+  if (configuredUrl) {
+    return configuredUrl;
+  }
+
+  const deadline = Date.now() + 30_000;
+  const candidatePorts = [5173, 5174, 5175, 5176, 5177, 5178, 5179, 5180];
+  const candidateHosts = ["localhost", "127.0.0.1"];
+
+  while (Date.now() < deadline) {
+    for (const host of candidateHosts) {
+      for (const port of candidatePorts) {
+        const url = `http://${host}:${port}`;
+        try {
+          const response = await fetch(url, { signal: AbortSignal.timeout(500) });
+          if (response.ok) {
+            return url;
+          }
+        } catch {
+          // Keep polling until Vite is ready on one of the candidate URLs.
+        }
+      }
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, 250));
+  }
+
+  throw new Error("Timed out waiting for the Vite dev server");
+}
+
 const childEnv = { ...process.env };
 // Electron must NOT run in "node mode" — if this leaks in from the parent
 // process chain (bun → concurrently → node) it disables Electron's internal
 // require("electron") interception, causing the app module to be undefined.
 delete childEnv.ELECTRON_RUN_AS_NODE;
+
+const devServerUrl = await detectDevServerUrl();
+childEnv.BETTERGIT_DEV_SERVER_URL = devServerUrl;
+console.log(`[dev-electron] Launching Electron against ${devServerUrl}`);
+
 const child = spawn(electronPath, ["."], {
   cwd: projectDir,
   stdio: "inherit",
