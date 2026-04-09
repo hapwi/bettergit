@@ -81,6 +81,15 @@ export async function getDiff(
   return result.stdout;
 }
 
+export async function discardAllChanges(cwd: string): Promise<void> {
+  // Reset any staged changes
+  await execGit(cwd, ["reset", "HEAD"]);
+  // Discard all tracked file modifications
+  requireSuccess(await execGit(cwd, ["checkout", "--", "."]), "discard tracked changes");
+  // Remove untracked files and directories
+  requireSuccess(await execGit(cwd, ["clean", "-fd"]), "discard untracked files");
+}
+
 export async function getDiffStat(
   cwd: string,
   staged = false,

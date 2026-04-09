@@ -9,6 +9,7 @@ import {
   ArrowDown01Icon,
   LinkSquare01Icon,
   InformationCircleIcon,
+  Cancel01Icon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { useAppStore } from "@/store";
@@ -22,6 +23,7 @@ import {
 import { runStackedAction, type StackedAction } from "@/lib/git/stacked";
 import { pull } from "@/lib/git/remote";
 import { checkoutBranch, deleteBranch } from "@/lib/git/branches";
+import { discardAllChanges } from "@/lib/git/commits";
 import { createPullRequest } from "@/lib/git/github";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { generatePrContent } from "@/lib/git/ai";
@@ -328,6 +330,7 @@ export function GitPanel() {
   );
 
   const [pendingDeleteBranch, setPendingDeleteBranch] = useState<string | null>(null);
+  const [isDiscardConfirmOpen, setIsDiscardConfirmOpen] = useState(false);
 
   const doDeleteBranch = useCallback(
     async (branch: string) => {
@@ -342,6 +345,25 @@ export function GitPanel() {
     },
     [repoCwd, queryClient],
   );
+
+  const handleDiscardAll = useCallback(async () => {
+    if (!repoCwd) return;
+    setIsBusy(true);
+    setNotice(null);
+    setProgressTitle("Discarding all changes...");
+    try {
+      await discardAllChanges(repoCwd);
+      setNotice({ type: "success", message: "All local changes discarded." });
+      flashGitResult(repoCwd, "success");
+    } catch (err) {
+      setNotice({ type: "error", message: err instanceof Error ? err.message : "Discard failed." });
+      flashGitResult(repoCwd, "error");
+    } finally {
+      setProgressTitle(null);
+      await invalidateGitQueries(queryClient);
+      setIsBusy(false);
+    }
+  }, [repoCwd, queryClient, flashGitResult]);
 
   const handleMerge = useCallback(async (versionBump: "patch" | "minor" | "major" | null) => {
     if (!repoCwd || !mergeDialogScope) return;
@@ -533,6 +555,7 @@ export function GitPanel() {
     setMergeDialogScope(null);
     setPendingDeleteBranch(null);
     setPendingDefaultAction(null);
+    setIsDiscardConfirmOpen(false);
   }, [repoCwd]);
 
   if (!repoCwd) return null;
@@ -559,14 +582,14 @@ export function GitPanel() {
           )}
 
           {/* Actions row */}
-          <div className="grid grid-cols-4 gap-3">
-            {/* Primary action — spans full width or half */}
+          <div className="grid grid-cols-5 gap-2">
+            {/* Primary action — spans full width */}
             {quickAction.kind !== "show_hint" && (
               <Button
                 variant={quickAction.disabled || gitStatus?.pr?.state === "open" ? "outline" : "default"}
                 disabled={isBusy || quickAction.disabled}
                 onClick={runQuickAction}
-                className="col-span-4 h-auto justify-center gap-2 py-3"
+                className="col-span-5 h-auto justify-center gap-2 py-3"
               >
                 <QuickActionIcon quickAction={quickAction} />
                 {quickAction.label}
@@ -602,6 +625,15 @@ export function GitPanel() {
             >
               <HugeiconsIcon icon={GitBranchIcon} className="size-3.5" />
               <span className="text-[11px]">New branch</span>
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => setIsDiscardConfirmOpen(true)}
+              disabled={isBusy || !gitStatus?.hasWorkingTreeChanges}
+              className="h-auto flex-col gap-1 py-3 text-destructive hover:text-destructive"
+            >
+              <HugeiconsIcon icon={Cancel01Icon} className="size-3.5" />
+              <span className="text-[11px]">Discard</span>
             </Button>
           </div>
 
@@ -789,6 +821,16 @@ export function GitPanel() {
             void runAction({ ...action, featureBranch: true, skipDefaultBranchPrompt: true });
           }
         }}
+      />
+
+      <ConfirmDialog
+        open={isDiscardConfirmOpen}
+        onOpenChange={setIsDiscardConfirmOpen}
+        title="Discard all changes"
+        description="This will permanently discard all local changes, including untracked files. This cannot be undone."
+        confirmLabel="Discard all"
+        variant="destructive"
+        onConfirm={() => void handleDiscardAll()}
       />
 
       <ConfirmDialog
