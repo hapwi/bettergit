@@ -41,7 +41,7 @@ const builds = [
       // and ship it via node_modules (same as hapcode's server build).
       // Built as ESM so the SDK's ESM entry (sdk.mjs) loads natively
       // without CJS→ESM interop issues inside Electron's asar archive.
-      external: ["@anthropic-ai/claude-agent-sdk"],
+      external: ["@anthropic-ai/claude-agent-sdk", "node-pty", "ws"],
     },
   },
 ];
