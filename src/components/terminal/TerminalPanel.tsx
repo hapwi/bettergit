@@ -21,16 +21,14 @@ function createWsPtyTransport(serverPort: number, cwd: string) {
   let sessionId: string | null = null
   let destroyed = false
   let reconnectTimer: ReturnType<typeof setTimeout> | null = null
-  let savedCallbacks: {
+
+  function connectWs(callbacks: {
     onConnect?: () => void
     onDisconnect?: () => void
     onData?: (data: string) => void
     onExit?: (code: number) => void
-  } | null = null
-
-  function connectWs(callbacks: NonNullable<typeof savedCallbacks>) {
+  }) {
     if (destroyed) return
-    savedCallbacks = callbacks
 
     ws = new WebSocket(`ws://127.0.0.1:${serverPort}/ws/pty?cwd=${encodeURIComponent(cwd)}`)
 
@@ -74,7 +72,7 @@ function createWsPtyTransport(serverPort: number, cwd: string) {
   }
 
   return {
-    async connect(options: { callbacks: NonNullable<typeof savedCallbacks> }) {
+    async connect(options: { callbacks: Parameters<typeof connectWs>[0] }) {
       connectWs(options.callbacks)
     },
 
@@ -121,6 +119,36 @@ interface GhosttyConfig {
 }
 
 let cachedConfig: GhosttyConfig | null = null
+const MAX_SCROLLBACK_BYTES = 2_000_000
+let resttyScrollbarWorkaroundInstalled = false
+
+function installResttyScrollbarWorkaround() {
+  if (resttyScrollbarWorkaroundInstalled || typeof window === "undefined" || typeof window.matchMedia !== "function") {
+    return
+  }
+
+  const originalMatchMedia = window.matchMedia.bind(window)
+  window.matchMedia = ((query: string) => {
+    const result = originalMatchMedia(query)
+    if (query.trim() !== "(any-pointer: coarse)") {
+      return result
+    }
+
+    return {
+      ...result,
+      matches: true,
+      media: query,
+      onchange: result.onchange,
+      addListener: result.addListener ? result.addListener.bind(result) : undefined,
+      removeListener: result.removeListener ? result.removeListener.bind(result) : undefined,
+      addEventListener: result.addEventListener.bind(result),
+      removeEventListener: result.removeEventListener.bind(result),
+      dispatchEvent: result.dispatchEvent.bind(result),
+    } as MediaQueryList
+  }) as typeof window.matchMedia
+
+  resttyScrollbarWorkaroundInstalled = true
+}
 
 async function loadGhosttyConfig(): Promise<GhosttyConfig> {
   if (cachedConfig) return cachedConfig
@@ -157,10 +185,35 @@ function TerminalInstance({
   resttyRef: React.MutableRefObject<Restty | null>
 }) {
   const containerRef = useRef<HTMLDivElement>(null)
+  const layoutFrameRef = useRef<number | null>(null)
+
+  const cancelScheduledLayoutSync = useCallback(() => {
+    if (layoutFrameRef.current !== null) {
+      cancelAnimationFrame(layoutFrameRef.current)
+      layoutFrameRef.current = null
+    }
+  }, [])
+
+  const scheduleLayoutSync = useCallback((focusActivePane = false) => {
+    cancelScheduledLayoutSync()
+    layoutFrameRef.current = requestAnimationFrame(() => {
+      layoutFrameRef.current = null
+      const restty = resttyRef.current
+      if (!restty) return
+      restty.forEachPane((pane) => {
+        pane.updateSize(true)
+      })
+      if (focusActivePane) {
+        restty.activePane()?.focus()
+      }
+    })
+  }, [cancelScheduledLayoutSync, resttyRef])
 
   useEffect(() => {
     const container = containerRef.current
     if (!container || !serverPort || !ghosttyConfig) return
+
+    installResttyScrollbarWorkaround()
 
     let destroyed = false
     const fontSize = ghosttyConfig.fontSize ?? 16
@@ -176,6 +229,9 @@ function TerminalInstance({
       defaultContextMenu: false,
       searchUi: false,
       shortcuts: false,
+      onLayoutChanged: () => {
+        scheduleLayoutSync()
+      },
       // Factory: called for each pane (initial + every split)
       appOptions: () => ({
         ptyTransport: createWsPtyTransport(serverPort, cwd),
@@ -183,6 +239,9 @@ function TerminalInstance({
         fontSizeMode: "height" as const,
         autoResize: true,
         attachWindowEvents: true,
+        // Keep long-running sessions responsive instead of letting scrollback
+        // grow until the native scroll host and renderer bog down.
+        maxScrollbackBytes: MAX_SCROLLBACK_BYTES,
       }),
       onPaneCreated: (pane) => {
         pane.app.init().then(() => {
@@ -197,10 +256,11 @@ function TerminalInstance({
 
     return () => {
       destroyed = true
+      cancelScheduledLayoutSync()
       restty.destroy()
       resttyRef.current = null
     }
-  }, [cwd, serverPort, ghosttyConfig])
+  }, [cancelScheduledLayoutSync, cwd, ghosttyConfig, resttyRef, scheduleLayoutSync, serverPort])
 
   // Pause/resume when visibility changes
   useEffect(() => {
@@ -208,21 +268,30 @@ function TerminalInstance({
     if (!restty) return
 
     restty.forEachPane((pane) => {
-      pane.getRawPane().app.setPaused(!isActive)
+      pane.setPaused(!isActive)
     })
-    if (isActive) {
-      // The container was invisible (visibility:hidden) while inactive. Even
-      // though it keeps its layout, the terminal renderer may have stale
-      // dimensions. Wait one frame for the browser to remove the invisible
-      // class, then trigger a layout sync so Restty re-measures and repaints.
-      requestAnimationFrame(() => {
-        const r = resttyRef.current
-        if (!r) return
-        r.requestLayoutSync()
-        r.activePane()?.focus()
-      })
+
+    if (!isActive) {
+      cancelScheduledLayoutSync()
+      restty.activePane()?.blur()
+      return
     }
-  }, [isActive])
+
+    scheduleLayoutSync(true)
+  }, [cancelScheduledLayoutSync, isActive, resttyRef, scheduleLayoutSync])
+
+  useEffect(() => {
+    const container = containerRef.current
+    if (!container || typeof ResizeObserver === "undefined") return
+
+    const observer = new ResizeObserver(() => {
+      if (!isActive) return
+      scheduleLayoutSync()
+    })
+
+    observer.observe(container)
+    return () => observer.disconnect()
+  }, [isActive, scheduleLayoutSync])
 
   return (
     <div
