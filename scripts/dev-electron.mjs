@@ -104,10 +104,15 @@ function resolveElectronPath() {
 }
 
 const electronPath = resolveElectronPath();
+const childEnv = { ...process.env };
+// Electron must NOT run in "node mode" — if this leaks in from the parent
+// process chain (bun → concurrently → node) it disables Electron's internal
+// require("electron") interception, causing the app module to be undefined.
+delete childEnv.ELECTRON_RUN_AS_NODE;
 const child = spawn(electronPath, ["."], {
   cwd: projectDir,
   stdio: "inherit",
-  env: { ...process.env },
+  env: childEnv,
 });
 
 child.on("exit", (code) => process.exit(code ?? 0));
