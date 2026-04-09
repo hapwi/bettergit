@@ -51,20 +51,17 @@ export async function getRepoStats(cwd: string, days = 30): Promise<RepoStats> {
     ]),
   ]);
 
-  // Tags: for forks, query GitHub API for the user's repo tags; otherwise use local git
+  // Tags: always fetch from remote (origin) via GitHub API
   let tagResult: { code: number; stdout: string };
-  if (hasUpstream) {
-    const repo = await getOriginRepoSlug(cwd);
-    if (repo) {
-      const ghResult = await execGh(cwd, [
-        "api", `repos/${repo}/tags`, "--jq", ".[].name",
-      ]);
-      tagResult = { code: ghResult.code, stdout: ghResult.stdout };
-    } else {
-      tagResult = { code: 1, stdout: "" };
-    }
+  const repo = await getOriginRepoSlug(cwd);
+  if (repo) {
+    const ghResult = await execGh(cwd, [
+      "api", `repos/${repo}/tags`, "--jq",
+      `[.[].name] | sort_by(split(".") | map(ltrimstr("v") | tonumber)) | reverse | .[]`,
+    ]);
+    tagResult = { code: ghResult.code, stdout: ghResult.stdout };
   } else {
-    tagResult = await execGit(cwd, ["tag", "--sort=-creatordate", "-l"]);
+    tagResult = { code: 1, stdout: "" };
   }
 
   // Parse daily commits
