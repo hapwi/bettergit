@@ -122,25 +122,50 @@ function AppContent() {
   const [activeTab, setActiveTab] = useState<ActiveTab>("dashboard")
   const [isDiffOpen, setIsDiffOpen] = useState(false)
   const [terminalMounted, setTerminalMounted] = useState(false)
+  const [terminalProjects, setTerminalProjects] = useState<Set<string>>(new Set())
   const repoCwd = useAppStore((s) => s.repoCwd)
-  const terminalRef = useRef<TerminalPanelHandle>(null)
+  const terminalRefs = useRef(new Map<string, React.MutableRefObject<TerminalPanelHandle | null>>())
+
+  function getTerminalRef(projectCwd: string) {
+    let existing = terminalRefs.current.get(projectCwd)
+    if (!existing) {
+      existing = { current: null }
+      terminalRefs.current.set(projectCwd, existing)
+    }
+    return existing
+  }
 
   // Lazy-mount: only render the terminal once it's been activated
   if (activeTab === "terminal" && !terminalMounted) {
     setTerminalMounted(true)
   }
 
+  // Add current project to terminal set when terminal is mounted
+  useEffect(() => {
+    if (terminalMounted && repoCwd) {
+      setTerminalProjects((prev) => {
+        if (prev.has(repoCwd)) return prev
+        const next = new Set(prev)
+        next.add(repoCwd)
+        return next
+      })
+    }
+  }, [terminalMounted, repoCwd])
+
   // Cmd+W: close pane/tab in terminal first, then close window
   useEffect(() => {
     const cleanup = window.electronAPI?.onClosePaneOrWindow(() => {
-      if (activeTab === "terminal" && terminalRef.current) {
-        const handled = terminalRef.current.closePaneOrTab()
-        if (handled) return
+      if (activeTab === "terminal" && repoCwd) {
+        const ref = terminalRefs.current.get(repoCwd)
+        if (ref?.current) {
+          const handled = ref.current.closePaneOrTab()
+          if (handled) return
+        }
       }
       window.close()
     })
     return cleanup
-  }, [activeTab])
+  }, [activeTab, repoCwd])
 
   // Cmd+D / Cmd+Shift+D / Cmd+T: terminal split & tab shortcuts
   useEffect(() => {
@@ -152,7 +177,9 @@ function AppContent() {
       }
       // Defer action to next tick so terminal is mounted
       setTimeout(() => {
-        const t = terminalRef.current
+        if (!repoCwd) return
+        const ref = terminalRefs.current.get(repoCwd)
+        const t = ref?.current
         if (!t) return
         switch (action) {
           case "terminal:split-vertical": t.splitVertical(); break
@@ -162,7 +189,7 @@ function AppContent() {
       }, 0)
     })
     return cleanup
-  }, [activeTab, terminalMounted])
+  }, [activeTab, terminalMounted, repoCwd])
 
   return (
     <>
@@ -181,14 +208,18 @@ function AppContent() {
           )}>
             <GitPanel />
           </div>
-          {terminalMounted && repoCwd && (
-            <div className={cn(
+          {Array.from(terminalProjects).map((projectCwd) => (
+            <div key={projectCwd} className={cn(
               "absolute inset-0 overflow-hidden",
-              activeTab === "terminal" ? "z-10" : "pointer-events-none invisible"
+              activeTab === "terminal" && repoCwd === projectCwd ? "z-10" : "pointer-events-none invisible"
             )}>
-              <TerminalPanel ref={terminalRef} cwd={repoCwd} isVisible={activeTab === "terminal"} />
+              <TerminalPanel
+                ref={getTerminalRef(projectCwd)}
+                cwd={projectCwd}
+                isVisible={activeTab === "terminal" && repoCwd === projectCwd}
+              />
             </div>
-          )}
+          ))}
         </div>
       </main>
       <DiffViewer open={isDiffOpen} onOpenChange={setIsDiffOpen} />
