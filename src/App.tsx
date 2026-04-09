@@ -1,5 +1,4 @@
 import { useState } from "react"
-import { useQuery } from "@tanstack/react-query"
 import { useAppStore } from "@/store"
 import { RepoSidebar } from "@/components/git/RepoSidebar"
 import { GitPanel } from "@/components/git/GitPanel"
@@ -7,12 +6,10 @@ import { Dashboard } from "@/components/git/Dashboard"
 import { WelcomeScreen } from "@/components/git/WelcomeScreen"
 import { SidebarProvider, useSidebar } from "@/components/ui/sidebar"
 import { cn } from "@/lib/utils"
-import { gitStatusQueryOptions } from "@/lib/git/queries"
 import {
   LayoutDashboard,
   GitBranchIcon,
   SidebarLeftIcon,
-  GitPullRequestIcon,
 } from "@hugeicons/core-free-icons"
 import { HugeiconsIcon } from "@hugeicons/react"
 import { Terminal } from "lucide-react"
@@ -29,8 +26,6 @@ function Toolbar({
   const repoCwd = useAppStore((s) => s.repoCwd)
   const terminalApp = useAppStore((s) => s.terminalApp)
   const repoName = repoCwd?.split("/").pop() ?? ""
-  const { data: status } = useQuery(gitStatusQueryOptions(repoCwd))
-  const changeCount = status?.workingTree.files.length ?? 0
 
   return (
     <div
@@ -41,7 +36,7 @@ function Toolbar({
         height: 52,
       } as React.CSSProperties}
     >
-      {/* Left: sidebar toggle + repo name + branch info */}
+      {/* Left: sidebar toggle + repo name */}
       <div className="flex items-center gap-2.5" style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}>
         <button
           type="button"
@@ -52,31 +47,6 @@ function Toolbar({
         </button>
         {repoName && (
           <span className="text-sm font-semibold">{repoName}</span>
-        )}
-        {status?.branch && (
-          <>
-            <span className="text-muted-foreground/30">/</span>
-            <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
-              <HugeiconsIcon icon={GitBranchIcon} className="size-3" />
-              {status.branch}
-            </span>
-            <span className={cn(
-              "flex items-center gap-1 text-xs",
-              changeCount > 0 ? "text-amber-500" : "text-emerald-500",
-            )}>
-              <span className={cn(
-                "size-1.5 rounded-full",
-                changeCount > 0 ? "bg-amber-500" : "bg-emerald-500",
-              )} />
-              {changeCount > 0 ? `${changeCount} changes` : "Clean"}
-            </span>
-            {status.pr && (
-              <span className="flex items-center gap-1 text-xs text-muted-foreground">
-                <HugeiconsIcon icon={GitPullRequestIcon} className="size-3 text-emerald-500" />
-                #{status.pr.number}
-              </span>
-            )}
-          </>
         )}
       </div>
 

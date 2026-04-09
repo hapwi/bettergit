@@ -29,10 +29,6 @@ export async function getRepoStats(cwd: string, days = 30): Promise<RepoStats> {
   since.setDate(since.getDate() - days);
   const sinceStr = since.toISOString().split("T")[0];
 
-  // Detect if this is a fork (has an "upstream" remote)
-  const upstreamCheck = await execGit(cwd, ["remote"]);
-  const hasUpstream = upstreamCheck.stdout.split("\n").some((r) => r.trim() === "upstream");
-
   // Run all queries in parallel
   const [commitLogResult, branchCountResult, authorResult] = await Promise.all([
     execGit(cwd, [

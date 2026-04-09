@@ -11,6 +11,7 @@ export interface GitActionMenuItem {
   id: "commit" | "push" | "pr";
   label: string;
   disabled: boolean;
+  highlighted?: boolean;
   icon: GitActionIconName;
   kind: "open_dialog" | "open_pr";
   dialogAction?: "commit" | "push" | "create_pr";
@@ -80,6 +81,7 @@ export function buildMenuItems(
           id: "pr" as const,
           label: "Create PR",
           disabled: !canCreatePr,
+          highlighted: canCreatePr,
           icon: "pr" as const,
           kind: "open_dialog" as const,
           dialogAction: "create_pr" as const,

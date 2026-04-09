@@ -9,6 +9,7 @@ import {
   ArrowDown01Icon,
   LinkSquare01Icon,
   InformationCircleIcon,
+  Cancel01Icon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { useAppStore } from "@/store";
@@ -22,6 +23,7 @@ import {
 import { runStackedAction, type StackedAction } from "@/lib/git/stacked";
 import { pull } from "@/lib/git/remote";
 import { checkoutBranch, deleteBranch } from "@/lib/git/branches";
+import { discardAllChanges } from "@/lib/git/commits";
 import { createPullRequest } from "@/lib/git/github";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { generatePrContent } from "@/lib/git/ai";
@@ -38,7 +40,6 @@ import {
 } from "@/lib/git/actions-logic";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Spinner } from "@/components/ui/spinner";
 import { toast } from "sonner";
 import { pauseHmr, resumeHmr } from "@/lib/hmr";
 import { CommitDialog } from "./CommitDialog";
@@ -60,29 +61,6 @@ function SectionHeader({ children, count }: { children: React.ReactNode; count?:
       {count !== undefined && count > 0 && (
         <span className="text-[10px] tabular-nums text-muted-foreground/40">{count}</span>
       )}
-    </div>
-  );
-}
-
-function StatusCard({
-  title,
-  badgeLabel,
-  badgeVariant,
-  loading,
-}: {
-  title: string;
-  badgeLabel: string;
-  badgeVariant: "default" | "secondary" | "destructive" | "outline";
-  loading?: boolean;
-}) {
-  return (
-    <div className="flex items-center gap-2.5 rounded-xl border bg-card/50 px-3 py-2.5">
-      {loading ? (
-        <Spinner className="size-3.5" />
-      ) : (
-        <Badge variant={badgeVariant} className="shrink-0">{badgeLabel}</Badge>
-      )}
-      <p className="line-clamp-2 text-[13px] leading-snug">{title}</p>
     </div>
   );
 }
@@ -127,8 +105,6 @@ export function GitPanel() {
     filePaths?: string[];
   } | null>(null);
   const [mergeDialogScope, setMergeDialogScope] = useState<"current" | "stack" | null>(null);
-  const [progressTitle, setProgressTitle] = useState<string | null>(null);
-  const [notice, setNotice] = useState<{ type: "info" | "error" | "success"; message: string } | null>(null);
   const [isBusyLocal, setIsBusyLocal] = useState(false);
   const setGitBusy = useAppStore((s) => s.setGitBusy);
   const flashGitResult = useAppStore((s) => s.flashGitResult);
@@ -201,13 +177,12 @@ export function GitPanel() {
 
       setIsBusy(true);
       await pauseHmr();
-      setNotice(null);
-      setProgressTitle(stages[0] ?? "Running...");
+      const toastId = toast.loading(stages[0] ?? "Running...");
 
       let stageIndex = 0;
       const interval = setInterval(() => {
         stageIndex = Math.min(stageIndex + 1, stages.length - 1);
-        guardedSetProgressTitle(stages[stageIndex] ?? "Running...");
+        toast.loading(stages[stageIndex] ?? "Running...", { id: toastId });
       }, 1100);
 
       try {
@@ -219,26 +194,21 @@ export function GitPanel() {
           filePaths: input.filePaths,
         });
         clearInterval(interval);
-        guardedSetProgressTitle(null);
 
         const summary = summarizeGitResult(result);
         if (summary.noChanges) {
-          guardedSetNotice({ type: "error", message: summary.description ?? summary.title });
+          toast.error(summary.description ?? summary.title, { id: toastId });
           flashGitResult(actionCwd, "error");
         } else {
-          guardedSetNotice({
-            type: "success",
-            message: summary.description ? `${summary.title} · ${summary.description}` : summary.title,
-          });
+          toast.success(
+            summary.description ? `${summary.title} · ${summary.description}` : summary.title,
+            { id: toastId },
+          );
           flashGitResult(actionCwd, "success");
         }
       } catch (err) {
         clearInterval(interval);
-        guardedSetProgressTitle(null);
-        guardedSetNotice({
-          type: "error",
-          message: err instanceof Error ? err.message : "Action failed.",
-        });
+        toast.error(err instanceof Error ? err.message : "Action failed.", { id: toastId });
         flashGitResult(actionCwd, "error");
       } finally {
         await resumeHmr();
@@ -258,17 +228,15 @@ export function GitPanel() {
     if (quickAction.kind === "run_pull") {
       if (!repoCwd) return;
       setIsBusy(true);
-      setNotice(null);
-      setProgressTitle("Pulling latest changes...");
+      const toastId = toast.loading("Pulling latest changes...");
       (async () => {
         await pauseHmr();
         try {
           await pull(repoCwd);
-          setNotice({ type: "success", message: "Pulled from upstream." });
+          toast.success("Pulled from upstream.", { id: toastId });
         } catch (err) {
-          setNotice({ type: "error", message: err instanceof Error ? err.message : "Pull failed." });
+          toast.error(err instanceof Error ? err.message : "Pull failed.", { id: toastId });
         } finally {
-          setProgressTitle(null);
           await resumeHmr();
           await invalidateGitQueries(queryClient);
           setIsBusy(false);
@@ -277,7 +245,7 @@ export function GitPanel() {
       return;
     }
     if (quickAction.kind === "show_hint") {
-      setNotice({ type: "info", message: quickAction.hint ?? quickAction.label });
+      toast.info(quickAction.hint ?? quickAction.label);
       return;
     }
     if (quickAction.action) {
@@ -311,13 +279,12 @@ export function GitPanel() {
       if (!repoCwd) return;
       setIsBusy(true);
       await pauseHmr();
-      setNotice(null);
       try {
         await checkoutBranch(repoCwd, branch);
-        setNotice({ type: "success", message: `Switched to ${branch}` });
+        toast.success(`Switched to ${branch}`);
         setIsSwitchDialogOpen(false);
       } catch (err) {
-        setNotice({ type: "error", message: err instanceof Error ? err.message : "Checkout failed." });
+        toast.error(err instanceof Error ? err.message : "Checkout failed.");
       } finally {
         await resumeHmr();
         await invalidateGitQueries(queryClient);
@@ -328,6 +295,7 @@ export function GitPanel() {
   );
 
   const [pendingDeleteBranch, setPendingDeleteBranch] = useState<string | null>(null);
+  const [isDiscardConfirmOpen, setIsDiscardConfirmOpen] = useState(false);
 
   const doDeleteBranch = useCallback(
     async (branch: string) => {
@@ -343,6 +311,23 @@ export function GitPanel() {
     [repoCwd, queryClient],
   );
 
+  const handleDiscardAll = useCallback(async () => {
+    if (!repoCwd) return;
+    setIsBusy(true);
+    const toastId = toast.loading("Discarding all changes...");
+    try {
+      await discardAllChanges(repoCwd);
+      toast.success("All local changes discarded.", { id: toastId });
+      flashGitResult(repoCwd, "success");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Discard failed.", { id: toastId });
+      flashGitResult(repoCwd, "error");
+    } finally {
+      await invalidateGitQueries(queryClient);
+      setIsBusy(false);
+    }
+  }, [repoCwd, queryClient, flashGitResult]);
+
   const handleMerge = useCallback(async (versionBump: "patch" | "minor" | "major" | null) => {
     if (!repoCwd || !mergeDialogScope) return;
     const actionCwd = repoCwd;
@@ -351,8 +336,7 @@ export function GitPanel() {
     setMergeDialogScope(null);
     setIsBusy(true);
     await pauseHmr();
-    setNotice(null);
-    setProgressTitle(scope === "stack" ? "Merging stack..." : "Merging PR...");
+    const toastId = toast.loading(scope === "stack" ? "Merging stack..." : "Merging PR...");
     try {
       const pr = gitStatus?.pr;
       if (!pr?.number) throw new Error("No PR to merge");
@@ -394,16 +378,15 @@ export function GitPanel() {
 
       const label = result.merged.map((n) => `#${n}`).join(", ");
       if (result.tag) {
-        guardedSetNotice({ type: "success", message: `Merged ${label} · Released ${result.tag}` });
+        toast.success(`Merged ${label} · Released ${result.tag}`, { id: toastId });
       } else {
-        guardedSetNotice({ type: "success", message: `Merged ${label}` });
+        toast.success(`Merged ${label}`, { id: toastId });
       }
       flashGitResult(actionCwd, "success");
     } catch (err) {
-      guardedSetNotice({ type: "error", message: err instanceof Error ? err.message : "Merge failed." });
+      toast.error(err instanceof Error ? err.message : "Merge failed.", { id: toastId });
       flashGitResult(actionCwd, "error");
     } finally {
-      setProgressTitle(null);
       await resumeHmr();
       await invalidateGitQueries(queryClient);
       setIsBusy(false);
@@ -464,8 +447,7 @@ export function GitPanel() {
   const handleCreateReleasePr = useCallback(async () => {
     if (!repoCwd) return;
     setIsBusy(true);
-    setNotice(null);
-    setProgressTitle("Creating release PR...");
+    const toastId = toast.loading("Creating release PR...");
     try {
       // Determine target branch
       const mainExists = branches.some((b) => b.name === "main" || b.name === "origin/main");
@@ -497,42 +479,29 @@ export function GitPanel() {
       }
 
       const pr = await createPullRequest(repoCwd, targetBranch, prTitle, prBody);
-      setNotice({ type: "success", message: `Created release PR #${pr.number}` });
+      toast.success(`Created release PR #${pr.number}`, { id: toastId });
     } catch (err) {
-      setNotice({ type: "error", message: err instanceof Error ? err.message : "Failed to create release PR." });
+      toast.error(err instanceof Error ? err.message : "Failed to create release PR.", { id: toastId });
     } finally {
-      setProgressTitle(null);
       await invalidateGitQueries(queryClient);
       setIsBusy(false);
     }
   }, [repoCwd, branches, queryClient]);
 
-  // Clear stale progress
-  useEffect(() => {
-    if (!isBusy) setProgressTitle(null);
-  }, [isBusy]);
-
-  // Track which repo owns the current action — guarded setters only apply if repo hasn't changed
+  // Track which repo owns the current action
   const actionRepoRef = useRef<string | null>(null);
   const repoCwdRef = useRef(repoCwd);
   repoCwdRef.current = repoCwd;
-  const guardedSetNotice = useCallback((v: { type: "info" | "error" | "success"; message: string } | null) => {
-    if (actionRepoRef.current === repoCwdRef.current) setNotice(v);
-  }, []);
-  const guardedSetProgressTitle = useCallback((v: string | null) => {
-    if (actionRepoRef.current === repoCwdRef.current) setProgressTitle(v);
-  }, []);
 
   // Clear all local state when switching projects
   useEffect(() => {
-    setNotice(null);
-    setProgressTitle(null);
     setIsBusyLocal(false);
     setIsCommitDialogOpen(false);
     setIsSwitchDialogOpen(false);
     setMergeDialogScope(null);
     setPendingDeleteBranch(null);
     setPendingDefaultAction(null);
+    setIsDiscardConfirmOpen(false);
   }, [repoCwd]);
 
   if (!repoCwd) return null;
@@ -541,32 +510,69 @@ export function GitPanel() {
     <div className="flex h-full flex-col">
       <div className="flex-1 overflow-y-auto overflow-x-hidden" style={{ scrollbarWidth: "none" }}>
         <div className="flex flex-col gap-5 p-6">
-          {/* Notices */}
-          {progressTitle && (
-            <StatusCard title={progressTitle} badgeLabel="in progress" badgeVariant="default" loading />
-          )}
-          {notice && !progressTitle && (
-            <StatusCard
-              title={notice.message}
-              badgeLabel={notice.type}
-              badgeVariant={
-                notice.type === "success" ? "default" : notice.type === "error" ? "destructive" : "secondary"
-              }
-            />
-          )}
-          {!notice && !progressTitle && quickAction.kind === "show_hint" && quickAction.hint && (
-            <StatusCard title={quickAction.hint} badgeLabel="info" badgeVariant="secondary" />
+          {/* Branch info */}
+          {gitStatus?.branch && (
+            <div className="flex flex-col gap-3">
+              <div className="flex items-center gap-2.5">
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-medium">{gitStatus.branch}</p>
+                  <div className="flex items-center gap-3 text-xs text-muted-foreground">
+                    <span className={cn(
+                      "flex items-center gap-1",
+                      gitStatus.hasWorkingTreeChanges ? "text-amber-500" : "text-emerald-500",
+                    )}>
+                      <span className={cn(
+                        "size-1.5 rounded-full",
+                        gitStatus.hasWorkingTreeChanges ? "bg-amber-500" : "bg-emerald-500",
+                      )} />
+                      {gitStatus.hasWorkingTreeChanges
+                        ? `${gitStatus.workingTree.files.length} change${gitStatus.workingTree.files.length !== 1 ? "s" : ""}`
+                        : "Clean"}
+                    </span>
+                    {(gitStatus.aheadCount > 0 || gitStatus.behindCount > 0) && (
+                      <span className="flex items-center gap-1.5 tabular-nums">
+                        {gitStatus.aheadCount > 0 && <span>↑{gitStatus.aheadCount}</span>}
+                        {gitStatus.behindCount > 0 && <span>↓{gitStatus.behindCount}</span>}
+                      </span>
+                    )}
+                    {gitStatus.pr && (
+                      <span className="flex items-center gap-1">
+                        <HugeiconsIcon icon={GitPullRequestIcon} className="size-3 text-emerald-500" />
+                        #{gitStatus.pr.number}
+                      </span>
+                    )}
+                  </div>
+                </div>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => setIsSwitchDialogOpen(true)}
+                  disabled={isBusy}
+                  className="shrink-0 gap-1.5"
+                >
+                  <HugeiconsIcon icon={GitBranchIcon} className="size-3" />
+                  Switch
+                </Button>
+              </div>
+              {gitStatus.hasWorkingTreeChanges && (
+                <div className="flex items-center gap-3 text-xs tabular-nums text-muted-foreground">
+                  <span className="text-emerald-500">+{gitStatus.workingTree.insertions}</span>
+                  <span className="text-red-500">−{gitStatus.workingTree.deletions}</span>
+                  <span>{gitStatus.workingTree.files.length} file{gitStatus.workingTree.files.length !== 1 ? "s" : ""}</span>
+                </div>
+              )}
+            </div>
           )}
 
           {/* Actions row */}
-          <div className="grid grid-cols-4 gap-3">
-            {/* Primary action — spans full width or half */}
+          <div className="grid grid-cols-5 gap-2">
+            {/* Primary action — spans full width */}
             {quickAction.kind !== "show_hint" && (
               <Button
                 variant={quickAction.disabled || gitStatus?.pr?.state === "open" ? "outline" : "default"}
                 disabled={isBusy || quickAction.disabled}
                 onClick={runQuickAction}
-                className="col-span-4 h-auto justify-center gap-2 py-3"
+                className="col-span-5 h-auto justify-center gap-2 py-3"
               >
                 <QuickActionIcon quickAction={quickAction} />
                 {quickAction.label}
@@ -575,7 +581,7 @@ export function GitPanel() {
             {menuItems.map((item) => (
               <Button
                 key={item.id}
-                variant="outline"
+                variant={item.highlighted ? "default" : "outline"}
                 disabled={isBusy || item.disabled}
                 onClick={() => handleMenuItem(item)}
                 className="h-auto flex-col gap-1 py-3"
@@ -588,11 +594,11 @@ export function GitPanel() {
               variant={gitStatus?.pr?.state === "open" && gitStatus?.hasWorkingTreeChanges ? "default" : "outline"}
               onClick={() => {
                 if (!hasOriginRemote) {
-                  setNotice({ type: "info", message: "Publish to GitHub first before creating branches." });
+                  toast.info("Publish to GitHub first before creating branches.");
                   return;
                 }
                 if (!gitStatus?.hasWorkingTreeChanges) {
-                  setNotice({ type: "info", message: "Make local changes first to create a feature branch." });
+                  toast.info("Make local changes first to create a feature branch.");
                   return;
                 }
                 void runAction({ action: "commit_push", featureBranch: true, skipDefaultBranchPrompt: true });
@@ -602,6 +608,15 @@ export function GitPanel() {
             >
               <HugeiconsIcon icon={GitBranchIcon} className="size-3.5" />
               <span className="text-[11px]">New branch</span>
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => setIsDiscardConfirmOpen(true)}
+              disabled={isBusy || !gitStatus?.hasWorkingTreeChanges}
+              className="h-auto flex-col gap-1 py-3 text-destructive hover:text-destructive"
+            >
+              <HugeiconsIcon icon={Cancel01Icon} className="size-3.5" />
+              <span className="text-[11px]">Discard</span>
             </Button>
           </div>
 
@@ -708,20 +723,6 @@ export function GitPanel() {
             )}
           </div>
 
-          {/* Branches */}
-          <div className="flex flex-col gap-3">
-            <SectionHeader>Branches</SectionHeader>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => setIsSwitchDialogOpen(true)}
-              disabled={isBusy}
-              className="w-fit gap-1.5"
-            >
-              <HugeiconsIcon icon={GitBranchIcon} className="size-3" />
-              Switch branch
-            </Button>
-          </div>
         </div>
       </div>
 
@@ -789,6 +790,16 @@ export function GitPanel() {
             void runAction({ ...action, featureBranch: true, skipDefaultBranchPrompt: true });
           }
         }}
+      />
+
+      <ConfirmDialog
+        open={isDiscardConfirmOpen}
+        onOpenChange={setIsDiscardConfirmOpen}
+        title="Discard all changes"
+        description="This will permanently discard all local changes, including untracked files. This cannot be undone."
+        confirmLabel="Discard all"
+        variant="destructive"
+        onConfirm={() => void handleDiscardAll()}
       />
 
       <ConfirmDialog
