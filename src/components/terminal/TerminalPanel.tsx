@@ -19,51 +19,68 @@ function createWsPtyTransport(serverPort: number, cwd: string) {
   let ws: WebSocket | null = null
   let connected = false
   let sessionId: string | null = null
+  let destroyed = false
+  let reconnectTimer: ReturnType<typeof setTimeout> | null = null
+  let savedCallbacks: {
+    onConnect?: () => void
+    onDisconnect?: () => void
+    onData?: (data: string) => void
+    onExit?: (code: number) => void
+  } | null = null
+
+  function connectWs(callbacks: NonNullable<typeof savedCallbacks>) {
+    if (destroyed) return
+    savedCallbacks = callbacks
+
+    ws = new WebSocket(`ws://127.0.0.1:${serverPort}/ws/pty?cwd=${encodeURIComponent(cwd)}`)
+
+    ws.onopen = () => {
+      ws!.send(JSON.stringify({ type: "create", cwd }))
+    }
+
+    ws.onmessage = (event) => {
+      try {
+        const msg = JSON.parse(event.data)
+        switch (msg.type) {
+          case "created":
+            sessionId = msg.sessionId
+            connected = true
+            callbacks.onConnect?.()
+            break
+          case "output":
+            callbacks.onData?.(msg.data)
+            break
+          case "exit":
+            connected = false
+            callbacks.onExit?.(msg.code ?? 0)
+            callbacks.onDisconnect?.()
+            break
+        }
+      } catch { /* ignore */ }
+    }
+
+    ws.onclose = () => {
+      const wasConnected = connected
+      connected = false
+      sessionId = null
+      ws = null
+      callbacks.onDisconnect?.()
+      // Reconnect if the socket dropped unexpectedly (was connected and we
+      // haven't been intentionally destroyed). Creates a fresh PTY session.
+      if (wasConnected && !destroyed) {
+        reconnectTimer = setTimeout(() => connectWs(callbacks), 500)
+      }
+    }
+  }
 
   return {
-    async connect(options: {
-      callbacks: {
-        onConnect?: () => void
-        onDisconnect?: () => void
-        onData?: (data: string) => void
-        onExit?: (code: number) => void
-      }
-    }) {
-      const { callbacks } = options
-      ws = new WebSocket(`ws://127.0.0.1:${serverPort}/ws/pty?cwd=${encodeURIComponent(cwd)}`)
-
-      ws.onopen = () => {
-        ws!.send(JSON.stringify({ type: "create", cwd }))
-      }
-
-      ws.onmessage = (event) => {
-        try {
-          const msg = JSON.parse(event.data)
-          switch (msg.type) {
-            case "created":
-              sessionId = msg.sessionId
-              connected = true
-              callbacks.onConnect?.()
-              break
-            case "output":
-              callbacks.onData?.(msg.data)
-              break
-            case "exit":
-              connected = false
-              callbacks.onExit?.(msg.code ?? 0)
-              callbacks.onDisconnect?.()
-              break
-          }
-        } catch { /* ignore */ }
-      }
-
-      ws.onclose = () => {
-        connected = false
-        callbacks.onDisconnect?.()
-      }
+    async connect(options: { callbacks: NonNullable<typeof savedCallbacks> }) {
+      connectWs(options.callbacks)
     },
 
     disconnect() {
+      destroyed = true
+      if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null }
       if (ws && sessionId) {
         try { ws.send(JSON.stringify({ type: "destroy", sessionId })) } catch { /* */ }
       }
@@ -194,8 +211,16 @@ function TerminalInstance({
       pane.getRawPane().app.setPaused(!isActive)
     })
     if (isActive) {
-      const active = restty.getActivePane()
-      active?.app.focus()
+      // The container was invisible (visibility:hidden) while inactive. Even
+      // though it keeps its layout, the terminal renderer may have stale
+      // dimensions. Wait one frame for the browser to remove the invisible
+      // class, then trigger a layout sync so Restty re-measures and repaints.
+      requestAnimationFrame(() => {
+        const r = resttyRef.current
+        if (!r) return
+        r.requestLayoutSync()
+        r.activePane()?.focus()
+      })
     }
   }, [isActive])
 
@@ -271,7 +296,10 @@ export const TerminalPanel = forwardRef<TerminalPanelHandle, TerminalPanelProps>
 
   const closeTab = useCallback(
     (id: string) => {
-      resttyRefs.current.delete(id)
+      // Don't delete the restty ref here — the TerminalInstance's cleanup
+      // effect handles destroying the Restty instance. Eagerly deleting the
+      // ref before React unmounts the component can leave the active tab's
+      // ref temporarily missing, causing blank terminals.
       setTabs((prev) => {
         const next = prev.filter((t) => t.id !== id)
         if (next.length === 0) {
@@ -290,6 +318,16 @@ export const TerminalPanel = forwardRef<TerminalPanelHandle, TerminalPanelProps>
     },
     [activeTabId],
   )
+
+  // Clean up stale restty refs after tabs are removed and components unmount
+  useEffect(() => {
+    const tabIds = new Set(tabs.map((t) => t.id))
+    for (const id of resttyRefs.current.keys()) {
+      if (!tabIds.has(id)) {
+        resttyRefs.current.delete(id)
+      }
+    }
+  }, [tabs])
 
   // Expose closePaneOrTab to parent via ref
   const closePaneOrTab = useCallback((): boolean => {
