@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from "react"
+import { useState, useRef, useEffect, useCallback } from "react"
 import { useAppStore } from "@/store"
 import { RepoSidebar } from "@/components/git/RepoSidebar"
 import { GitPanel } from "@/components/git/GitPanel"
@@ -121,36 +121,35 @@ function Toolbar({
 function AppContent() {
   const [activeTab, setActiveTab] = useState<ActiveTab>("dashboard")
   const [isDiffOpen, setIsDiffOpen] = useState(false)
-  const [terminalMounted, setTerminalMounted] = useState(false)
   const [terminalProjects, setTerminalProjects] = useState<Set<string>>(new Set())
   const repoCwd = useAppStore((s) => s.repoCwd)
   const terminalRefs = useRef(new Map<string, React.MutableRefObject<TerminalPanelHandle | null>>())
-
-  function getTerminalRef(projectCwd: string) {
+  const setTerminalHandle = (projectCwd: string, handle: TerminalPanelHandle | null) => {
     let existing = terminalRefs.current.get(projectCwd)
     if (!existing) {
       existing = { current: null }
       terminalRefs.current.set(projectCwd, existing)
     }
-    return existing
+    existing.current = handle
   }
 
-  // Lazy-mount: only render the terminal once it's been activated
-  if (activeTab === "terminal" && !terminalMounted) {
-    setTerminalMounted(true)
-  }
+  const ensureTerminalReady = useCallback((projectCwd: string | null) => {
+    if (!projectCwd) return
+    setTerminalProjects((prev) => {
+      if (prev.has(projectCwd)) return prev
+      const next = new Set(prev)
+      next.add(projectCwd)
+      return next
+    })
+  }, [])
 
-  // Add current project to terminal set when terminal is mounted
   useEffect(() => {
-    if (terminalMounted && repoCwd) {
-      setTerminalProjects((prev) => {
-        if (prev.has(repoCwd)) return prev
-        const next = new Set(prev)
-        next.add(repoCwd)
-        return next
-      })
-    }
-  }, [terminalMounted, repoCwd])
+    if (activeTab !== "terminal" || !repoCwd) return
+    const id = window.setTimeout(() => {
+      ensureTerminalReady(repoCwd)
+    }, 0)
+    return () => window.clearTimeout(id)
+  }, [activeTab, ensureTerminalReady, repoCwd])
 
   // Cmd+W: close pane/tab in terminal first, then close window
   useEffect(() => {
@@ -167,14 +166,15 @@ function AppContent() {
     return cleanup
   }, [activeTab, repoCwd])
 
-  // Cmd+D / Cmd+Shift+D / Cmd+T: terminal split & tab shortcuts
+  // Terminal shortcuts from the native menu
   useEffect(() => {
     const cleanup = window.electronAPI?.onTerminalAction((action) => {
+      if (action !== "terminal:new-tab") return
       // Switch to terminal tab if not already there
       if (activeTab !== "terminal") {
         setActiveTab("terminal")
-        if (!terminalMounted) setTerminalMounted(true)
       }
+      ensureTerminalReady(repoCwd)
       // Defer action to next tick so terminal is mounted
       setTimeout(() => {
         if (!repoCwd) return
@@ -182,18 +182,25 @@ function AppContent() {
         const t = ref?.current
         if (!t) return
         switch (action) {
-          case "terminal:split-vertical": t.splitVertical(); break
-          case "terminal:split-horizontal": t.splitHorizontal(); break
           case "terminal:new-tab": t.addTab(); break
         }
       }, 0)
     })
     return cleanup
-  }, [activeTab, terminalMounted, repoCwd])
+  }, [activeTab, ensureTerminalReady, repoCwd])
 
   return (
     <>
-      <Toolbar activeTab={activeTab} onTabChange={setActiveTab} onDiffOpen={() => setIsDiffOpen(true)} />
+      <Toolbar
+        activeTab={activeTab}
+        onTabChange={(tab) => {
+          setActiveTab(tab)
+          if (tab === "terminal") {
+            ensureTerminalReady(repoCwd)
+          }
+        }}
+        onDiffOpen={() => setIsDiffOpen(true)}
+      />
       <main className="flex min-h-0 flex-1 flex-col overflow-hidden pt-[52px]">
         <div className="relative min-h-0 flex-1">
           <div className={cn(
@@ -211,12 +218,12 @@ function AppContent() {
           {Array.from(terminalProjects).map((projectCwd) => (
             <div key={projectCwd} className={cn(
               "absolute inset-0 overflow-hidden",
-              activeTab === "terminal" && repoCwd === projectCwd ? "z-10" : "pointer-events-none invisible"
+              activeTab === "terminal" && repoCwd === projectCwd && !isDiffOpen ? "z-10" : "pointer-events-none invisible"
             )}>
               <TerminalPanel
-                ref={getTerminalRef(projectCwd)}
+                ref={(handle) => setTerminalHandle(projectCwd, handle)}
                 cwd={projectCwd}
-                isVisible={activeTab === "terminal" && repoCwd === projectCwd}
+                isVisible={activeTab === "terminal" && repoCwd === projectCwd && !isDiffOpen}
               />
             </div>
           ))}

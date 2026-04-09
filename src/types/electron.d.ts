@@ -10,6 +10,20 @@ interface ElectronAPI {
   server: {
     getPort: () => Promise<number>;
   };
+  terminalHost: {
+    isAvailable: () => Promise<boolean>;
+    createSurface: (surfaceId: string, cwd: string) => Promise<boolean>;
+    destroySurface: (surfaceId: string) => Promise<void>;
+    setSurfaceBounds: (
+      surfaceId: string,
+      bounds: { x: number; y: number; width: number; height: number },
+    ) => Promise<void>;
+    getResolvedAppearance: () => Promise<{ backgroundColor?: string; backgroundOpacity?: number } | undefined>;
+    setSurfaceBackground: (surfaceId: string, color: string) => Promise<void>;
+    setSurfaceVisible: (surfaceId: string, visible: boolean) => Promise<void>;
+    focusSurface: (surfaceId: string) => Promise<void>;
+    splitSurface: (surfaceId: string, direction: "right" | "down" | "left" | "up") => Promise<void>;
+  };
   settings: {
     load: () => Promise<Record<string, unknown>>;
     save: (data: Record<string, unknown>) => Promise<void>;

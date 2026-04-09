@@ -1,6 +1,7 @@
 import { build } from "esbuild";
 import { existsSync, statSync } from "node:fs";
 import { resolve } from "node:path";
+import { spawnSync } from "node:child_process";
 
 const projectRoot = new URL("..", import.meta.url).pathname.replace(/\/$/, "");
 
@@ -59,6 +60,15 @@ function isUpToDate() {
 
     return statSync(absoluteOutput).mtimeMs >= getMtimeMs(entryPoint);
   });
+}
+
+const nativeBuild = spawnSync(process.execPath, ["scripts/build-native-terminal.mjs"], {
+  cwd: projectRoot,
+  stdio: "inherit",
+  env: process.env,
+});
+if (nativeBuild.status !== 0) {
+  process.exit(nativeBuild.status ?? 1);
 }
 
 if (process.argv.includes("--force") || !isUpToDate()) {
