@@ -495,7 +495,6 @@ export function GitPanel() {
 
   // Clear all local state when switching projects
   useEffect(() => {
-    toast.dismiss();
     setIsBusyLocal(false);
     setIsCommitDialogOpen(false);
     setIsSwitchDialogOpen(false);
