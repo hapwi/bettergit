@@ -131,7 +131,7 @@ function DiffViewerContent({ open }: { open: boolean }) {
     try {
       const parsed = parsePatchFiles(normalized, `diff-viewer:${normalized.length}`);
       const files = parsed.flatMap((p) => p.files);
-      return files.toSorted((a, b) =>
+      return [...files].sort((a: FileDiffMetadata, b: FileDiffMetadata) =>
         resolveFileDiffPath(a).localeCompare(resolveFileDiffPath(b), undefined, {
           numeric: true,
           sensitivity: "base",
@@ -239,7 +239,7 @@ function DiffViewerContent({ open }: { open: boolean }) {
               intersectionObserverMargin: 1200,
             }}
           >
-            {renderableFiles.map((fileDiff) => {
+            {renderableFiles.map((fileDiff: FileDiffMetadata) => {
               const filePath = resolveFileDiffPath(fileDiff);
               const fileKey = buildFileDiffRenderKey(fileDiff);
               const themedKey = `${fileKey}:${resolvedTheme}`;

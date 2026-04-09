@@ -10,7 +10,6 @@ function persistToFile(data: Record<string, unknown>) {
   window.electronAPI?.settings.save(data);
 }
 
-let fileSettings: Record<string, unknown> = {};
 
 function loadFromLocalStorage(): { repos: string[]; terminalApp: string | null } {
   try {
