@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, shell } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, Menu, shell } from "electron";
 import path from "node:path";
 import os from "node:os";
 import fs from "node:fs";
@@ -186,10 +186,71 @@ function createWindow() {
 }
 
 // ---------------------------------------------------------------------------
+// Application menu — set once, not per-window
+// ---------------------------------------------------------------------------
+
+function setupApplicationMenu() {
+  const sendToRenderer = (channel: string) => {
+    const focused = BrowserWindow.getFocusedWindow();
+    if (focused) focused.webContents.send(channel);
+  };
+
+  const template: Electron.MenuItemConstructorOptions[] = [
+    { role: "appMenu" },
+    {
+      label: "File",
+      submenu: [
+        {
+          label: "New Terminal Tab",
+          accelerator: "CmdOrCtrl+T",
+          click: () => sendToRenderer("terminal:new-tab"),
+        },
+        { type: "separator" },
+        {
+          label: "Close",
+          accelerator: "CmdOrCtrl+W",
+          click: () => sendToRenderer("app:close-pane-or-window"),
+        },
+      ],
+    },
+    { role: "editMenu" },
+    {
+      label: "View",
+      submenu: [
+        {
+          label: "Split Right",
+          accelerator: "CmdOrCtrl+D",
+          click: () => sendToRenderer("terminal:split-vertical"),
+        },
+        {
+          label: "Split Down",
+          accelerator: "CmdOrCtrl+Shift+D",
+          click: () => sendToRenderer("terminal:split-horizontal"),
+        },
+        { type: "separator" },
+        { role: "reload" },
+        { role: "forceReload" },
+        { role: "toggleDevTools" },
+        { type: "separator" },
+        { role: "resetZoom" },
+        { role: "zoomIn" },
+        { role: "zoomOut" },
+        { type: "separator" },
+        { role: "togglefullscreen" },
+      ],
+    },
+    { role: "windowMenu" },
+  ];
+  Menu.setApplicationMenu(Menu.buildFromTemplate(template));
+}
+
+// ---------------------------------------------------------------------------
 // App lifecycle
 // ---------------------------------------------------------------------------
 
 app.whenReady().then(async () => {
+  setupApplicationMenu();
+
   try {
     await startServer();
     console.log(`[main] Server running on port ${serverPort}`);
@@ -278,3 +339,28 @@ ipcMain.handle("shell:openTerminal", async (_event, dirPath: string, terminalApp
 });
 
 ipcMain.handle("server:getPort", () => serverPort);
+
+// ---------------------------------------------------------------------------
+// Persistent settings — survives dev restarts (file-backed, not localStorage)
+// ---------------------------------------------------------------------------
+
+const settingsPath = path.join(app.getPath("userData"), "bettergit-settings.json");
+
+function loadSettings(): Record<string, unknown> {
+  try {
+    return JSON.parse(fs.readFileSync(settingsPath, "utf-8"));
+  } catch {
+    return {};
+  }
+}
+
+function saveSettings(data: Record<string, unknown>): void {
+  fs.mkdirSync(path.dirname(settingsPath), { recursive: true });
+  fs.writeFileSync(settingsPath, JSON.stringify(data, null, 2));
+}
+
+ipcMain.handle("settings:load", () => loadSettings());
+ipcMain.handle("settings:save", (_event, data: Record<string, unknown>) => {
+  saveSettings(data);
+});
+

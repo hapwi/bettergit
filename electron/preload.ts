@@ -12,5 +12,23 @@ contextBridge.exposeInMainWorld("electronAPI", {
   server: {
     getPort: (): Promise<number> => ipcRenderer.invoke("server:getPort"),
   },
+  settings: {
+    load: (): Promise<Record<string, unknown>> => ipcRenderer.invoke("settings:load"),
+    save: (data: Record<string, unknown>): Promise<void> => ipcRenderer.invoke("settings:save", data),
+  },
+  onClosePaneOrWindow: (callback: () => void): (() => void) => {
+    const handler = () => callback();
+    ipcRenderer.on("app:close-pane-or-window", handler);
+    return () => { ipcRenderer.removeListener("app:close-pane-or-window", handler); };
+  },
+  onTerminalAction: (callback: (action: string) => void): (() => void) => {
+    const channels = ["terminal:split-vertical", "terminal:split-horizontal", "terminal:new-tab"] as const;
+    const handlers = channels.map((ch) => {
+      const handler = () => callback(ch);
+      ipcRenderer.on(ch, handler);
+      return () => { ipcRenderer.removeListener(ch, handler); };
+    });
+    return () => handlers.forEach((h) => h());
+  },
   platform: process.platform,
 });
