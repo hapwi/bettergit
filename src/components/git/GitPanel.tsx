@@ -564,6 +564,60 @@ export function GitPanel() {
     <div className="flex h-full flex-col">
       <div className="flex-1 overflow-y-auto overflow-x-hidden" style={{ scrollbarWidth: "none" }}>
         <div className="flex flex-col gap-5 p-6">
+          {/* Branch info */}
+          {gitStatus?.branch && (
+            <div className="flex flex-col gap-3">
+              <div className="flex items-center gap-2.5">
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-medium">{gitStatus.branch}</p>
+                  <div className="flex items-center gap-3 text-xs text-muted-foreground">
+                    <span className={cn(
+                      "flex items-center gap-1",
+                      gitStatus.hasWorkingTreeChanges ? "text-amber-500" : "text-emerald-500",
+                    )}>
+                      <span className={cn(
+                        "size-1.5 rounded-full",
+                        gitStatus.hasWorkingTreeChanges ? "bg-amber-500" : "bg-emerald-500",
+                      )} />
+                      {gitStatus.hasWorkingTreeChanges
+                        ? `${gitStatus.workingTree.files.length} change${gitStatus.workingTree.files.length !== 1 ? "s" : ""}`
+                        : "Clean"}
+                    </span>
+                    {(gitStatus.aheadCount > 0 || gitStatus.behindCount > 0) && (
+                      <span className="flex items-center gap-1.5 tabular-nums">
+                        {gitStatus.aheadCount > 0 && <span>↑{gitStatus.aheadCount}</span>}
+                        {gitStatus.behindCount > 0 && <span>↓{gitStatus.behindCount}</span>}
+                      </span>
+                    )}
+                    {gitStatus.pr && (
+                      <span className="flex items-center gap-1">
+                        <HugeiconsIcon icon={GitPullRequestIcon} className="size-3 text-emerald-500" />
+                        #{gitStatus.pr.number}
+                      </span>
+                    )}
+                  </div>
+                </div>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => setIsSwitchDialogOpen(true)}
+                  disabled={isBusy}
+                  className="shrink-0 gap-1.5"
+                >
+                  <HugeiconsIcon icon={GitBranchIcon} className="size-3" />
+                  Switch
+                </Button>
+              </div>
+              {gitStatus.hasWorkingTreeChanges && (
+                <div className="flex items-center gap-3 text-xs tabular-nums text-muted-foreground">
+                  <span className="text-emerald-500">+{gitStatus.workingTree.insertions}</span>
+                  <span className="text-red-500">−{gitStatus.workingTree.deletions}</span>
+                  <span>{gitStatus.workingTree.files.length} file{gitStatus.workingTree.files.length !== 1 ? "s" : ""}</span>
+                </div>
+              )}
+            </div>
+          )}
+
           {/* Notices */}
           {progressTitle && (
             <StatusCard title={progressTitle} badgeLabel="in progress" badgeVariant="default" loading />
@@ -740,20 +794,6 @@ export function GitPanel() {
             )}
           </div>
 
-          {/* Branches */}
-          <div className="flex flex-col gap-3">
-            <SectionHeader>Branches</SectionHeader>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => setIsSwitchDialogOpen(true)}
-              disabled={isBusy}
-              className="w-fit gap-1.5"
-            >
-              <HugeiconsIcon icon={GitBranchIcon} className="size-3" />
-              Switch branch
-            </Button>
-          </div>
         </div>
       </div>
 
