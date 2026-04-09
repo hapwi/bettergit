@@ -12,14 +12,17 @@ import {
   SidebarLeftIcon,
 } from "@hugeicons/core-free-icons"
 import { HugeiconsIcon } from "@hugeicons/react"
-import { Terminal } from "lucide-react"
+import { Terminal, FileDiff } from "lucide-react"
+import { DiffViewer } from "@/components/git/DiffViewer"
 
 function Toolbar({
   activeTab,
   onTabChange,
+  onDiffOpen,
 }: {
   activeTab: "dashboard" | "git"
   onTabChange: (tab: "dashboard" | "git") => void
+  onDiffOpen: () => void
 }) {
   const { toggleSidebar, state } = useSidebar()
   const isCollapsed = state === "collapsed"
@@ -50,17 +53,26 @@ function Toolbar({
         )}
       </div>
 
-      {/* Open in Terminal */}
+      {/* Toolbar actions */}
       {repoCwd && (
-        <button
-          type="button"
-          onClick={() => window.electronAPI?.shell.openTerminal(repoCwd, terminalApp ?? undefined)}
-          className="ml-auto rounded-md p-1.5 text-muted-foreground/50 transition-colors hover:bg-accent hover:text-foreground"
-          style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
-          title="Open in Terminal"
-        >
-          <Terminal className="size-[15px]" />
-        </button>
+        <div className="ml-auto flex items-center gap-0.5" style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}>
+          <button
+            type="button"
+            onClick={onDiffOpen}
+            className="rounded-md p-1.5 text-muted-foreground/50 transition-colors hover:bg-accent hover:text-foreground"
+            title="View diff"
+          >
+            <FileDiff className="size-[15px]" />
+          </button>
+          <button
+            type="button"
+            onClick={() => window.electronAPI?.shell.openTerminal(repoCwd, terminalApp ?? undefined)}
+            className="rounded-md p-1.5 text-muted-foreground/50 transition-colors hover:bg-accent hover:text-foreground"
+            title="Open in Terminal"
+          >
+            <Terminal className="size-[15px]" />
+          </button>
+        </div>
       )}
 
       {/* Right: view toggle */}
@@ -101,14 +113,16 @@ function Toolbar({
 
 function AppContent() {
   const [activeTab, setActiveTab] = useState<"dashboard" | "git">("dashboard")
+  const [isDiffOpen, setIsDiffOpen] = useState(false)
 
   return (
     <>
-      <Toolbar activeTab={activeTab} onTabChange={setActiveTab} />
+      <Toolbar activeTab={activeTab} onTabChange={setActiveTab} onDiffOpen={() => setIsDiffOpen(true)} />
       <main className="flex min-h-0 flex-1 flex-col overflow-hidden pt-[52px]">
         {activeTab === "dashboard" && <Dashboard />}
         {activeTab === "git" && <GitPanel />}
       </main>
+      <DiffViewer open={isDiffOpen} onOpenChange={setIsDiffOpen} />
     </>
   )
 }
