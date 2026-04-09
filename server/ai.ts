@@ -227,7 +227,7 @@ export async function generateCommitMessage(input: CommitMessageInput): Promise<
     "Rules:",
     "- subject must be imperative, <= 72 chars, no trailing period",
     "- body can be an empty string or short bullet points",
-    ...(wantsBranch ? ["- branch must be a short descriptive slug for this change (e.g. 'add-terminal-tabs'). Do NOT include the current branch name or any prefix like feature/, fix/, chore/ — just the slug."] : []),
+    ...(wantsBranch ? ["- branch must be a short git branch name describing the change, prefixed with a type (feature/, fix/, chore/, etc.). Do NOT include the current branch name in the generated branch name."] : []),
     "- capture the primary user-visible or developer-visible change",
     "",
     `Branch: ${input.branch ?? "(detached)"}`,
