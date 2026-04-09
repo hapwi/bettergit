@@ -77,6 +77,8 @@ const stagePackage = {
     // it has dynamic requires and subprocess spawning that break when inlined.
     // Same approach as hapcode's server build.
     "@anthropic-ai/claude-agent-sdk": pkg.dependencies["@anthropic-ai/claude-agent-sdk"] ?? "*",
+    "node-pty": pkg.dependencies["node-pty"] ?? "*",
+    "ws": pkg.dependencies["ws"] ?? "*",
   },
   devDependencies: {
     electron: "41.1.1",
