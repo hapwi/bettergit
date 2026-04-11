@@ -348,6 +348,37 @@ ipcMain.handle("shell:openTerminal", async (_event, dirPath: string, terminalApp
 
 ipcMain.handle("server:getPort", () => serverPort);
 
+ipcMain.handle("project:renameDirectory", (_event, currentPath: string, newName: string): string => {
+  const trimmedName = newName.trim();
+  if (!trimmedName) {
+    throw new Error("Project name cannot be empty.");
+  }
+  if (trimmedName === "." || trimmedName === "..") {
+    throw new Error("Choose a valid project name.");
+  }
+  if (
+    trimmedName.includes(path.sep) ||
+    trimmedName.includes(path.posix.sep) ||
+    trimmedName.includes(path.win32.sep)
+  ) {
+    throw new Error("Project name cannot contain path separators.");
+  }
+  if (!fs.existsSync(currentPath)) {
+    throw new Error("The project folder no longer exists.");
+  }
+
+  const nextPath = path.join(path.dirname(currentPath), trimmedName);
+  if (nextPath === currentPath) {
+    return currentPath;
+  }
+  if (fs.existsSync(nextPath)) {
+    throw new Error("A folder with that name already exists.");
+  }
+
+  fs.renameSync(currentPath, nextPath);
+  return nextPath;
+});
+
 ipcMain.handle("terminal-host:isAvailable", () => loadNativeTerminalAddon() !== null);
 
 ipcMain.handle("terminal-host:createSurface", (event, surfaceId: string, cwd: string) => {
