@@ -2,7 +2,7 @@
  * Git status — rich repo status matching hapcode's model.
  */
 import { execGit } from "./exec";
-import { listOpenPullRequests, type PullRequestSummary } from "./github";
+import type { PullRequestSummary } from "./github";
 
 export interface WorkingTreeFile {
   path: string;
@@ -23,7 +23,6 @@ export interface GitStatus {
   aheadCount: number;
   behindCount: number;
   pr: PullRequestSummary | null;
-  prStack: PullRequestSummary[];
 }
 
 export async function getStatus(cwd: string): Promise<GitStatus> {
@@ -44,7 +43,6 @@ export async function getStatus(cwd: string): Promise<GitStatus> {
       aheadCount: 0,
       behindCount: 0,
       pr: null,
-      prStack: [],
     };
   }
 
@@ -168,22 +166,6 @@ export async function getStatus(cwd: string): Promise<GitStatus> {
   const totalInsertions = files.reduce((sum, f) => sum + f.insertions, 0);
   const totalDeletions = files.reduce((sum, f) => sum + f.deletions, 0);
 
-  // Fetch PR info — current branch PR + all open PRs for the repo
-  let pr: PullRequestSummary | null = null;
-  const prStack: PullRequestSummary[] = [];
-  try {
-    // Fetch all open PRs for the repo
-    const allPrs = await listOpenPullRequests(cwd, "");
-    if (allPrs.length > 0) {
-      prStack.push(...allPrs);
-      if (branch) {
-        pr = allPrs.find((p) => p.headBranch === branch) ?? null;
-      }
-    }
-  } catch {
-    // gh CLI may not be available — that's fine
-  }
-
   return {
     branch,
     isRepo: true,
@@ -196,8 +178,7 @@ export async function getStatus(cwd: string): Promise<GitStatus> {
     hasUpstream,
     aheadCount,
     behindCount,
-    pr,
-    prStack,
+    pr: null,
   };
 }
 
