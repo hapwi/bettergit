@@ -201,6 +201,7 @@ static NSString *EmbeddedGhosttyOverridePath() {
         @"background-opacity = 0\n"
          "background-opacity-cells = true\n"
          "background-blur = false\n"
+         "scrollback-limit = 2000000\n"
          "keybind = super+d=unbind\n"
          "keybind = super+shift+d=unbind\n";
     NSError *error = nil;
@@ -1222,6 +1223,9 @@ static bool HostAction(ghostty_app_t app, ghostty_target_s target, ghostty_actio
     }
     ghostty_app_tick(self.app);
     for (BGTerminalTabHostView *tabHost in self.tabs.allValues) {
+      if (tabHost.hidden) {
+        continue;
+      }
       [self setNeedsDisplayInPane:tabHost.rootPane];
     }
   });

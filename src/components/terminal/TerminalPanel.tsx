@@ -398,9 +398,10 @@ export interface TerminalPanelHandle {
 interface TerminalPanelProps {
   cwd: string
   isVisible: boolean
+  onAllTabsClosed?: () => void
 }
 
-export const TerminalPanel = forwardRef<TerminalPanelHandle, TerminalPanelProps>(function TerminalPanel({ cwd, isVisible }, ref) {
+export const TerminalPanel = forwardRef<TerminalPanelHandle, TerminalPanelProps>(function TerminalPanel({ cwd, isVisible, onAllTabsClosed }, ref) {
   const [tabs, setTabs] = useState<TerminalTab[]>(() => {
     const id = String(++tabCounter)
     return [{ id, title: "Terminal" }]
@@ -410,6 +411,7 @@ export const TerminalPanel = forwardRef<TerminalPanelHandle, TerminalPanelProps>
   const [ghosttyConfig, setGhosttyConfig] = useState<GhosttyConfig | null>(null)
   const [cardBg] = useState(TERMINAL_SHELL_BG)
   const [nativeHostAvailable, setNativeHostAvailable] = useState(false)
+  const hadTabsRef = useRef(tabs.length > 0)
 
   // One restty ref per tab
   const resttyRefs = useRef(new Map<string, React.MutableRefObject<Restty | null>>())
@@ -475,6 +477,16 @@ export const TerminalPanel = forwardRef<TerminalPanelHandle, TerminalPanelProps>
       }
     }
   }, [tabs])
+
+  useEffect(() => {
+    if (tabs.length > 0) {
+      hadTabsRef.current = true
+      return
+    }
+    if (!hadTabsRef.current) return
+    hadTabsRef.current = false
+    onAllTabsClosed?.()
+  }, [onAllTabsClosed, tabs.length])
 
   // Expose closePaneOrTab to parent via ref
   const closePaneOrTab = useCallback((): boolean => {
