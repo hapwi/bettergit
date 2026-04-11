@@ -80,27 +80,28 @@ function SectionTitle({
   );
 }
 
-export function Dashboard() {
+export function Dashboard({ isActive }: { isActive: boolean }) {
   const repoCwd = useAppStore((s) => s.repoCwd);
+  const isEnabled = isActive && repoCwd !== null;
 
   const { data: stats, isLoading: statsLoading } = useQuery({
     queryKey: ["git", "stats", repoCwd],
     queryFn: () => getRepoStats(repoCwd!, 30),
-    enabled: repoCwd !== null,
+    enabled: isEnabled,
     staleTime: 60_000,
     refetchInterval: 120_000,
   });
   const { data: recentCommits = [] } = useQuery({
     queryKey: ["git", "recent-commits", repoCwd],
     queryFn: () => getRecentCommits(repoCwd!, 15),
-    enabled: repoCwd !== null,
+    enabled: isEnabled,
     staleTime: 15_000,
     refetchInterval: 30_000,
   });
   const { data: openPrs = [] } = useQuery({
     queryKey: ["git", "open-prs", repoCwd],
     queryFn: () => getOpenPrs(repoCwd!),
-    enabled: repoCwd !== null,
+    enabled: isEnabled,
     staleTime: 30_000,
     refetchInterval: 60_000,
   });
@@ -115,7 +116,7 @@ export function Dashboard() {
       if (!data.isFork || !data.parent) return null;
       return `${data.parent.owner.login}/${data.parent.name}`;
     },
-    enabled: repoCwd !== null,
+    enabled: isEnabled,
     staleTime: Infinity,
     gcTime: 10 * 60_000,
   });
@@ -123,7 +124,7 @@ export function Dashboard() {
   const { data: mergedPrs = [] } = useQuery({
     queryKey: ["git", "merged-prs", repoCwd],
     queryFn: () => getMergedPrs(repoCwd!, 10),
-    enabled: repoCwd !== null,
+    enabled: isEnabled,
     staleTime: 60_000,
     refetchInterval: 120_000,
   });
