@@ -5,7 +5,7 @@ import { useAppStore } from "@/store";
 
 export function WelcomeScreen() {
   const setRepoCwd = useAppStore((s) => s.setRepoCwd);
-  const recentRepos = useAppStore((s) => s.recentRepos);
+  const recentProjects = useAppStore((s) => s.recentProjects);
 
   const handleOpenRepo = async () => {
     const path = await window.electronAPI?.dialog.openDirectory();
@@ -52,18 +52,18 @@ export function WelcomeScreen() {
         </div>
 
         {/* Recent repos */}
-        {recentRepos.length > 0 && (
+        {recentProjects.length > 0 && (
           <div className="flex w-full flex-col gap-1.5">
             <p className="px-1 text-xs font-medium uppercase tracking-wider text-muted-foreground">
               Recent
             </p>
             <div className="flex flex-col gap-0.5 rounded-lg border bg-card p-1">
-              {recentRepos.map((repo) => (
+              {recentProjects.map((project) => (
                 <button
-                  key={repo}
+                  key={project.path}
                   type="button"
                   className="flex items-center gap-2.5 rounded-md px-3 py-2 text-left text-sm transition-colors hover:bg-accent"
-                  onClick={() => setRepoCwd(repo)}
+                  onClick={() => setRepoCwd(project.path)}
                 >
                   <HugeiconsIcon
                     icon={Folder01Icon}
@@ -71,10 +71,10 @@ export function WelcomeScreen() {
                   />
                   <div className="min-w-0 flex-1">
                     <p className="truncate font-medium">
-                      {repo.split("/").pop()}
+                      {project.path.split("/").pop()}
                     </p>
                     <p className="truncate text-[11px] text-muted-foreground">
-                      {repo}
+                      {project.path}
                     </p>
                   </div>
                 </button>

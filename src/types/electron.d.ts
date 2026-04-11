@@ -10,6 +10,9 @@ interface ElectronAPI {
   server: {
     getPort: () => Promise<number>;
   };
+  project: {
+    renameDirectory: (currentPath: string, newName: string) => Promise<string>;
+  };
   terminalHost: {
     isAvailable: () => Promise<boolean>;
     createSurface: (surfaceId: string, cwd: string) => Promise<boolean>;

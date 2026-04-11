@@ -12,6 +12,10 @@ contextBridge.exposeInMainWorld("electronAPI", {
   server: {
     getPort: (): Promise<number> => ipcRenderer.invoke("server:getPort"),
   },
+  project: {
+    renameDirectory: (currentPath: string, newName: string): Promise<string> =>
+      ipcRenderer.invoke("project:renameDirectory", currentPath, newName),
+  },
   terminalHost: {
     isAvailable: (): Promise<boolean> => ipcRenderer.invoke("terminal-host:isAvailable"),
     createSurface: (surfaceId: string, cwd: string): Promise<boolean> =>

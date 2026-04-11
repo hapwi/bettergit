@@ -4,12 +4,15 @@ import { CheckmarkCircle02Icon } from "@hugeicons/core-free-icons";
 import { useQuery } from "@tanstack/react-query";
 import {
   GitBranchIcon,
-  Cancel01Icon,
   Add01Icon,
   ArrowUp01Icon,
   ArrowDown01Icon,
   ExchangeIcon,
   Settings01Icon,
+  PinIcon,
+  PinOffIcon,
+  PencilEdit01Icon,
+  Delete01Icon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import {
@@ -46,9 +49,20 @@ import {
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuSeparator,
+  ContextMenuTrigger,
+} from "@/components/ui/context-menu";
 import { SettingsDialog } from "@/components/git/SettingsDialog";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
+
+const isDevBuild = import.meta.env.DEV;
 
 function ProjectFavicon({ cwd, fallback }: { cwd: string; fallback: string }) {
   const [src, setSrc] = useState<string | null>(null);
@@ -86,15 +100,21 @@ function ProjectFavicon({ cwd, fallback }: { cwd: string; fallback: string }) {
 
 function ProjectItem({
   path,
+  isPinned,
   isActive,
   onSelect,
+  onRename,
+  onTogglePin,
   onRemove,
   gitBusy,
   gitResult,
 }: {
   path: string;
+  isPinned: boolean;
   isActive: boolean;
   onSelect: () => void;
+  onRename: () => void;
+  onTogglePin: () => void;
   onRemove: () => void;
   gitBusy: boolean;
   gitResult: "success" | "error" | null;
@@ -120,57 +140,63 @@ function ProjectItem({
   };
 
   return (
-    <div ref={setNodeRef} style={style}>
-    <SidebarMenuItem>
-      <SidebarMenuButton
-        isActive={isActive}
-        onClick={onSelect}
-        className="group/item cursor-grab active:cursor-grabbing"
-        {...attributes}
-        {...listeners}
-      >
-        <ProjectFavicon cwd={path} fallback={name.slice(0, 2)} />
-        <span className="flex-1 truncate text-sm">{name}</span>
-        {showStatus ? (
-          <span className="shrink-0">
-            {gitBusy && <Spinner className="size-3.5" />}
-            {!gitBusy && gitResult === "success" && (
-              <HugeiconsIcon icon={CheckmarkCircle02Icon} className="size-3.5 text-emerald-500" />
-            )}
-            {!gitBusy && gitResult === "error" && (
-              <span className="flex size-3.5 items-center justify-center">
-                <span className="size-1.5 rounded-full bg-red-500" />
-              </span>
-            )}
-          </span>
-        ) : (
-          <span
-            role="button"
-            tabIndex={0}
-            onClick={(e) => {
-              e.stopPropagation();
-              onRemove();
-            }}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") { e.stopPropagation(); onRemove(); }
-            }}
-            className="shrink-0 text-muted-foreground/30 opacity-0 transition-opacity hover:text-destructive group-hover/item:opacity-100"
-          >
-            <HugeiconsIcon icon={Cancel01Icon} className="size-3" />
-          </span>
-        )}
-      </SidebarMenuButton>
-    </SidebarMenuItem>
-    </div>
+    <ContextMenu>
+      <ContextMenuTrigger asChild>
+        <div ref={setNodeRef} style={style}>
+          <SidebarMenuItem>
+            <SidebarMenuButton
+              isActive={isActive}
+              onClick={onSelect}
+              className="group/item cursor-grab active:cursor-grabbing"
+              {...attributes}
+              {...listeners}
+            >
+              <ProjectFavicon cwd={path} fallback={name.slice(0, 2)} />
+              <span className="flex-1 truncate text-sm">{name}</span>
+              {showStatus ? (
+                <span className="shrink-0">
+                  {gitBusy && <Spinner className="size-3.5" />}
+                  {!gitBusy && gitResult === "success" && (
+                    <HugeiconsIcon icon={CheckmarkCircle02Icon} className="size-3.5 text-emerald-500" />
+                  )}
+                  {!gitBusy && gitResult === "error" && (
+                    <span className="flex size-3.5 items-center justify-center">
+                      <span className="size-1.5 rounded-full bg-red-500" />
+                    </span>
+                  )}
+                </span>
+              ) : null}
+            </SidebarMenuButton>
+          </SidebarMenuItem>
+        </div>
+      </ContextMenuTrigger>
+      <ContextMenuContent>
+        <ContextMenuItem onSelect={onRename}>
+          <HugeiconsIcon icon={PencilEdit01Icon} className="size-4" />
+          Rename
+        </ContextMenuItem>
+        <ContextMenuItem onSelect={onTogglePin}>
+          <HugeiconsIcon icon={isPinned ? PinOffIcon : PinIcon} className="size-4" />
+          {isPinned ? "Unpin" : "Pin"}
+        </ContextMenuItem>
+        <ContextMenuSeparator />
+        <ContextMenuItem variant="destructive" onSelect={onRemove}>
+          <HugeiconsIcon icon={Delete01Icon} className="size-4" />
+          Remove
+        </ContextMenuItem>
+      </ContextMenuContent>
+    </ContextMenu>
   );
 }
 
 export function RepoSidebar() {
   const repoCwd = useAppStore((s) => s.repoCwd);
-  const recentRepos = useAppStore((s) => s.recentRepos);
+  const recentProjects = useAppStore((s) => s.recentProjects);
   const setRepoCwd = useAppStore((s) => s.setRepoCwd);
   const removeRecentRepo = useAppStore((s) => s.removeRecentRepo);
+  const renameRecentRepo = useAppStore((s) => s.renameRecentRepo);
   const reorderRepos = useAppStore((s) => s.reorderRepos);
+  const togglePinnedRepo = useAppStore((s) => s.togglePinnedRepo);
   const gitBusyMap = useAppStore((s) => s.gitBusyMap);
   const gitResultMap = useAppStore((s) => s.gitResultMap);
   const queryClient = useQueryClient();
@@ -197,15 +223,13 @@ export function RepoSidebar() {
   const handleDragEnd = (event: DragEndEvent) => {
     const { active, over } = event;
     if (!over || active.id === over.id) return;
-    const oldIndex = recentRepos.indexOf(active.id as string);
-    const newIndex = recentRepos.indexOf(over.id as string);
-    if (oldIndex !== -1 && newIndex !== -1) {
-      reorderRepos(oldIndex, newIndex);
-    }
+    reorderRepos(active.id as string, over.id as string);
   };
 
   const [renameDialogOpen, setRenameDialogOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [pendingRenameRepo, setPendingRenameRepo] = useState<string | null>(null);
+  const [renameValue, setRenameValue] = useState("");
   const [pendingRemoveRepo, setPendingRemoveRepo] = useState<string | null>(null);
 
   const doRenameMasterToMain = async () => {
@@ -223,9 +247,52 @@ export function RepoSidebar() {
     }
   };
 
+  const openRenameProjectDialog = (path: string) => {
+    setPendingRenameRepo(path);
+    setRenameValue(path.split("/").pop() ?? "");
+  };
+
+  const closeRenameProjectDialog = () => {
+    setPendingRenameRepo(null);
+    setRenameValue("");
+  };
+
+  const doRenameProjectDirectory = async () => {
+    if (!pendingRenameRepo) return;
+
+    const nextName = renameValue.trim();
+    if (!nextName) {
+      toast.error("Project name cannot be empty");
+      return;
+    }
+
+    try {
+      const nextPath = await window.electronAPI?.project.renameDirectory(pendingRenameRepo, nextName);
+      if (!nextPath) {
+        throw new Error("Rename service unavailable");
+      }
+      renameRecentRepo(pendingRenameRepo, nextPath);
+      toast.success(`Renamed project to ${nextName}`);
+      closeRenameProjectDialog();
+      void invalidateGitQueries(queryClient);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to rename project");
+    }
+  };
+
+  const renameProjectName = pendingRenameRepo?.split("/").pop() ?? "";
+  const renameProjectDisabled = renameValue.trim().length === 0 || renameValue.trim() === renameProjectName;
+  const recentRepoPaths = recentProjects.map((project) => project.path);
+
   return (
     <Sidebar className="bg-sidebar">
-      <SidebarHeader className="pt-11" />
+      <SidebarHeader className="pt-11">
+        {isDevBuild && (
+          <div className="mx-2 rounded-lg border border-amber-500/20 bg-amber-500/10 px-3 py-1.5 text-center text-xs font-medium tracking-wide text-amber-500">
+            Dev Build
+          </div>
+        )}
+      </SidebarHeader>
 
       <SidebarContent>
         {/* Active project status */}
@@ -337,6 +404,42 @@ export function RepoSidebar() {
           </SidebarGroup>
         )}
 
+        {/* Pinned */}
+        {recentProjects.some((p) => p.pinned) && (
+          <SidebarGroup>
+            <SidebarGroupLabel className="flex items-center gap-1.5">
+              <HugeiconsIcon icon={PinIcon} className="size-3" />
+              Pinned
+            </SidebarGroupLabel>
+            <SidebarGroupContent>
+              <DndContext
+                sensors={sensors}
+                collisionDetection={closestCenter}
+                onDragEnd={handleDragEnd}
+              >
+                <SortableContext items={recentProjects.filter((p) => p.pinned).map((p) => p.path)} strategy={verticalListSortingStrategy}>
+                  <SidebarMenu>
+                    {recentProjects.filter((p) => p.pinned).map((project) => (
+                      <ProjectItem
+                        key={project.path}
+                        path={project.path}
+                        isPinned={project.pinned}
+                        isActive={project.path === repoCwd}
+                        onSelect={() => setRepoCwd(project.path)}
+                        onRename={() => openRenameProjectDialog(project.path)}
+                        onTogglePin={() => togglePinnedRepo(project.path)}
+                        onRemove={() => setPendingRemoveRepo(project.path)}
+                        gitBusy={gitBusyMap[project.path] ?? false}
+                        gitResult={gitResultMap[project.path] ?? null}
+                      />
+                    ))}
+                  </SidebarMenu>
+                </SortableContext>
+              </DndContext>
+            </SidebarGroupContent>
+          </SidebarGroup>
+        )}
+
         {/* Projects */}
         <SidebarGroup>
           <SidebarGroupLabel>Projects</SidebarGroupLabel>
@@ -346,20 +449,23 @@ export function RepoSidebar() {
               collisionDetection={closestCenter}
               onDragEnd={handleDragEnd}
             >
-              <SortableContext items={recentRepos} strategy={verticalListSortingStrategy}>
+              <SortableContext items={recentProjects.filter((p) => !p.pinned).map((p) => p.path)} strategy={verticalListSortingStrategy}>
                 <SidebarMenu>
-                  {recentRepos.map((repo) => (
+                  {recentProjects.filter((p) => !p.pinned).map((project) => (
                     <ProjectItem
-                      key={repo}
-                      path={repo}
-                      isActive={repo === repoCwd}
-                      onSelect={() => setRepoCwd(repo)}
-                      onRemove={() => setPendingRemoveRepo(repo)}
-                      gitBusy={gitBusyMap[repo] ?? false}
-                      gitResult={gitResultMap[repo] ?? null}
+                      key={project.path}
+                      path={project.path}
+                      isPinned={project.pinned}
+                      isActive={project.path === repoCwd}
+                      onSelect={() => setRepoCwd(project.path)}
+                      onRename={() => openRenameProjectDialog(project.path)}
+                      onTogglePin={() => togglePinnedRepo(project.path)}
+                      onRemove={() => setPendingRemoveRepo(project.path)}
+                      gitBusy={gitBusyMap[project.path] ?? false}
+                      gitResult={gitResultMap[project.path] ?? null}
                     />
                   ))}
-                  {recentRepos.length === 0 && (
+                  {recentProjects.length === 0 && (
                     <p className="px-2 py-3 text-center text-xs text-muted-foreground/50">
                       No projects yet
                     </p>
@@ -403,13 +509,52 @@ export function RepoSidebar() {
 
       <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
 
+      <Dialog
+        open={pendingRenameRepo !== null}
+        onOpenChange={(open) => {
+          if (!open) closeRenameProjectDialog();
+        }}
+      >
+        <DialogContent showCloseButton={false}>
+          <form
+            className="flex flex-col gap-6"
+            onSubmit={(event) => {
+              event.preventDefault();
+              if (!renameProjectDisabled) {
+                void doRenameProjectDirectory();
+              }
+            }}
+          >
+            <DialogHeader>
+              <DialogTitle>Rename project</DialogTitle>
+              <DialogDescription>
+                Change the folder name on disk for this project. BetterGit will update the saved path automatically.
+              </DialogDescription>
+            </DialogHeader>
+            <Input
+              autoFocus
+              value={renameValue}
+              onChange={(event) => setRenameValue(event.target.value)}
+              placeholder="Project name"
+            />
+            <DialogFooter>
+              <Button variant="outline" type="button" onClick={closeRenameProjectDialog}>
+                Cancel
+              </Button>
+              <Button type="submit" disabled={renameProjectDisabled}>
+                Rename
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
       <ConfirmDialog
         open={pendingRemoveRepo !== null}
         onOpenChange={(open) => { if (!open) setPendingRemoveRepo(null); }}
-        title="Remove project"
-        description={`Remove "${pendingRemoveRepo?.split("/").pop()}" from the sidebar? This won't delete any files.`}
+        title="Remove from BetterGit"
+        description={`Remove "${pendingRemoveRepo?.split("/").pop()}" from BetterGit? This only removes it from the app and won't delete any files.`}
         confirmLabel="Remove"
-        variant="destructive"
         onConfirm={() => {
           if (pendingRemoveRepo) removeRecentRepo(pendingRemoveRepo);
           setPendingRemoveRepo(null);
