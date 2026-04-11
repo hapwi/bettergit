@@ -123,6 +123,7 @@ function AppContent() {
   const [isDiffOpen, setIsDiffOpen] = useState(false)
   const [terminalProjects, setTerminalProjects] = useState<Set<string>>(new Set())
   const repoCwd = useAppStore((s) => s.repoCwd)
+  const recentProjects = useAppStore((s) => s.recentProjects)
   const terminalRefs = useRef(new Map<string, React.MutableRefObject<TerminalPanelHandle | null>>())
   const setTerminalHandle = (projectCwd: string, handle: TerminalPanelHandle | null) => {
     let existing = terminalRefs.current.get(projectCwd)
@@ -133,7 +134,7 @@ function AppContent() {
     existing.current = handle
   }
 
-  const ensureTerminalReady = useCallback((projectCwd: string | null) => {
+  const startTerminalForProject = useCallback((projectCwd: string | null) => {
     if (!projectCwd) return
     setTerminalProjects((prev) => {
       if (prev.has(projectCwd)) return prev
@@ -144,12 +145,21 @@ function AppContent() {
   }, [])
 
   useEffect(() => {
-    if (activeTab !== "terminal" || !repoCwd) return
-    const id = window.setTimeout(() => {
-      ensureTerminalReady(repoCwd)
-    }, 0)
-    return () => window.clearTimeout(id)
-  }, [activeTab, ensureTerminalReady, repoCwd])
+    const validProjects = new Set(recentProjects.map((project) => project.path))
+    setTerminalProjects((prev) => {
+      let changed = false
+      const next = new Set<string>()
+      for (const projectPath of prev) {
+        if (validProjects.has(projectPath)) {
+          next.add(projectPath)
+        } else {
+          changed = true
+          terminalRefs.current.delete(projectPath)
+        }
+      }
+      return changed ? next : prev
+    })
+  }, [recentProjects])
 
   // Cmd+W: close pane/tab in terminal first, then close window
   useEffect(() => {
@@ -170,24 +180,35 @@ function AppContent() {
   useEffect(() => {
     const cleanup = window.electronAPI?.onTerminalAction((action) => {
       if (action !== "terminal:new-tab") return
-      // Switch to terminal tab if not already there
-      if (activeTab !== "terminal") {
-        setActiveTab("terminal")
+      if (!repoCwd) return
+
+      setActiveTab("terminal")
+
+      if (!terminalProjects.has(repoCwd)) {
+        startTerminalForProject(repoCwd)
+        return
       }
-      ensureTerminalReady(repoCwd)
-      // Defer action to next tick so terminal is mounted
+
+      // Defer until the terminal panel is visible.
       setTimeout(() => {
-        if (!repoCwd) return
         const ref = terminalRefs.current.get(repoCwd)
-        const t = ref?.current
-        if (!t) return
-        switch (action) {
-          case "terminal:new-tab": t.addTab(); break
-        }
+        ref?.current?.addTab()
       }, 0)
     })
     return cleanup
-  }, [activeTab, ensureTerminalReady, repoCwd])
+  }, [repoCwd, startTerminalForProject, terminalProjects])
+
+  const closeTerminalForProject = useCallback((projectCwd: string) => {
+    setTerminalProjects((prev) => {
+      if (!prev.has(projectCwd)) return prev
+      const next = new Set(prev)
+      next.delete(projectCwd)
+      return next
+    })
+    terminalRefs.current.delete(projectCwd)
+  }, [])
+
+  const hasStartedTerminal = repoCwd ? terminalProjects.has(repoCwd) : false
 
   return (
     <>
@@ -195,9 +216,6 @@ function AppContent() {
         activeTab={activeTab}
         onTabChange={(tab) => {
           setActiveTab(tab)
-          if (tab === "terminal") {
-            ensureTerminalReady(repoCwd)
-          }
         }}
         onDiffOpen={() => setIsDiffOpen(true)}
       />
@@ -215,6 +233,28 @@ function AppContent() {
           )}>
             <GitPanel />
           </div>
+          {activeTab === "terminal" && repoCwd && !hasStartedTerminal && !isDiffOpen ? (
+            <div className="absolute inset-0 z-10 flex items-center justify-center p-6">
+              <div className="flex w-full max-w-md flex-col items-center gap-4 rounded-2xl border border-border/60 bg-card/80 p-8 text-center shadow-sm">
+                <div className="rounded-full border border-border/60 bg-muted/50 p-3 text-muted-foreground">
+                  <Terminal className="size-5" />
+                </div>
+                <div className="space-y-1">
+                  <h2 className="text-lg font-semibold">Start a terminal for this project</h2>
+                  <p className="text-sm text-muted-foreground">
+                    Terminal sessions now start explicitly and stay alive until you close them.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => startTerminalForProject(repoCwd)}
+                  className="rounded-lg bg-foreground px-4 py-2 text-sm font-medium text-background transition-opacity hover:opacity-90"
+                >
+                  Start Terminal
+                </button>
+              </div>
+            </div>
+          ) : null}
           {Array.from(terminalProjects).map((projectCwd) => (
             <div key={projectCwd} className={cn(
               "absolute inset-0 overflow-hidden",
@@ -224,6 +264,7 @@ function AppContent() {
                 ref={(handle) => setTerminalHandle(projectCwd, handle)}
                 cwd={projectCwd}
                 isVisible={activeTab === "terminal" && repoCwd === projectCwd && !isDiffOpen}
+                onAllTabsClosed={() => closeTerminalForProject(projectCwd)}
               />
             </div>
           ))}
