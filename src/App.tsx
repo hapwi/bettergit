@@ -1,7 +1,6 @@
-import { useState, useRef, useEffect, useCallback } from "react"
+import { useState, useRef, useEffect, useCallback, lazy, Suspense } from "react"
 import { useAppStore } from "@/store"
 import { RepoSidebar } from "@/components/git/RepoSidebar"
-import { GitPanel } from "@/components/git/GitPanel"
 import { Dashboard } from "@/components/git/Dashboard"
 import { WelcomeScreen } from "@/components/git/WelcomeScreen"
 import { SidebarProvider, useSidebar } from "@/components/ui/sidebar"
@@ -13,8 +12,22 @@ import {
 } from "@hugeicons/core-free-icons"
 import { HugeiconsIcon } from "@hugeicons/react"
 import { Terminal, FileDiff } from "lucide-react"
-import { DiffViewer } from "@/components/git/DiffViewer"
-import { TerminalPanel, type TerminalPanelHandle } from "@/components/terminal/TerminalPanel"
+import type { TerminalPanelHandle } from "@/components/terminal/TerminalPanel"
+
+const DiffViewer = lazy(async () => {
+  const mod = await import("@/components/git/DiffViewer")
+  return { default: mod.DiffViewer }
+})
+
+const GitPanel = lazy(async () => {
+  const mod = await import("@/components/git/GitPanel")
+  return { default: mod.GitPanel }
+})
+
+const TerminalPanel = lazy(async () => {
+  const mod = await import("@/components/terminal/TerminalPanel")
+  return { default: mod.TerminalPanel }
+})
 
 type ActiveTab = "dashboard" | "git" | "terminal"
 
@@ -125,6 +138,7 @@ function AppContent() {
   const repoCwd = useAppStore((s) => s.repoCwd)
   const recentProjects = useAppStore((s) => s.recentProjects)
   const terminalRefs = useRef(new Map<string, React.MutableRefObject<TerminalPanelHandle | null>>())
+  const pendingMenuNewTabProjectRef = useRef<string | null>(null)
   const setTerminalHandle = (projectCwd: string, handle: TerminalPanelHandle | null) => {
     let existing = terminalRefs.current.get(projectCwd)
     if (!existing) {
@@ -161,6 +175,17 @@ function AppContent() {
     })
   }, [recentProjects])
 
+  useEffect(() => {
+    const projectCwd = pendingMenuNewTabProjectRef.current
+    if (!projectCwd || !terminalProjects.has(projectCwd)) return
+
+    const ref = terminalRefs.current.get(projectCwd)
+    if (!ref?.current) return
+
+    ref.current.addTab()
+    pendingMenuNewTabProjectRef.current = null
+  }, [terminalProjects])
+
   // Cmd+W: close pane/tab in terminal first, then close window
   useEffect(() => {
     const cleanup = window.electronAPI?.onClosePaneOrWindow(() => {
@@ -185,6 +210,7 @@ function AppContent() {
       setActiveTab("terminal")
 
       if (!terminalProjects.has(repoCwd)) {
+        pendingMenuNewTabProjectRef.current = repoCwd
         startTerminalForProject(repoCwd)
         return
       }
@@ -198,7 +224,7 @@ function AppContent() {
     return cleanup
   }, [repoCwd, startTerminalForProject, terminalProjects])
 
-  const closeTerminalForProject = useCallback((projectCwd: string) => {
+  const closeTerminalForProject = (projectCwd: string) => {
     setTerminalProjects((prev) => {
       if (!prev.has(projectCwd)) return prev
       const next = new Set(prev)
@@ -206,7 +232,7 @@ function AppContent() {
       return next
     })
     terminalRefs.current.delete(projectCwd)
-  }, [])
+  }
 
   const hasStartedTerminal = repoCwd ? terminalProjects.has(repoCwd) : false
 
@@ -225,13 +251,15 @@ function AppContent() {
             "absolute inset-0 overflow-hidden",
             activeTab === "dashboard" ? "z-10" : "hidden"
           )}>
-            <Dashboard />
+            <Dashboard isActive={activeTab === "dashboard"} />
           </div>
           <div className={cn(
             "absolute inset-0 overflow-hidden",
             activeTab === "git" ? "z-10" : "hidden"
           )}>
-            <GitPanel />
+            <Suspense fallback={null}>
+              {activeTab === "git" ? <GitPanel isActive /> : null}
+            </Suspense>
           </div>
           {activeTab === "terminal" && repoCwd && !hasStartedTerminal && !isDiffOpen ? (
             <div className="absolute inset-0 z-10 flex items-center justify-center p-6">
@@ -255,22 +283,26 @@ function AppContent() {
               </div>
             </div>
           ) : null}
-          {Array.from(terminalProjects).map((projectCwd) => (
-            <div key={projectCwd} className={cn(
-              "absolute inset-0 overflow-hidden",
-              activeTab === "terminal" && repoCwd === projectCwd && !isDiffOpen ? "z-10" : "pointer-events-none invisible"
-            )}>
-              <TerminalPanel
-                ref={(handle) => setTerminalHandle(projectCwd, handle)}
-                cwd={projectCwd}
-                isVisible={activeTab === "terminal" && repoCwd === projectCwd && !isDiffOpen}
-                onAllTabsClosed={() => closeTerminalForProject(projectCwd)}
-              />
-            </div>
-          ))}
+          <Suspense fallback={null}>
+            {Array.from(terminalProjects).map((projectCwd) => (
+              <div key={projectCwd} className={cn(
+                "absolute inset-0 overflow-hidden",
+                activeTab === "terminal" && repoCwd === projectCwd && !isDiffOpen ? "z-10" : "pointer-events-none invisible"
+              )}>
+                <TerminalPanel
+                  ref={(handle) => setTerminalHandle(projectCwd, handle)}
+                  cwd={projectCwd}
+                  isVisible={activeTab === "terminal" && repoCwd === projectCwd && !isDiffOpen}
+                  onAllTabsClosed={() => closeTerminalForProject(projectCwd)}
+                />
+              </div>
+            ))}
+          </Suspense>
         </div>
       </main>
-      <DiffViewer open={isDiffOpen} onOpenChange={setIsDiffOpen} />
+      <Suspense fallback={null}>
+        {isDiffOpen ? <DiffViewer open={isDiffOpen} onOpenChange={setIsDiffOpen} /> : null}
+      </Suspense>
     </>
   )
 }

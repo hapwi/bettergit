@@ -18,6 +18,7 @@ import { GitHubIcon } from "@/components/icons";
 import {
   gitStatusQueryOptions,
   gitBranchesQueryOptions,
+  gitOpenPrsQueryOptions,
   invalidateGitQueries,
 } from "@/lib/git/queries";
 import { runStackedAction, type StackedAction } from "@/lib/git/stacked";
@@ -86,14 +87,16 @@ function ActionIcon({ icon }: { icon: "commit" | "push" | "pr" }) {
 // Main GitPanel
 // ---------------------------------------------------------------------------
 
-export function GitPanel() {
+export function GitPanel({ isActive }: { isActive: boolean }) {
   const repoCwd = useAppStore((s) => s.repoCwd);
   const queryClient = useQueryClient();
+  const isEnabled = isActive && repoCwd !== null;
 
   const { data: gitStatus = null } = useQuery(
-    gitStatusQueryOptions(repoCwd),
+    gitStatusQueryOptions(repoCwd, { enabled: isEnabled }),
   );
-  const { data: branches = [] } = useQuery(gitBranchesQueryOptions(repoCwd));
+  const { data: branches = [] } = useQuery(gitBranchesQueryOptions(repoCwd, { enabled: isEnabled }));
+  const { data: openPrs = [] } = useQuery(gitOpenPrsQueryOptions(repoCwd, { enabled: isEnabled }));
   const hasOriginRemote = branches.some((b) => b.name.startsWith("origin/") || b.upstream?.startsWith("origin/"));
 
   // State
@@ -118,19 +121,27 @@ export function GitPanel() {
     () => isDefaultBranchName(gitStatus?.branch ?? null, branches),
     [gitStatus?.branch, branches],
   );
+  const currentPr = useMemo(
+    () => (gitStatus?.branch ? openPrs.find((pr) => pr.headBranch === gitStatus.branch) ?? null : null),
+    [gitStatus?.branch, openPrs],
+  );
+  const gitStatusWithPr = useMemo(
+    () => (gitStatus ? { ...gitStatus, pr: currentPr } : null),
+    [gitStatus, currentPr],
+  );
 
   const menuItems = useMemo(
-    () => buildMenuItems(gitStatus, isBusy, isDefaultBranch, hasOriginRemote),
-    [gitStatus, isBusy, isDefaultBranch, hasOriginRemote],
+    () => buildMenuItems(gitStatusWithPr, isBusy, isDefaultBranch, hasOriginRemote),
+    [gitStatusWithPr, isBusy, isDefaultBranch, hasOriginRemote],
   );
   const quickAction = useMemo(
-    () => resolveQuickAction(gitStatus, isBusy, isDefaultBranch, hasOriginRemote),
-    [gitStatus, isBusy, isDefaultBranch, hasOriginRemote],
+    () => resolveQuickAction(gitStatusWithPr, isBusy, isDefaultBranch, hasOriginRemote),
+    [gitStatusWithPr, isBusy, isDefaultBranch, hasOriginRemote],
   );
 
   const prStack = useMemo(
-    () => (gitStatus?.prStack ?? (gitStatus?.pr ? [gitStatus.pr] : [])).filter((pr) => pr.state === "open"),
-    [gitStatus?.pr, gitStatus?.prStack],
+    () => openPrs.filter((pr) => pr.state === "open"),
+    [openPrs],
   );
   const displayPrStack = useMemo(() => [...prStack].reverse(), [prStack]);
 
@@ -220,8 +231,8 @@ export function GitPanel() {
   );
 
   const runQuickAction = useCallback(() => {
-    if (quickAction.kind === "open_pr") {
-      const url = gitStatus?.pr?.url;
+      if (quickAction.kind === "open_pr") {
+      const url = currentPr?.url;
       if (url) void window.electronAPI?.shell.openExternal(url);
       return;
     }
@@ -251,13 +262,13 @@ export function GitPanel() {
     if (quickAction.action) {
       void runAction({ action: quickAction.action });
     }
-  }, [quickAction, gitStatus?.pr?.url, repoCwd, queryClient, runAction]);
+  }, [quickAction, currentPr?.url, repoCwd, queryClient, runAction]);
 
   const handleMenuItem = useCallback(
     (item: GitActionMenuItem) => {
       if (item.disabled) return;
       if (item.kind === "open_pr") {
-        const url = gitStatus?.pr?.url;
+        const url = currentPr?.url;
         if (url) void window.electronAPI?.shell.openExternal(url);
         return;
       }
@@ -271,7 +282,7 @@ export function GitPanel() {
       }
       setIsCommitDialogOpen(true);
     },
-    [gitStatus?.pr?.url, runAction],
+    [currentPr?.url, runAction],
   );
 
   const handleCheckout = useCallback(
@@ -338,7 +349,7 @@ export function GitPanel() {
     await pauseHmr();
     const toastId = toast.loading(scope === "stack" ? "Merging stack..." : "Merging PR...");
     try {
-      const pr = gitStatus?.pr;
+      const pr = currentPr;
       if (!pr?.number) throw new Error("No PR to merge");
 
       // Build the ordered PR list for main-process merge handler
@@ -391,7 +402,7 @@ export function GitPanel() {
       await invalidateGitQueries(queryClient);
       setIsBusy(false);
     }
-  }, [repoCwd, mergeDialogScope, gitStatus?.pr, gitStatus?.branch, prStack, queryClient, flashGitResult]);
+  }, [repoCwd, mergeDialogScope, currentPr, gitStatus?.branch, prStack, queryClient, flashGitResult]);
 
   const isPreReleaseBranch = gitStatus?.branch === "pre-release";
   const hasExistingReleasePr = prStack.some(
@@ -411,7 +422,7 @@ export function GitPanel() {
       if (result.code !== 0) return 0;
       return parseInt(result.stdout.trim(), 10);
     },
-    enabled: isPreReleaseBranch && repoCwd !== null,
+    enabled: isActive && isPreReleaseBranch && repoCwd !== null,
     staleTime: 5_000,
     refetchInterval: 10_000,
   });
@@ -440,7 +451,7 @@ export function GitPanel() {
       }
       return { major: 0, minor: 0, patch: 0 };
     },
-    enabled: repoCwd !== null,
+    enabled: isActive && repoCwd !== null,
     staleTime: 30_000,
   });
 
@@ -535,10 +546,10 @@ export function GitPanel() {
                         {gitStatus.behindCount > 0 && <span>↓{gitStatus.behindCount}</span>}
                       </span>
                     )}
-                    {gitStatus.pr && (
+                    {currentPr && (
                       <span className="flex items-center gap-1">
                         <HugeiconsIcon icon={GitPullRequestIcon} className="size-3 text-emerald-500" />
-                        #{gitStatus.pr.number}
+                        #{currentPr.number}
                       </span>
                     )}
                   </div>
@@ -569,7 +580,7 @@ export function GitPanel() {
             {/* Primary action — spans full width */}
             {quickAction.kind !== "show_hint" && (
               <Button
-                variant={quickAction.disabled || gitStatus?.pr?.state === "open" ? "outline" : "default"}
+                variant={quickAction.disabled || currentPr?.state === "open" ? "outline" : "default"}
                 disabled={isBusy || quickAction.disabled}
                 onClick={runQuickAction}
                 className="col-span-5 h-auto justify-center gap-2 py-3"
@@ -591,7 +602,7 @@ export function GitPanel() {
               </Button>
             ))}
             <Button
-              variant={gitStatus?.pr?.state === "open" && gitStatus?.hasWorkingTreeChanges ? "default" : "outline"}
+              variant={currentPr?.state === "open" && gitStatus?.hasWorkingTreeChanges ? "default" : "outline"}
               onClick={() => {
                 if (!hasOriginRemote) {
                   toast.info("Publish to GitHub first before creating branches.");
@@ -648,7 +659,7 @@ export function GitPanel() {
             ) : (
               <div className="divide-y rounded-xl border">
                 {displayPrStack.map((pr) => {
-                  const isCurrent = pr.number === gitStatus?.pr?.number;
+                  const isCurrent = pr.number === currentPr?.number;
                   return (
                     <div
                       key={pr.number}
@@ -682,12 +693,12 @@ export function GitPanel() {
             )}
 
             {/* Merge actions for current PR */}
-            {gitStatus?.pr?.state === "open" && (
+            {currentPr?.state === "open" && (
               <div className="flex gap-1.5">
                 {prStack.length <= 1 ? (
                   <Button
                     size="sm"
-                    variant={!gitStatus.hasWorkingTreeChanges && gitStatus.aheadCount === 0 ? "default" : "outline"}
+                    variant={!gitStatus?.hasWorkingTreeChanges && gitStatus?.aheadCount === 0 ? "default" : "outline"}
                     disabled={isBusy}
                     onClick={() => setMergeDialogScope("current")}
                     className="gap-1.5"
@@ -709,7 +720,7 @@ export function GitPanel() {
                     </Button>
                     <Button
                       size="sm"
-                      variant={!gitStatus.hasWorkingTreeChanges && gitStatus.aheadCount === 0 ? "default" : "outline"}
+                      variant={!gitStatus?.hasWorkingTreeChanges && gitStatus?.aheadCount === 0 ? "default" : "outline"}
                       disabled={isBusy}
                       onClick={() => setMergeDialogScope("stack")}
                       className="gap-1.5"
@@ -764,7 +775,7 @@ export function GitPanel() {
           open
           onOpenChange={() => setMergeDialogScope(null)}
           scope={mergeDialogScope}
-          baseBranch={gitStatus?.pr?.baseBranch ?? ""}
+          baseBranch={currentPr?.baseBranch ?? ""}
           currentVersion={currentVersion}
           isBusy={isBusy}
           onConfirm={handleMerge}
