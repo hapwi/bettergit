@@ -282,7 +282,6 @@ export function RepoSidebar() {
 
   const renameProjectName = pendingRenameRepo?.split("/").pop() ?? "";
   const renameProjectDisabled = renameValue.trim().length === 0 || renameValue.trim() === renameProjectName;
-  const recentRepoPaths = recentProjects.map((project) => project.path);
 
   return (
     <Sidebar className="bg-sidebar">
