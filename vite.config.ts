@@ -16,8 +16,14 @@ function hmrPause(): Plugin {
     apply: "serve",
     configureServer(server) {
       const watcher = server.watcher
-      const origEmit = watcher.emit.bind(watcher)
-      ;(watcher as any).emit = function (event: string, ...args: unknown[]) {
+      const origEmit = watcher.emit.bind(watcher) as (
+        event: string,
+        ...args: unknown[]
+      ) => boolean
+      const patchedWatcher = watcher as typeof watcher & {
+        emit: (event: string, ...args: unknown[]) => boolean
+      }
+      patchedWatcher.emit = function (event: string, ...args: unknown[]) {
         if (paused && (event === "change" || event === "add" || event === "unlink")) {
           return false
         }

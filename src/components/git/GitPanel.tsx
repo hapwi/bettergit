@@ -46,7 +46,8 @@ import { pauseHmr, resumeHmr } from "@/lib/hmr";
 import { CommitDialog } from "./CommitDialog";
 import { DefaultBranchDialog } from "./DefaultBranchDialog";
 import { SwitchBranchDialog } from "./SwitchBranchDialog";
-import { MergeDialog, parseVersion, type SemVer } from "./MergeDialog";
+import { MergeDialog } from "./MergeDialog";
+import { parseVersion, type SemVer } from "./version";
 
 // ---------------------------------------------------------------------------
 // Sub-components
@@ -227,7 +228,7 @@ export function GitPanel({ isActive }: { isActive: boolean }) {
         setIsBusy(false);
       }
     },
-    [repoCwd, gitStatus, isDefaultBranch, hasOriginRemote, queryClient, flashGitResult],
+    [repoCwd, gitStatus, isDefaultBranch, hasOriginRemote, queryClient, flashGitResult, setIsBusy],
   );
 
   const runQuickAction = useCallback(() => {
@@ -262,7 +263,7 @@ export function GitPanel({ isActive }: { isActive: boolean }) {
     if (quickAction.action) {
       void runAction({ action: quickAction.action });
     }
-  }, [quickAction, currentPr?.url, repoCwd, queryClient, runAction]);
+  }, [quickAction, currentPr?.url, repoCwd, queryClient, runAction, setIsBusy]);
 
   const handleMenuItem = useCallback(
     (item: GitActionMenuItem) => {
@@ -302,7 +303,7 @@ export function GitPanel({ isActive }: { isActive: boolean }) {
         setIsBusy(false);
       }
     },
-    [repoCwd, queryClient],
+    [repoCwd, queryClient, setIsBusy],
   );
 
   const [pendingDeleteBranch, setPendingDeleteBranch] = useState<string | null>(null);
@@ -337,7 +338,7 @@ export function GitPanel({ isActive }: { isActive: boolean }) {
       await invalidateGitQueries(queryClient);
       setIsBusy(false);
     }
-  }, [repoCwd, queryClient, flashGitResult]);
+  }, [repoCwd, queryClient, flashGitResult, setIsBusy]);
 
   const handleMerge = useCallback(async (versionBump: "patch" | "minor" | "major" | null) => {
     if (!repoCwd || !mergeDialogScope) return;
@@ -402,7 +403,7 @@ export function GitPanel({ isActive }: { isActive: boolean }) {
       await invalidateGitQueries(queryClient);
       setIsBusy(false);
     }
-  }, [repoCwd, mergeDialogScope, currentPr, gitStatus?.branch, prStack, queryClient, flashGitResult]);
+  }, [repoCwd, mergeDialogScope, currentPr, prStack, queryClient, flashGitResult, setIsBusy]);
 
   const isPreReleaseBranch = gitStatus?.branch === "pre-release";
   const hasExistingReleasePr = prStack.some(
@@ -497,7 +498,7 @@ export function GitPanel({ isActive }: { isActive: boolean }) {
       await invalidateGitQueries(queryClient);
       setIsBusy(false);
     }
-  }, [repoCwd, branches, queryClient]);
+  }, [repoCwd, branches, queryClient, setIsBusy]);
 
   // Track which repo owns the current action
   const actionRepoRef = useRef<string | null>(null);

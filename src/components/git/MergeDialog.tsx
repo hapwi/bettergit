@@ -10,10 +10,9 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
+import type { SemVer } from "./version";
 
 type BumpType = "patch" | "minor" | "major";
-
-export type SemVer = { major: number; minor: number; patch: number };
 
 interface MergeDialogProps {
   open: boolean;
@@ -23,12 +22,6 @@ interface MergeDialogProps {
   currentVersion: SemVer | null;
   isBusy: boolean;
   onConfirm: (versionBump: BumpType | null) => void;
-}
-
-export function parseVersion(tag: string): { major: number; minor: number; patch: number } | null {
-  const match = tag.replace(/^v/, "").match(/^(\d+)\.(\d+)\.(\d+)/);
-  if (!match) return null;
-  return { major: parseInt(match[1], 10), minor: parseInt(match[2], 10), patch: parseInt(match[3], 10) };
 }
 
 function bumpVersion(v: { major: number; minor: number; patch: number }, type: BumpType) {
