@@ -12,7 +12,10 @@ export interface WorkingTreeFile {
 
 export interface GitStatus {
   branch: string | null;
+  isDetached: boolean;
   isRepo: boolean;
+  hasCommits: boolean;
+  hasOriginRemote: boolean;
   hasWorkingTreeChanges: boolean;
   workingTree: {
     files: WorkingTreeFile[];
@@ -36,7 +39,10 @@ export async function getStatus(cwd: string): Promise<GitStatus> {
   if (result.code !== 0) {
     return {
       branch: null,
+      isDetached: false,
       isRepo: false,
+      hasCommits: false,
+      hasOriginRemote: false,
       hasWorkingTreeChanges: false,
       workingTree: { files: [], insertions: 0, deletions: 0 },
       hasUpstream: false,
@@ -48,6 +54,7 @@ export async function getStatus(cwd: string): Promise<GitStatus> {
 
   const lines = result.stdout.split("\n").filter(Boolean);
   let branch: string | null = null;
+  let isDetached = false;
   let aheadCount = 0;
   let behindCount = 0;
   let hasUpstream = false;
@@ -56,7 +63,10 @@ export async function getStatus(cwd: string): Promise<GitStatus> {
   for (const line of lines) {
     if (line.startsWith("# branch.head ")) {
       branch = line.slice("# branch.head ".length);
-      if (branch === "(detached)") branch = null;
+      if (branch === "(detached)") {
+        branch = null;
+        isDetached = true;
+      }
     } else if (line.startsWith("# branch.upstream ")) {
       hasUpstream = true;
     } else if (line.startsWith("# branch.ab ")) {
@@ -103,6 +113,13 @@ export async function getStatus(cwd: string): Promise<GitStatus> {
       changedPaths.push(line.slice(2));
     }
   }
+
+  const [headResult, remoteResult] = await Promise.all([
+    execGit(cwd, ["rev-parse", "--verify", "HEAD"]),
+    execGit(cwd, ["remote"]),
+  ]);
+  const hasCommits = headResult.code === 0;
+  const hasOriginRemote = remoteResult.stdout.split("\n").some((remote) => remote.trim() === "origin");
 
   // If no upstream, compute ahead count against default branch (main/master)
   if (!hasUpstream && branch) {
@@ -168,7 +185,10 @@ export async function getStatus(cwd: string): Promise<GitStatus> {
 
   return {
     branch,
+    isDetached,
     isRepo: true,
+    hasCommits,
+    hasOriginRemote,
     hasWorkingTreeChanges: changedPaths.length > 0,
     workingTree: {
       files,

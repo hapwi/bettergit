@@ -1,6 +1,4 @@
 import { create } from "zustand";
-
-const MAX_RECENT = 10;
 const RECENT_PROJECTS_STORAGE_KEY = "bettergit:recent-projects";
 const LEGACY_RECENT_REPOS_STORAGE_KEY = "bettergit:recent-repos";
 const TERMINAL_APP_STORAGE_KEY = "bettergit:terminal-app";
@@ -45,7 +43,7 @@ function normalizeProjects(projects: RecentProject[]): RecentProject[] {
     deduped.set(trimmedPath, { path: trimmedPath, pinned: Boolean(project.pinned) });
   }
 
-  return orderProjects([...deduped.values()]).slice(0, MAX_RECENT);
+  return orderProjects([...deduped.values()]);
 }
 
 function parseStoredProjects(value: unknown): RecentProject[] {
@@ -213,14 +211,21 @@ export const useAppStore = create<AppStore>((set, get) => ({
   gitResultMap: {},
 
   setRepoCwd: (cwd) => {
+    if (!cwd) {
+      set({ repoCwd: null });
+      return;
+    }
+
     set({ repoCwd: cwd });
-    if (cwd) {
-      const existing = get().recentProjects;
-      if (!existing.some((project) => project.path === cwd)) {
-        const recent = normalizeProjects([...existing, { path: cwd, pinned: false }]);
-        set({ recentProjects: recent });
-        saveSettings(recent, get().terminalApp, get().terminalProjects);
-      }
+
+    const existingProjects = get().recentProjects;
+    if (!existingProjects.some((project) => project.path === cwd)) {
+      const recentProjects = normalizeProjects([
+        ...existingProjects,
+        { path: cwd, pinned: false },
+      ]);
+      set({ recentProjects });
+      saveSettings(recentProjects, get().terminalApp, get().terminalProjects);
     }
   },
 
