@@ -37,7 +37,7 @@ function terminalThemeFromApp(): ITheme {
   const fallbackBackground = isDark ? "rgb(46, 46, 46)" : "rgb(255, 255, 255)"
   const fallbackForeground = isDark ? "rgb(237, 241, 247)" : "rgb(28, 33, 41)"
   const background = resolveThemeColor("--card", fallbackBackground)
-  const foreground = resolveThemeColor("--card-foreground", fallbackForeground)
+  const foreground = resolveThemeColor("--foreground", fallbackForeground)
 
   if (isDark) {
     return {
@@ -255,7 +255,7 @@ function TerminalViewport({ projectPath, cwd, tabId, isActive }: TerminalViewpor
     <div
       ref={containerRef}
       className={cn(
-        "absolute inset-0 overflow-hidden [&>.xterm]:px-4 [&>.xterm]:pb-4 [&>.xterm]:pt-2",
+        "absolute left-4 right-0 top-1 bottom-4 overflow-hidden [&>.xterm]:h-full [&>.xterm]:bg-transparent [&_.xterm-viewport]:!bg-transparent [&_.xterm-screen]:bg-transparent [&_.xterm-helpers]:bg-transparent",
         !isActive && "pointer-events-none invisible",
       )}
     />
@@ -391,22 +391,17 @@ export const TerminalPanel = forwardRef<TerminalPanelHandle, TerminalPanelProps>
 
       <div
         data-terminal-panel-body
-        className="min-h-0 flex-1 overflow-hidden"
+        className="relative min-h-0 flex-1 overflow-hidden bg-card"
       >
-        <div
-          data-terminal-surface
-          className="relative h-full min-h-0 overflow-hidden bg-card"
-        >
-          {panelState.tabIds.map((tabId) => (
-            <TerminalViewport
-              key={tabId}
-              projectPath={cwd}
-              cwd={cwd}
-              tabId={tabId}
-              isActive={isVisible && activeTabId === tabId}
-            />
-          ))}
-        </div>
+        {panelState.tabIds.map((tabId) => (
+          <TerminalViewport
+            key={tabId}
+            projectPath={cwd}
+            cwd={cwd}
+            tabId={tabId}
+            isActive={isVisible && activeTabId === tabId}
+          />
+        ))}
       </div>
     </div>
   )
