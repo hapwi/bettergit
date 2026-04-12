@@ -6,12 +6,12 @@ import { Rows3, Columns2, WrapText, X, ChevronRight } from "lucide-react";
 import { useAppStore } from "@/store";
 import { gitDiffPatchQueryOptions } from "@/lib/git/queries";
 import {
-  Sheet,
-  SheetContent,
-  SheetClose,
-  SheetTitle,
-  SheetDescription,
-} from "@/components/ui/sheet";
+  Drawer,
+  DrawerContent,
+  DrawerTitle,
+  DrawerDescription,
+  DrawerClose,
+} from "@/components/ui/drawer";
 import { cn } from "@/lib/utils";
 import { DiffWorkerPoolProvider } from "./DiffWorkerPoolProvider";
 
@@ -158,7 +158,7 @@ function DiffViewerContent({ open }: { open: boolean }) {
       {/* Header */}
       <div className="flex items-center justify-between gap-3 border-b px-4 py-3">
         <div className="flex items-center gap-3">
-          <SheetTitle className="text-sm">Local Changes</SheetTitle>
+          <DrawerTitle className="text-sm">Local Changes</DrawerTitle>
           {renderableFiles.length > 0 && (
             <span className="text-xs tabular-nums text-muted-foreground">
               {renderableFiles.length} file{renderableFiles.length !== 1 ? "s" : ""}
@@ -168,9 +168,9 @@ function DiffViewerContent({ open }: { open: boolean }) {
               <span className="text-red-500">−{totalStats.deletions}</span>
             </span>
           )}
-          <SheetDescription className="sr-only">
+          <DrawerDescription className="sr-only">
             Diff view of local uncommitted changes
-          </SheetDescription>
+          </DrawerDescription>
         </div>
         <div className="flex items-center gap-1.5">
           <div className="flex items-center gap-0.5 rounded-md border bg-muted/50 p-0.5">
@@ -214,14 +214,14 @@ function DiffViewerContent({ open }: { open: boolean }) {
           >
             <WrapText className="size-3.5" />
           </button>
-          <SheetClose className="rounded-md p-1.5 text-muted-foreground transition-colors hover:text-foreground">
+          <DrawerClose className="rounded-md p-1.5 text-muted-foreground transition-colors hover:text-foreground">
             <X className="size-3.5" />
-          </SheetClose>
+          </DrawerClose>
         </div>
       </div>
 
       {/* Content */}
-      <div className="min-h-0 flex-1 overflow-hidden">
+      <div className="min-h-0 flex-1 overflow-hidden" data-vaul-no-drag>
         {isLoading ? (
           <div className="flex h-full items-center justify-center text-xs text-muted-foreground/70">
             Loading diff...
@@ -302,16 +302,14 @@ export function DiffViewer({
   onOpenChange: (open: boolean) => void;
 }) {
   return (
-    <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent
-        side="right"
-        showCloseButton={false}
-        className="w-[65vw] !max-w-none bg-background"
-      >
-        <DiffWorkerPoolProvider>
-          <DiffViewerContent open={open} />
-        </DiffWorkerPoolProvider>
-      </SheetContent>
-    </Sheet>
+    <Drawer open={open} onOpenChange={onOpenChange}>
+      <DrawerContent className="h-[80vh] max-h-[96vh]">
+        <div className="min-h-0 flex-1 overflow-hidden">
+          <DiffWorkerPoolProvider>
+            <DiffViewerContent open={open} />
+          </DiffWorkerPoolProvider>
+        </div>
+      </DrawerContent>
+    </Drawer>
   );
 }
