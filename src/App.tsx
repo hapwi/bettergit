@@ -191,6 +191,7 @@ function AppContent() {
   }, [addTerminalTab, ensureTerminalProject, repoCwd, terminalProjects])
 
   const hasStartedTerminal = repoCwd ? Boolean(terminalProjects[repoCwd]) : false
+  const activeTerminalProject = repoCwd ? terminalProjects[repoCwd] ?? null : null
 
   return (
     <>
@@ -240,19 +241,19 @@ function AppContent() {
             </div>
           ) : null}
           <Suspense fallback={null}>
-            {Object.keys(terminalProjects).map((projectCwd) => (
-              <div key={projectCwd} className={cn(
+            {repoCwd && activeTerminalProject ? (
+              <div key={repoCwd} className={cn(
                 "absolute inset-0 overflow-hidden p-3",
-                activeTab === "terminal" && repoCwd === projectCwd && !isDiffOpen ? "z-10" : "pointer-events-none invisible"
+                activeTab === "terminal" && !isDiffOpen ? "z-10" : "pointer-events-none invisible"
               )}>
                 <TerminalPanel
-                  ref={(handle) => setTerminalHandle(projectCwd, handle)}
-                  cwd={projectCwd}
-                  isVisible={activeTab === "terminal" && repoCwd === projectCwd && !isDiffOpen}
-                  onAllTabsClosed={() => removeTerminalProject(projectCwd)}
+                  ref={(handle) => setTerminalHandle(repoCwd, handle)}
+                  cwd={repoCwd}
+                  isVisible={activeTab === "terminal" && !isDiffOpen}
+                  onAllTabsClosed={() => removeTerminalProject(repoCwd)}
                 />
               </div>
-            ))}
+            ) : null}
           </Suspense>
         </div>
       </main>

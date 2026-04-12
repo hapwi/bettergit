@@ -1,4 +1,5 @@
 import { createRequire } from "node:module";
+import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 
@@ -148,6 +149,52 @@ function ensureNodePtySpawnHelperExecutable(): void {
     }
   } catch {
     // Ignore resolution failures. The spawn itself will surface the real error.
+  }
+}
+
+function killProcessTree(pid: number): void {
+  if (!Number.isInteger(pid) || pid <= 0) return;
+
+  if (process.platform === "win32") {
+    try {
+      execFileSync("taskkill", ["/PID", String(pid), "/T", "/F"], { stdio: "ignore" });
+    } catch {
+      // Ignore failures if the process already exited.
+    }
+    return;
+  }
+
+  // node-pty shells run as their own session leaders on POSIX, so targeting the
+  // process group ensures children started inside the terminal die with it.
+  for (const signal of ["SIGHUP", "SIGTERM", "SIGKILL"] as const) {
+    try {
+      process.kill(-pid, signal);
+    } catch (error) {
+      const code =
+        typeof error === "object" &&
+        error !== null &&
+        "code" in error &&
+        typeof (error as { code?: unknown }).code === "string"
+          ? (error as { code: string }).code
+          : null;
+      if (code === "ESRCH") return;
+      if (code !== "EPERM" && code !== "EINVAL") continue;
+    }
+  }
+
+  for (const signal of ["SIGHUP", "SIGTERM", "SIGKILL"] as const) {
+    try {
+      process.kill(pid, signal);
+    } catch (error) {
+      const code =
+        typeof error === "object" &&
+        error !== null &&
+        "code" in error &&
+        typeof (error as { code?: unknown }).code === "string"
+          ? (error as { code: string }).code
+          : null;
+      if (code === "ESRCH") return;
+    }
   }
 }
 
@@ -369,6 +416,8 @@ export class TerminalSessionManager {
   }
 
   private stopSession(session: LiveTerminalSession): void {
+    const pid = session.pid;
+
     session.disposeData?.();
     session.disposeExit?.();
     session.disposeData = null;
@@ -380,6 +429,10 @@ export class TerminalSessionManager {
       } catch {
         // Ignore shutdown errors from a dead PTY.
       }
+    }
+
+    if (pid !== null) {
+      killProcessTree(pid);
     }
 
     session.process = null;

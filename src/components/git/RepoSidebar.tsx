@@ -8,6 +8,8 @@ import {
   ArrowUp01Icon,
   ArrowDown01Icon,
   ExchangeIcon,
+  GitCommitIcon,
+  LinkSquare01Icon,
   Settings01Icon,
   PinIcon,
   PinOffIcon,
@@ -61,6 +63,7 @@ import {
 import { SettingsDialog } from "@/components/git/SettingsDialog";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
+import { createGhRepo } from "@/lib/git/github";
 
 const isDevBuild = import.meta.env.DEV;
 
@@ -189,6 +192,57 @@ function ProjectItem({
   );
 }
 
+function SidebarSetupCard({
+  tone = "amber",
+  title,
+  description,
+  actionLabel,
+  actionIcon,
+  actionDisabled = false,
+  onAction,
+}: {
+  tone?: "amber" | "blue";
+  title: string;
+  description: string;
+  actionLabel: string;
+  actionIcon: typeof Add01Icon;
+  actionDisabled?: boolean;
+  onAction: () => void;
+}) {
+  const toneClasses = tone === "blue"
+    ? {
+        border: "border-blue-500/30",
+        bg: "bg-blue-500/5",
+        text: "text-blue-400/85",
+        button: "text-blue-400 hover:text-blue-300",
+      }
+    : {
+        border: "border-amber-500/30",
+        bg: "bg-amber-500/5",
+        text: "text-amber-500/85",
+        button: "text-amber-500 hover:text-amber-400",
+      };
+
+  return (
+    <div className={cn("mt-1 rounded-md border border-dashed px-2.5 py-2", toneClasses.border, toneClasses.bg)}>
+      <div className="space-y-1">
+        <p className={cn("text-[11px] font-medium", toneClasses.text)}>{title}</p>
+        <p className="text-[11px] text-muted-foreground">{description}</p>
+      </div>
+      <Button
+        variant="ghost"
+        size="sm"
+        className={cn("mt-1 h-6 w-full justify-center text-[11px]", toneClasses.button)}
+        disabled={actionDisabled}
+        onClick={onAction}
+      >
+        <HugeiconsIcon icon={actionIcon} className="size-3" />
+        {actionLabel}
+      </Button>
+    </div>
+  );
+}
+
 export function RepoSidebar() {
   const repoCwd = useAppStore((s) => s.repoCwd);
   const recentProjects = useAppStore((s) => s.recentProjects);
@@ -204,11 +258,20 @@ export function RepoSidebar() {
   const { data: branches = [] } = useQuery(gitBranchesQueryOptions(repoCwd));
 
   const changeCount = status?.workingTree.files.length ?? 0;
+  const hasOriginRemote = status?.hasOriginRemote ?? false;
   const hasPreRelease = branches.some(
     (b) => b.name === "pre-release" || b.name === "origin/pre-release",
   );
   const hasMasterNotMain = branches.some((b) => b.name === "master") &&
     !branches.some((b) => b.name === "main");
+  const needsInitialCommit = Boolean(status && !status.hasCommits);
+  const needsRemoteSetup = Boolean(status?.hasCommits && !hasOriginRemote);
+  const shouldShowPreReleaseSetup = Boolean(
+    status?.hasCommits &&
+    !status.isDetached &&
+    hasOriginRemote &&
+    !hasPreRelease,
+  );
 
   const handleOpen = async () => {
     const path = await window.electronAPI?.dialog.openDirectory();
@@ -228,6 +291,8 @@ export function RepoSidebar() {
 
   const [renameDialogOpen, setRenameDialogOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [isSettingUpRepository, setIsSettingUpRepository] = useState(false);
+  const [isCreatingRemote, setIsCreatingRemote] = useState(false);
   const [pendingRenameRepo, setPendingRenameRepo] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");
   const [pendingRemoveRepo, setPendingRemoveRepo] = useState<string | null>(null);
@@ -244,6 +309,92 @@ export function RepoSidebar() {
       void invalidateGitQueries(queryClient);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Rename failed");
+    }
+  };
+
+  const ensureMainBranch = async () => {
+    if (!repoCwd || !status) return;
+
+    const mainExists = (await execGit(repoCwd, ["show-ref", "--verify", "--quiet", "refs/heads/main"])).code === 0;
+    if (mainExists) {
+      await execGit(repoCwd, ["switch", "main"]);
+      return;
+    }
+
+    if (status.branch === "master") {
+      await execGit(repoCwd, ["branch", "-m", "master", "main"]);
+      return;
+    }
+
+    if (status.isDetached) {
+      if (status.hasCommits) {
+        await execGit(repoCwd, ["switch", "-c", "main"]);
+      } else {
+        await execGit(repoCwd, ["checkout", "--orphan", "main"]);
+      }
+      return;
+    }
+
+    if (!status.branch) {
+      await execGit(repoCwd, ["checkout", "--orphan", "main"]);
+      return;
+    }
+
+    if (!status.hasCommits) {
+      await execGit(repoCwd, ["branch", "-m", status.branch, "main"]);
+    }
+  };
+
+  const doSetUpRepository = async () => {
+    if (!repoCwd || !status) return;
+
+    setIsSettingUpRepository(true);
+    try {
+      await ensureMainBranch();
+
+      if (status.hasWorkingTreeChanges) {
+        await execGit(repoCwd, ["add", "-A"]);
+        await execGit(repoCwd, ["commit", "-m", "Initial commit"]);
+        toast.success("Repository initialized on main with an initial commit");
+      } else {
+        toast.success("Main branch is ready. Add files when you're ready for the first commit.");
+      }
+
+      void invalidateGitQueries(queryClient);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to set up repository");
+    } finally {
+      setIsSettingUpRepository(false);
+    }
+  };
+
+  const doSwitchToMain = async () => {
+    if (!repoCwd || !status) return;
+
+    setIsSettingUpRepository(true);
+    try {
+      await ensureMainBranch();
+      toast.success('Switched repository to "main"');
+      void invalidateGitQueries(queryClient);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to switch to main");
+    } finally {
+      setIsSettingUpRepository(false);
+    }
+  };
+
+  const doCreateRemote = async () => {
+    if (!repoCwd) return;
+
+    setIsCreatingRemote(true);
+    try {
+      await createGhRepo(repoCwd, "private");
+      toast.success("Created GitHub repo and pushed origin");
+      void invalidateGitQueries(queryClient);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to create GitHub repo");
+    } finally {
+      setIsCreatingRemote(false);
     }
   };
 
@@ -305,7 +456,9 @@ export function RepoSidebar() {
                 {/* Branch */}
                 <div className="flex items-center gap-2 rounded-md bg-muted/40 px-2.5 py-1.5 text-xs">
                   <HugeiconsIcon icon={GitBranchIcon} className="size-3 shrink-0 text-muted-foreground" />
-                  <span className="truncate font-medium">{status.branch ?? "detached"}</span>
+                  <span className="truncate font-medium">
+                    {status.branch ?? (status.isDetached ? "detached" : "unknown")}
+                  </span>
                 </div>
 
                 {/* Quick stats */}
@@ -323,6 +476,16 @@ export function RepoSidebar() {
                     <div className="flex items-center gap-1.5 rounded-md bg-muted/40 px-2.5 py-1.5 text-xs">
                       <span className="size-1.5 rounded-full bg-emerald-500" />
                       <span className="text-muted-foreground">PR #{status.pr.number}</span>
+                    </div>
+                  ) : !status.hasCommits ? (
+                    <div className="flex items-center gap-1.5 rounded-md bg-muted/40 px-2.5 py-1.5 text-xs">
+                      <span className="size-1.5 rounded-full bg-muted-foreground/30" />
+                      <span className="text-muted-foreground/50">No commits</span>
+                    </div>
+                  ) : !hasOriginRemote ? (
+                    <div className="flex items-center gap-1.5 rounded-md bg-muted/40 px-2.5 py-1.5 text-xs">
+                      <span className="size-1.5 rounded-full bg-muted-foreground/30" />
+                      <span className="text-muted-foreground/50">No remote</span>
                     </div>
                   ) : (
                     <div className="flex items-center gap-1.5 rounded-md bg-muted/40 px-2.5 py-1.5 text-xs">
@@ -350,23 +513,58 @@ export function RepoSidebar() {
                   </div>
                 )}
 
+                {/* Local setup */}
+                {needsInitialCommit && (
+                  <SidebarSetupCard
+                    title="Repository setup needed"
+                    description={
+                      status.hasWorkingTreeChanges
+                        ? "Create the first commit on main so this project is ready to push."
+                        : "Set main as the default branch now. Add files when you're ready for the first commit."
+                    }
+                    actionLabel={isSettingUpRepository ? "Setting up..." : "Set up repository"}
+                    actionIcon={GitCommitIcon}
+                    actionDisabled={isSettingUpRepository}
+                    onAction={() => void doSetUpRepository()}
+                  />
+                )}
+
+                {status.hasCommits && status.isDetached && (
+                  <SidebarSetupCard
+                    title="Detached HEAD"
+                    description="This repo isn't on a named branch right now. Put it on main before creating remotes or release branches."
+                    actionLabel={isSettingUpRepository ? "Fixing branch..." : "Switch to main"}
+                    actionIcon={GitBranchIcon}
+                    actionDisabled={isSettingUpRepository}
+                    onAction={() => void doSwitchToMain()}
+                  />
+                )}
+
+                {needsRemoteSetup && (
+                  <SidebarSetupCard
+                    tone="blue"
+                    title="No GitHub remote connected"
+                    description="Create an origin remote so this project can push, open PRs, and use pre-release workflow."
+                    actionLabel={isCreatingRemote ? "Creating repo..." : "Create GitHub repo"}
+                    actionIcon={LinkSquare01Icon}
+                    actionDisabled={isCreatingRemote}
+                    onAction={() => void doCreateRemote()}
+                  />
+                )}
+
                 {/* Pre-release branch detection */}
-                {!hasPreRelease && (
-                  <div className="mt-1 rounded-md border border-dashed border-amber-500/30 bg-amber-500/5 px-2.5 py-2">
-                    <p className="text-[11px] text-amber-500/80">
-                      No pre-release branch detected.
-                    </p>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="mt-1 h-6 w-full justify-center text-[11px] text-amber-500 hover:text-amber-400"
-                      onClick={async () => {
+                {shouldShowPreReleaseSetup && (
+                  <SidebarSetupCard
+                    title="No pre-release branch detected"
+                    description="Set up pre-release after the repo has a remote so feature work can stack cleanly."
+                    actionLabel="Set up pre-release branch"
+                    actionIcon={GitBranchIcon}
+                    onAction={() => {
+                      void (async () => {
                         if (!repoCwd) return;
                         try {
                           await execGit(repoCwd, ["checkout", "-b", "pre-release"]);
-                          const remoteCheck = await execGit(repoCwd, ["remote"]);
-                          const hasOrigin = remoteCheck.stdout.split("\n").some((r: string) => r.trim() === "origin");
-                          if (hasOrigin) {
+                          if (hasOriginRemote) {
                             await execGit(repoCwd, ["push", "-u", "origin", "pre-release"]);
                           }
                           toast.success("Created pre-release branch");
@@ -374,29 +572,21 @@ export function RepoSidebar() {
                         } catch {
                           toast.error("Failed to create pre-release branch");
                         }
-                      }}
-                    >
-                      Set up pre-release branch
-                    </Button>
-                  </div>
+                      })();
+                    }}
+                  />
                 )}
 
                 {/* Rename master → main */}
-                {hasMasterNotMain && (
-                  <div className="mt-1 rounded-md border border-dashed border-blue-500/30 bg-blue-500/5 px-2.5 py-2">
-                    <p className="text-[11px] text-blue-400/80">
-                      Default branch is "master".
-                    </p>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="mt-1 h-6 w-full justify-center text-[11px] text-blue-400 hover:text-blue-300"
-                      onClick={() => setRenameDialogOpen(true)}
-                    >
-                      <HugeiconsIcon icon={ExchangeIcon} className="size-3" />
-                      Rename to main
-                    </Button>
-                  </div>
+                {hasMasterNotMain && status.hasCommits && hasOriginRemote && (
+                  <SidebarSetupCard
+                    tone="blue"
+                    title='Default branch is "master"'
+                    description='Rename it to "main" locally and on GitHub before enabling the rest of the workflow.'
+                    actionLabel="Rename to main"
+                    actionIcon={ExchangeIcon}
+                    onAction={() => setRenameDialogOpen(true)}
+                  />
                 )}
               </div>
             </SidebarGroupContent>
