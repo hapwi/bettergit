@@ -93,7 +93,7 @@ export async function runStackedAction(input: StackedActionInput): Promise<Stack
   };
 
   let currentBranch = await getCurrentBranch(cwd);
-  let parentBranch = currentBranch; // Track the branch we're branching from
+  const parentBranch = currentBranch; // Track the branch we're branching from
 
   // Feature branch creation
   if (input.featureBranch) {
