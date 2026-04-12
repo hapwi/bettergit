@@ -257,7 +257,7 @@ function AppContent() {
         </div>
       </main>
       <Suspense fallback={null}>
-        {isDiffOpen ? <DiffViewer open={isDiffOpen} onOpenChange={setIsDiffOpen} /> : null}
+        <DiffViewer open={isDiffOpen} onOpenChange={setIsDiffOpen} />
       </Suspense>
     </>
   )
