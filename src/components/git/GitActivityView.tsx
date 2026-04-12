@@ -64,7 +64,6 @@ export function GitActivityView({ activity, onDismiss }: GitActivityViewProps) {
   const isComplete = activity.completedAt !== undefined;
   const doneCount = activity.steps.filter((s) => s.status === "done").length;
   const failedCount = activity.steps.filter((s) => s.status === "failed").length;
-  const activeStep = activity.steps.find((s) => s.status === "active");
   const title = isComplete && activity.completedTitle ? activity.completedTitle : activity.title;
 
   return (
@@ -155,21 +154,9 @@ export function GitActivityView({ activity, onDismiss }: GitActivityViewProps) {
         ))}
       </div>
 
-      {/* Footer */}
-      {isComplete ? (
-        activity.summary ? (
-          <p className="text-xs text-muted-foreground/40">{activity.summary}</p>
-        ) : null
-      ) : activeStep ? (
-        <div className="flex items-center gap-2">
-          <span className="size-1.5 animate-pulse rounded-full bg-primary/60" />
-          <p className="text-xs text-muted-foreground/40">{activeStep.label}...</p>
-        </div>
-      ) : (
-        <div className="flex items-center gap-2">
-          <span className="size-1.5 animate-pulse rounded-full bg-primary/60" />
-          <p className="text-xs text-muted-foreground/40">Preparing...</p>
-        </div>
+      {/* Footer — only on completion */}
+      {isComplete && activity.summary && (
+        <p className="text-xs text-muted-foreground/40">{activity.summary}</p>
       )}
     </div>
   );
