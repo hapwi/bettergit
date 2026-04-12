@@ -153,3 +153,21 @@
   > [data-slot="sidebar-container"]::after {
   opacity: 0;
 }
+
+[data-terminal-panel-body] .xterm-viewport {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+[data-terminal-panel-body] .xterm-viewport::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+}
+
+[data-terminal-panel-body] .xterm-viewport::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+[data-terminal-panel-body] .xterm-viewport::-webkit-scrollbar-thumb {
+  background: transparent;
+}

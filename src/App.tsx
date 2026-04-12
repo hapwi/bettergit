@@ -242,7 +242,7 @@ function AppContent() {
           <Suspense fallback={null}>
             {Object.keys(terminalProjects).map((projectCwd) => (
               <div key={projectCwd} className={cn(
-                "absolute inset-0 overflow-hidden",
+                "absolute inset-0 overflow-hidden p-3",
                 activeTab === "terminal" && repoCwd === projectCwd && !isDiffOpen ? "z-10" : "pointer-events-none invisible"
               )}>
                 <TerminalPanel
