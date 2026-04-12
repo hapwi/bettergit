@@ -3,8 +3,6 @@ import { execGit, execGh, mergePullRequests, versionBump } from "./git";
 import * as ai from "./ai";
 import { getProjectFavicon } from "./favicon";
 import { fixPath } from "./env";
-import { attachPtyWebSocket } from "./pty";
-import { readGhosttyConfig } from "./ghostty";
 
 // Resolve the user's full shell PATH before anything else — macOS GUI apps
 // don't inherit the login shell's PATH, so tools like git, gh, claude won't
@@ -77,10 +75,6 @@ const server = http.createServer(async (req, res) => {
     const cli = url.searchParams.get("cli") ?? "claude";
     return json(res, { available: await ai.checkCli(cli) });
   }
-  if (req.method === "GET" && url.pathname === "/api/ghostty-config") {
-    return json(res, readGhosttyConfig());
-  }
-
   const handler = routes[key];
   if (!handler) {
     return error(res, `Not found: ${key}`, 404);
@@ -97,9 +91,6 @@ const server = http.createServer(async (req, res) => {
     error(res, message);
   }
 });
-
-// Attach WebSocket PTY server to the HTTP server
-attachPtyWebSocket(server);
 
 server.listen(port, "127.0.0.1", () => {
   const addr = server.address();

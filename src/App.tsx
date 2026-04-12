@@ -1,7 +1,5 @@
 import { useState, useRef, useEffect, useCallback, lazy, Suspense } from "react"
 import { useAppStore } from "@/store"
-import { RepoSidebar } from "@/components/git/RepoSidebar"
-import { Dashboard } from "@/components/git/Dashboard"
 import { WelcomeScreen } from "@/components/git/WelcomeScreen"
 import { SidebarProvider, useSidebar } from "@/components/ui/sidebar"
 import { cn } from "@/lib/utils"
@@ -19,9 +17,19 @@ const DiffViewer = lazy(async () => {
   return { default: mod.DiffViewer }
 })
 
+const Dashboard = lazy(async () => {
+  const mod = await import("@/components/git/Dashboard")
+  return { default: mod.Dashboard }
+})
+
 const GitPanel = lazy(async () => {
   const mod = await import("@/components/git/GitPanel")
   return { default: mod.GitPanel }
+})
+
+const RepoSidebar = lazy(async () => {
+  const mod = await import("@/components/git/RepoSidebar")
+  return { default: mod.RepoSidebar }
 })
 
 const TerminalPanel = lazy(async () => {
@@ -146,6 +154,11 @@ function AppContent() {
       terminalRefs.current.set(projectCwd, existing)
     }
     existing.current = handle
+
+    if (handle && pendingMenuNewTabProjectRef.current === projectCwd) {
+      handle.addTab()
+      pendingMenuNewTabProjectRef.current = null
+    }
   }
 
   const startTerminalForProject = useCallback((projectCwd: string | null) => {
@@ -240,9 +253,7 @@ function AppContent() {
     <>
       <Toolbar
         activeTab={activeTab}
-        onTabChange={(tab) => {
-          setActiveTab(tab)
-        }}
+        onTabChange={setActiveTab}
         onDiffOpen={() => setIsDiffOpen(true)}
       />
       <main className="flex min-h-0 flex-1 flex-col overflow-hidden pt-[52px]">
@@ -251,7 +262,9 @@ function AppContent() {
             "absolute inset-0 overflow-hidden",
             activeTab === "dashboard" ? "z-10" : "hidden"
           )}>
-            <Dashboard isActive={activeTab === "dashboard"} />
+            <Suspense fallback={null}>
+              <Dashboard isActive={activeTab === "dashboard"} />
+            </Suspense>
           </div>
           <div className={cn(
             "absolute inset-0 overflow-hidden",
@@ -324,7 +337,9 @@ export function App() {
 
   return (
     <SidebarProvider className="overflow-hidden rounded-2xl bg-sidebar">
-      <RepoSidebar />
+      <Suspense fallback={<div className="w-[var(--sidebar-width)] shrink-0 bg-sidebar" />}>
+        <RepoSidebar />
+      </Suspense>
       <div className="relative z-[11] flex h-screen min-w-0 flex-1 flex-col overflow-hidden rounded-l-2xl bg-background text-foreground">
         <AppContent />
       </div>

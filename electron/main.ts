@@ -392,6 +392,12 @@ ipcMain.handle("terminal-host:destroySurface", (_event, surfaceId: string) => {
   addon?.destroySurface(surfaceId);
 });
 
+ipcMain.handle("terminal-host:closeFocusedSurface", (_event, surfaceId: string) => {
+  const addon = loadNativeTerminalAddon();
+  if (!addon) return false;
+  return addon.closeFocusedSurface(surfaceId);
+});
+
 ipcMain.handle(
   "terminal-host:setSurfaceBounds",
   (event, surfaceId: string, bounds: NativeTerminalBounds) => {

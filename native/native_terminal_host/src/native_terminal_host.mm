@@ -293,6 +293,7 @@ static NSString *BackgroundOverridePath(NSString *hexColor) {
 - (void)shutdown;
 - (BOOL)createSurfaceWithId:(NSString *)surfaceId cwd:(NSString *)cwd;
 - (void)destroySurfaceWithId:(NSString *)surfaceId;
+- (BOOL)closeFocusedSurfaceWithId:(NSString *)surfaceId;
 - (void)setSurfaceFrame:(NSRect)frame forSurfaceId:(NSString *)surfaceId;
 - (void)setSurfaceBackgroundHexColor:(NSString *)hexColor forSurfaceId:(NSString *)surfaceId;
 - (void)setSurfaceVisible:(BOOL)visible forSurfaceId:(NSString *)surfaceId;
@@ -1136,6 +1137,21 @@ static bool HostAction(ghostty_app_t app, ghostty_target_s target, ghostty_actio
   [_tabs removeObjectForKey:surfaceId];
 }
 
+- (BOOL)closeFocusedSurfaceWithId:(NSString *)surfaceId {
+  BGTerminalTabHostView *tabHost = _tabs[surfaceId];
+  BGGhosttySurfaceView *view = tabHost.focusedSurfaceView;
+  BGTerminalSurfaceContainerView *pane =
+      [view.superview isKindOfClass:[BGTerminalSurfaceContainerView class]]
+          ? (BGTerminalSurfaceContainerView *)view.superview
+          : nil;
+  if (tabHost == nil || view == nil || pane == nil || pane.splitParent == nil) {
+    return NO;
+  }
+
+  [tabHost closeSurfaceView:view];
+  return YES;
+}
+
 - (void)setSurfaceFrame:(NSRect)frame forSurfaceId:(NSString *)surfaceId {
   BGTerminalTabHostView *tabHost = _tabs[surfaceId];
   if (tabHost == nil) {
@@ -1495,6 +1511,26 @@ static napi_value DestroySurface(napi_env env, napi_callback_info info) {
   return MakeUndefined(env);
 }
 
+static napi_value CloseFocusedSurface(napi_env env, napi_callback_info info) {
+  size_t argc = 1;
+  napi_value args[1];
+  if (napi_get_cb_info(env, info, &argc, args, nullptr, nullptr) != napi_ok || argc < 1) {
+    ThrowTypeError(env, "closeFocusedSurface requires a surface id");
+    return nullptr;
+  }
+  if (gHost == nil) {
+    return MakeBoolean(env, false);
+  }
+
+  NSString *surfaceId = nil;
+  if (!GetStringArg(env, args[0], &surfaceId)) {
+    ThrowTypeError(env, "closeFocusedSurface expected a string surface id");
+    return nullptr;
+  }
+
+  return MakeBoolean(env, [gHost closeFocusedSurfaceWithId:surfaceId]);
+}
+
 static napi_value SetSurfaceBounds(napi_env env, napi_callback_info info) {
   size_t argc = 2;
   napi_value args[2];
@@ -1683,6 +1719,7 @@ static napi_value Init(napi_env env, napi_value exports) {
       {"shutdownHost", nullptr, ShutdownHost, nullptr, nullptr, nullptr, napi_default, nullptr},
       {"createSurface", nullptr, CreateSurface, nullptr, nullptr, nullptr, napi_default, nullptr},
       {"destroySurface", nullptr, DestroySurface, nullptr, nullptr, nullptr, napi_default, nullptr},
+      {"closeFocusedSurface", nullptr, CloseFocusedSurface, nullptr, nullptr, nullptr, napi_default, nullptr},
       {"setSurfaceBounds", nullptr, SetSurfaceBounds, nullptr, nullptr, nullptr, napi_default, nullptr},
       {"getResolvedAppearance", nullptr, GetResolvedAppearance, nullptr, nullptr, nullptr, napi_default, nullptr},
       {"setSurfaceBackground", nullptr, SetSurfaceBackground, nullptr, nullptr, nullptr, napi_default, nullptr},
