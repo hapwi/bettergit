@@ -13,7 +13,6 @@ import { useAppStore } from "@/store";
 import { GitHubIcon, ClaudeIcon, CodexIcon } from "@/components/icons";
 import { ArrowLeft02Icon, AiMagicIcon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
-import { Terminal } from "lucide-react";
 import {
   Select,
   SelectContent,
@@ -66,12 +65,9 @@ export function SettingsDialog({
   onOpenChange: (open: boolean) => void;
 }) {
   const repoCwd = useAppStore((s) => s.repoCwd);
-  const terminalApp = useAppStore((s) => s.terminalApp);
-  const setTerminalApp = useAppStore((s) => s.setTerminalApp);
   const [view, setView] = useState<"main" | "connections">("main");
   const [services, setServices] = useState<ServiceStatus[]>(cachedServices ?? []);
   const [selectedModel, setSelectedModel] = useState("claude-haiku-4-5");
-  const [detectedTerminals, setDetectedTerminals] = useState<string[]>([]);
   const checkedRef = useRef(false);
 
   const connectedCount = services.filter((s) => s.status === "connected").length;
@@ -152,9 +148,6 @@ export function SettingsDialog({
     import("@/lib/server").then(({ serverFetch }) =>
       serverFetch<{ model: string }>("/api/ai/model").then((res) => setSelectedModel(res.model)),
     ).catch(() => {});
-
-    // Detect installed terminals
-    window.electronAPI?.shell.detectTerminals().then(setDetectedTerminals).catch(() => {});
 
     // Only check connections once per session (or if no cache)
     if (!checkedRef.current || !cachedServices) {
@@ -282,33 +275,6 @@ export function SettingsDialog({
             </div>
           </div>
 
-          {/* Terminal selector */}
-          {detectedTerminals.length > 0 && (
-            <div className="flex flex-col gap-2">
-              <div>
-                <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/50">General</p>
-                <p className="text-xs text-muted-foreground">
-                  Choose which terminal app opens when you click "Open in Terminal".
-                </p>
-              </div>
-              <div className="flex items-center gap-3 rounded-xl border bg-card/50 px-3 py-2.5">
-                <Terminal className="size-4 shrink-0 text-muted-foreground" />
-                <p className="shrink-0 text-sm font-medium">Terminal</p>
-                <Select value={terminalApp ?? detectedTerminals[0]} onValueChange={setTerminalApp}>
-                  <SelectTrigger size="sm" className="ml-auto text-xs">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectGroup>
-                      {detectedTerminals.map((t) => (
-                        <SelectItem key={t} value={t}>{t}</SelectItem>
-                      ))}
-                    </SelectGroup>
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-          )}
         </div>
       </DialogContent>
     </Dialog>
