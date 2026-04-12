@@ -40,7 +40,9 @@ async function resolveProjectFavicon(cwd: string): Promise<string | null> {
     try {
       const stat = await fs.promises.stat(full);
       if (stat.isFile()) return full;
-    } catch {}
+    } catch {
+      continue;
+    }
   }
 
   for (const sourceFile of ICON_SOURCE_FILES) {
@@ -56,9 +58,13 @@ async function resolveProjectFavicon(cwd: string): Promise<string | null> {
         try {
           const stat = await fs.promises.stat(resolved);
           if (stat.isFile()) return resolved;
-        } catch {}
+        } catch {
+          continue;
+        }
       }
-    } catch {}
+    } catch {
+      continue;
+    }
   }
 
   return null;
