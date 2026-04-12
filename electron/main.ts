@@ -4,11 +4,7 @@ import os from "node:os";
 import fs from "node:fs";
 import { execFileSync, spawn, type ChildProcess } from "node:child_process";
 import { createServer } from "node:net";
-import {
-  getNativeTerminalHostFailure,
-  loadNativeTerminalAddon,
-  type NativeTerminalBounds,
-} from "./nativeTerminalHost";
+import { TerminalSessionManager } from "./terminalSessionManager";
 
 // Resolve the user's full shell PATH before anything else — macOS GUI apps
 // don't inherit the login shell's environment, so tools like git/gh/claude
@@ -52,6 +48,7 @@ const isDev = !app.isPackaged;
 let serverProcess: ChildProcess | null = null;
 let serverPort = 0;
 let serverLogStream: fs.WriteStream | null = null;
+let terminalSessionManager: TerminalSessionManager | null = null;
 
 function appendMainLog(message: string): void {
   const line = `[${new Date().toISOString()}] ${message}\n`;
@@ -189,19 +186,6 @@ function createWindow() {
     shell.openExternal(url);
     return { action: "deny" };
   });
-
-  const nativeTerminalAddon = loadNativeTerminalAddon();
-  if (nativeTerminalAddon) {
-    nativeTerminalAddon.initializeHost(win.getNativeWindowHandle());
-    win.on("focus", () => nativeTerminalAddon.setAppFocused(true));
-    win.on("blur", () => nativeTerminalAddon.setAppFocused(false));
-    win.on("closed", () => nativeTerminalAddon.shutdownHost());
-  } else {
-    const failure = getNativeTerminalHostFailure();
-    if (failure) {
-      appendMainLog(`native terminal host unavailable: ${failure}`);
-    }
-  }
 }
 
 // ---------------------------------------------------------------------------
@@ -258,6 +242,12 @@ function setupApplicationMenu() {
 
 app.whenReady().then(async () => {
   setupApplicationMenu();
+  terminalSessionManager = new TerminalSessionManager(loadSettings, saveSettings);
+  terminalSessionManager.subscribe((event) => {
+    for (const win of BrowserWindow.getAllWindows()) {
+      win.webContents.send("terminal:event", event);
+    }
+  });
 
   try {
     await startServer();
@@ -277,6 +267,7 @@ app.whenReady().then(async () => {
 });
 
 app.on("window-all-closed", () => {
+  terminalSessionManager?.shutdown();
   if (process.platform !== "darwin") {
     stopServer();
     app.quit();
@@ -284,6 +275,7 @@ app.on("window-all-closed", () => {
 });
 
 app.on("before-quit", () => {
+  terminalSessionManager?.shutdown();
   stopServer();
 });
 
@@ -379,64 +371,59 @@ ipcMain.handle("project:renameDirectory", (_event, currentPath: string, newName:
   return nextPath;
 });
 
-ipcMain.handle("terminal-host:isAvailable", () => loadNativeTerminalAddon() !== null);
-
-ipcMain.handle("terminal-host:createSurface", (event, surfaceId: string, cwd: string) => {
-  const addon = loadNativeTerminalAddon();
-  if (!addon) return false;
-  return addon.createSurface(surfaceId, cwd);
+ipcMain.handle("terminal:openSession", (_event, input: {
+  projectPath: string;
+  tabId: string;
+  cwd: string;
+  cols: number;
+  rows: number;
+}) => {
+  if (!terminalSessionManager) throw new Error("Terminal manager is not ready");
+  return terminalSessionManager.open(input);
 });
 
-ipcMain.handle("terminal-host:destroySurface", (_event, surfaceId: string) => {
-  const addon = loadNativeTerminalAddon();
-  addon?.destroySurface(surfaceId);
+ipcMain.handle("terminal:writeToSession", (_event, input: {
+  projectPath: string;
+  tabId: string;
+  data: string;
+}) => {
+  if (!terminalSessionManager) throw new Error("Terminal manager is not ready");
+  terminalSessionManager.write(input.projectPath, input.tabId, input.data);
 });
 
-ipcMain.handle("terminal-host:closeFocusedSurface", (_event, surfaceId: string) => {
-  const addon = loadNativeTerminalAddon();
-  if (!addon) return false;
-  return addon.closeFocusedSurface(surfaceId);
+ipcMain.handle("terminal:resizeSession", (_event, input: {
+  projectPath: string;
+  tabId: string;
+  cols: number;
+  rows: number;
+}) => {
+  if (!terminalSessionManager) throw new Error("Terminal manager is not ready");
+  terminalSessionManager.resize(input.projectPath, input.tabId, input.cols, input.rows);
 });
 
-ipcMain.handle(
-  "terminal-host:setSurfaceBounds",
-  (event, surfaceId: string, bounds: NativeTerminalBounds) => {
-    const addon = loadNativeTerminalAddon();
-    const win = BrowserWindow.fromWebContents(event.sender);
-    if (!addon || !win) return;
-    const [, contentHeight] = win.getContentSize();
-    addon.setSurfaceBounds(surfaceId, {
-      x: bounds.x,
-      y: contentHeight - bounds.y - bounds.height,
-      width: bounds.width,
-      height: bounds.height,
-    });
-  },
-);
-
-ipcMain.handle("terminal-host:setSurfaceBackground", (_event, surfaceId: string, color: string) => {
-  const addon = loadNativeTerminalAddon();
-  addon?.setSurfaceBackground(surfaceId, color);
+ipcMain.handle("terminal:closeSession", (_event, input: {
+  projectPath: string;
+  tabId: string;
+  deleteHistory?: boolean;
+}) => {
+  if (!terminalSessionManager) return;
+  terminalSessionManager.closeSession(input.projectPath, input.tabId, input.deleteHistory !== false);
 });
 
-ipcMain.handle("terminal-host:getResolvedAppearance", () => {
-  const addon = loadNativeTerminalAddon();
-  return addon?.getResolvedAppearance();
+ipcMain.handle("terminal:closeProject", (_event, input: {
+  projectPath: string;
+  deleteHistory?: boolean;
+}) => {
+  if (!terminalSessionManager) return;
+  terminalSessionManager.closeProject(input.projectPath, input.deleteHistory !== false);
 });
 
-ipcMain.handle("terminal-host:setSurfaceVisible", (_event, surfaceId: string, visible: boolean) => {
-  const addon = loadNativeTerminalAddon();
-  addon?.setSurfaceVisible(surfaceId, visible);
-});
-
-ipcMain.handle("terminal-host:focusSurface", (_event, surfaceId: string) => {
-  const addon = loadNativeTerminalAddon();
-  addon?.focusSurface(surfaceId);
-});
-
-ipcMain.handle("terminal-host:splitSurface", (_event, surfaceId: string, direction: "right" | "down" | "left" | "up") => {
-  const addon = loadNativeTerminalAddon();
-  addon?.splitSurface(surfaceId, direction);
+ipcMain.handle("terminal:renameProject", (_event, input: {
+  oldPath: string;
+  newPath: string;
+}) => {
+  if (!terminalSessionManager) return;
+  terminalSessionManager.renameProject(input.oldPath, input.newPath);
 });
 
 // ---------------------------------------------------------------------------
@@ -455,7 +442,8 @@ function loadSettings(): Record<string, unknown> {
 
 function saveSettings(data: Record<string, unknown>): void {
   fs.mkdirSync(path.dirname(settingsPath), { recursive: true });
-  fs.writeFileSync(settingsPath, JSON.stringify(data, null, 2));
+  const next = { ...loadSettings(), ...data };
+  fs.writeFileSync(settingsPath, JSON.stringify(next, null, 2));
 }
 
 ipcMain.handle("settings:load", () => loadSettings());

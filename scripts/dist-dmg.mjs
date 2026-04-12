@@ -42,11 +42,6 @@ cpSync(join(repoRoot, "dist"), join(stageApp, "dist"), { recursive: true });
 cpSync(join(repoRoot, "dist-electron"), join(stageApp, "dist-electron"), { recursive: true });
 cpSync(join(repoRoot, "dist-server"), join(stageApp, "dist-server"), { recursive: true });
 cpSync(join(repoRoot, "build"), join(stageApp, "build"), { recursive: true });
-cpSync(
-  join(repoRoot, "native", "native_terminal_host", "build", "Release"),
-  join(stageApp, "native", "native_terminal_host", "build", "Release"),
-  { recursive: true },
-);
 
 // 3. Write a minimal package.json for electron-builder
 const stagePackage = {
@@ -61,7 +56,7 @@ const stagePackage = {
     productName: "BetterGit",
     artifactName: "BetterGit-${version}-${arch}.${ext}",
     asarUnpack: [
-      "native/**/*.node",
+      "node_modules/node-pty/**/*",
     ],
     directories: {
       output: "dist-out",
