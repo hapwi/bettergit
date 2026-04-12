@@ -15,6 +15,7 @@ interface NativeTerminalAddon {
   shutdownHost(): void;
   createSurface(surfaceId: string, cwd: string): boolean;
   destroySurface(surfaceId: string): void;
+  closeFocusedSurface(surfaceId: string): boolean;
   setSurfaceBounds(surfaceId: string, bounds: NativeTerminalBounds): void;
   getResolvedAppearance(): { backgroundColor?: string; backgroundOpacity?: number } | undefined;
   setSurfaceBackground(surfaceId: string, color: string): void;

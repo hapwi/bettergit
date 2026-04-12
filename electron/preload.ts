@@ -22,6 +22,8 @@ contextBridge.exposeInMainWorld("electronAPI", {
       ipcRenderer.invoke("terminal-host:createSurface", surfaceId, cwd),
     destroySurface: (surfaceId: string): Promise<void> =>
       ipcRenderer.invoke("terminal-host:destroySurface", surfaceId),
+    closeFocusedSurface: (surfaceId: string): Promise<boolean> =>
+      ipcRenderer.invoke("terminal-host:closeFocusedSurface", surfaceId),
     setSurfaceBounds: (
       surfaceId: string,
       bounds: { x: number; y: number; width: number; height: number },

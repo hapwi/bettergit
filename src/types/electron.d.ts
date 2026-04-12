@@ -17,6 +17,7 @@ interface ElectronAPI {
     isAvailable: () => Promise<boolean>;
     createSurface: (surfaceId: string, cwd: string) => Promise<boolean>;
     destroySurface: (surfaceId: string) => Promise<void>;
+    closeFocusedSurface: (surfaceId: string) => Promise<boolean>;
     setSurfaceBounds: (
       surfaceId: string,
       bounds: { x: number; y: number; width: number; height: number },
