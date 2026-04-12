@@ -32,7 +32,6 @@ import { execGit } from "@/lib/git/exec";
 import {
   buildMenuItems,
   resolveQuickAction,
-  buildGitActionProgressStages,
   summarizeGitResult,
   requiresDefaultBranchConfirmation,
   isDefaultBranchName,
@@ -47,6 +46,7 @@ import { CommitDialog } from "./CommitDialog";
 import { DefaultBranchDialog } from "./DefaultBranchDialog";
 import { SwitchBranchDialog } from "./SwitchBranchDialog";
 import { MergeDialog } from "./MergeDialog";
+import { GitActivityView, type GitActivityState, type ActivityStep } from "./GitActivityView";
 import { parseVersion, type SemVer } from "./version";
 
 // ---------------------------------------------------------------------------
@@ -110,6 +110,7 @@ export function GitPanel({ isActive }: { isActive: boolean }) {
   } | null>(null);
   const [mergeDialogScope, setMergeDialogScope] = useState<"current" | "stack" | null>(null);
   const [isBusyLocal, setIsBusyLocal] = useState(false);
+  const [gitActivity, setGitActivity] = useState<GitActivityState | null>(null);
   const setGitBusy = useAppStore((s) => s.setGitBusy);
   const flashGitResult = useAppStore((s) => s.flashGitResult);
   const setIsBusy = useCallback((busy: boolean) => {
@@ -146,6 +147,28 @@ export function GitPanel({ isActive }: { isActive: boolean }) {
   );
   const displayPrStack = useMemo(() => [...prStack].reverse(), [prStack]);
 
+  // Advance activity steps on estimated intervals
+  const isActivityInProgress = gitActivity !== null && !gitActivity.completedAt;
+  const activityAdvanceMs = gitActivity?.advanceMs ?? 0;
+  useEffect(() => {
+    if (!isActivityInProgress || activityAdvanceMs <= 0) return;
+    const timer = setInterval(() => {
+      setGitActivity((prev) => {
+        if (!prev || prev.completedAt) return prev;
+        const idx = prev.steps.findIndex((s) => s.status === "active");
+        if (idx === -1 || idx >= prev.steps.length - 1) return prev;
+        return {
+          ...prev,
+          steps: prev.steps.map((s, i) => ({
+            ...s,
+            status:
+              i <= idx ? ("done" as const) : i === idx + 1 ? ("active" as const) : s.status,
+          })),
+        };
+      });
+    }, activityAdvanceMs);
+    return () => clearInterval(timer);
+  }, [isActivityInProgress, activityAdvanceMs]);
 
   // Actions
   const runAction = useCallback(
@@ -177,25 +200,43 @@ export function GitPanel({ isActive }: { isActive: boolean }) {
         return;
       }
 
-      const stages = buildGitActionProgressStages({
-        action: input.action,
-        hasCustomCommitMessage: !!input.commitMessage?.trim(),
-        hasWorkingTreeChanges: gitStatus.hasWorkingTreeChanges,
-        featureBranch: input.featureBranch,
-      });
+      // Build activity steps
+      const actionSteps: ActivityStep[] = [];
+      if (input.featureBranch) {
+        actionSteps.push({ id: "branch", label: "Create feature branch", status: "queued" });
+      }
+      if (gitStatus.hasWorkingTreeChanges) {
+        actionSteps.push({ id: "commit", label: "Commit changes", status: "queued" });
+      }
+      if (input.action === "commit_push" || input.action === "commit_push_pr") {
+        actionSteps.push({ id: "push", label: "Push to remote", status: "queued" });
+      }
+      if (input.action === "commit_push_pr") {
+        actionSteps.push({ id: "pr", label: "Create pull request", status: "queued" });
+      }
+      if (actionSteps.length > 0) actionSteps[0].status = "active";
+
+      const actionTitle =
+        input.action === "commit_push_pr"
+          ? "Creating pull request"
+          : input.action === "commit_push"
+            ? input.featureBranch
+              ? "Creating branch"
+              : "Pushing"
+            : "Committing";
 
       const actionCwd = repoCwd;
       actionRepoRef.current = actionCwd;
 
       setIsBusy(true);
       await pauseHmr();
-      const toastId = toast.loading(stages[0] ?? "Running...");
-
-      let stageIndex = 0;
-      const interval = setInterval(() => {
-        stageIndex = Math.min(stageIndex + 1, stages.length - 1);
-        toast.loading(stages[stageIndex] ?? "Running...", { id: toastId });
-      }, 1100);
+      setGitActivity({
+        title: actionTitle,
+        steps: actionSteps,
+        advanceMs: 3500,
+        startedAt: Date.now(),
+      });
+      const toastId = toast.loading(actionTitle + "...");
 
       try {
         const result = await runStackedAction({
@@ -205,21 +246,75 @@ export function GitPanel({ isActive }: { isActive: boolean }) {
           featureBranch: input.featureBranch,
           filePaths: input.filePaths,
         });
-        clearInterval(interval);
 
         const summary = summarizeGitResult(result);
         if (summary.noChanges) {
+          setGitActivity((prev) =>
+            prev
+              ? {
+                  ...prev,
+                  completedAt: Date.now(),
+                  completedTitle: "No changes",
+                  error: summary.description,
+                  steps: prev.steps.map((s) => ({ ...s, status: "failed" as const })),
+                }
+              : null,
+          );
           toast.error(summary.description ?? summary.title, { id: toastId });
           flashGitResult(actionCwd, "error");
         } else {
+          setGitActivity((prev) =>
+            prev
+              ? {
+                  ...prev,
+                  completedAt: Date.now(),
+                  completedTitle: summary.title,
+                  summary: summary.description,
+                  steps: prev.steps.map((s) => ({
+                    ...s,
+                    status: "done" as const,
+                    detail:
+                      s.id === "commit"
+                        ? result.commit.commitSha?.slice(0, 7)
+                        : s.id === "push"
+                          ? result.push.branch
+                          : s.id === "pr" && result.pr.number
+                            ? `#${result.pr.number}`
+                            : s.id === "branch"
+                              ? result.branch.name
+                              : s.detail,
+                    url: s.id === "pr" ? result.pr.url : s.url,
+                  })),
+                }
+              : null,
+          );
           toast.success(
             summary.description ? `${summary.title} · ${summary.description}` : summary.title,
             { id: toastId },
           );
           flashGitResult(actionCwd, "success");
         }
+        setTimeout(() => setGitActivity(null), 4000);
       } catch (err) {
-        clearInterval(interval);
+        setGitActivity((prev) =>
+          prev
+            ? {
+                ...prev,
+                completedAt: Date.now(),
+                error: err instanceof Error ? err.message : "Action failed.",
+                steps: prev.steps.map((s) => ({
+                  ...s,
+                  status:
+                    s.status === "done"
+                      ? ("done" as const)
+                      : s.status === "active"
+                        ? ("failed" as const)
+                        : s.status,
+                })),
+              }
+            : null,
+        );
+        setTimeout(() => setGitActivity(null), 4000);
         toast.error(err instanceof Error ? err.message : "Action failed.", { id: toastId });
         flashGitResult(actionCwd, "error");
       } finally {
@@ -240,13 +335,41 @@ export function GitPanel({ isActive }: { isActive: boolean }) {
     if (quickAction.kind === "run_pull") {
       if (!repoCwd) return;
       setIsBusy(true);
-      const toastId = toast.loading("Pulling latest changes...");
+      setGitActivity({
+        title: "Pulling",
+        steps: [{ id: "pull", label: "Pull latest changes", status: "active" }],
+        advanceMs: 0,
+        startedAt: Date.now(),
+      });
+      const toastId = toast.loading("Pulling...");
       (async () => {
         await pauseHmr();
         try {
           await pull(repoCwd);
+          setGitActivity((prev) =>
+            prev
+              ? {
+                  ...prev,
+                  completedAt: Date.now(),
+                  completedTitle: "Up to date",
+                  steps: prev.steps.map((s) => ({ ...s, status: "done" as const })),
+                }
+              : null,
+          );
+          setTimeout(() => setGitActivity(null), 3000);
           toast.success("Pulled from upstream.", { id: toastId });
         } catch (err) {
+          setGitActivity((prev) =>
+            prev
+              ? {
+                  ...prev,
+                  completedAt: Date.now(),
+                  error: err instanceof Error ? err.message : "Pull failed.",
+                  steps: prev.steps.map((s) => ({ ...s, status: "failed" as const })),
+                }
+              : null,
+          );
+          setTimeout(() => setGitActivity(null), 4000);
           toast.error(err instanceof Error ? err.message : "Pull failed.", { id: toastId });
         } finally {
           await resumeHmr();
@@ -326,12 +449,40 @@ export function GitPanel({ isActive }: { isActive: boolean }) {
   const handleDiscardAll = useCallback(async () => {
     if (!repoCwd) return;
     setIsBusy(true);
-    const toastId = toast.loading("Discarding all changes...");
+    setGitActivity({
+      title: "Discarding",
+      steps: [{ id: "discard", label: "Discard all changes", status: "active" }],
+      advanceMs: 0,
+      startedAt: Date.now(),
+    });
+    const toastId = toast.loading("Discarding...");
     try {
       await discardAllChanges(repoCwd);
+      setGitActivity((prev) =>
+        prev
+          ? {
+              ...prev,
+              completedAt: Date.now(),
+              completedTitle: "Changes discarded",
+              steps: prev.steps.map((s) => ({ ...s, status: "done" as const })),
+            }
+          : null,
+      );
+      setTimeout(() => setGitActivity(null), 3000);
       toast.success("All local changes discarded.", { id: toastId });
       flashGitResult(repoCwd, "success");
     } catch (err) {
+      setGitActivity((prev) =>
+        prev
+          ? {
+              ...prev,
+              completedAt: Date.now(),
+              error: err instanceof Error ? err.message : "Discard failed.",
+              steps: prev.steps.map((s) => ({ ...s, status: "failed" as const })),
+            }
+          : null,
+      );
+      setTimeout(() => setGitActivity(null), 4000);
       toast.error(err instanceof Error ? err.message : "Discard failed.", { id: toastId });
       flashGitResult(repoCwd, "error");
     } finally {
@@ -374,6 +525,24 @@ export function GitPanel({ isActive }: { isActive: boolean }) {
         prsToMerge = [{ number: pr.number, headBranch: pr.headBranch, baseBranch: pr.baseBranch }];
       }
 
+      // Set activity for visual progress tracking
+      const mergeSteps: ActivityStep[] = prsToMerge.map((p, i) => {
+        const match = prStack.find((op) => op.number === p.number);
+        return {
+          id: `pr-${p.number}`,
+          label: `#${p.number} ${match?.title ?? ""}`.trim(),
+          status: i === 0 ? ("active" as const) : ("queued" as const),
+          detail: p.headBranch,
+          url: match?.url,
+        };
+      });
+      setGitActivity({
+        title: scope === "stack" ? "Merging stack" : "Merging",
+        steps: mergeSteps,
+        advanceMs: 7000,
+        startedAt: Date.now(),
+      });
+
       // Delegate to server process — merge + optional version bump in one shot
       const { serverFetch } = await import("@/lib/server");
       const result = await serverFetch<{ merged: number[]; tag: string | null; finalBranch: string | null; error: string | null }>("/api/git/merge-prs", {
@@ -383,19 +552,58 @@ export function GitPanel({ isActive }: { isActive: boolean }) {
         versionBump,
       });
 
+      // Update activity with actual results
+      const mergedSet = new Set(result.merged);
+      setGitActivity((prev) =>
+        prev
+          ? {
+              ...prev,
+              completedAt: Date.now(),
+              completedTitle: result.error ? "Merge incomplete" : "Merge complete",
+              error: result.error ?? undefined,
+              summary: `${result.merged.length} PR${result.merged.length !== 1 ? "s" : ""} merged \u00b7 Branches cleaned up`,
+              steps: prev.steps.map((s) => ({
+                ...s,
+                status: mergedSet.has(parseInt(s.id.replace("pr-", "")))
+                  ? ("done" as const)
+                  : result.error
+                    ? ("failed" as const)
+                    : ("done" as const),
+              })),
+            }
+          : null,
+      );
+      setTimeout(() => setGitActivity(null), 5000);
+
       if (result.error) {
         const partial = result.merged.length > 0 ? ` (merged ${result.merged.map((n) => `#${n}`).join(", ")})` : "";
-        throw new Error(`${result.error}${partial}`);
-      }
-
-      const label = result.merged.map((n) => `#${n}`).join(", ");
-      if (result.tag) {
-        toast.success(`Merged ${label} · Released ${result.tag}`, { id: toastId });
+        toast.error(`${result.error}${partial}`, { id: toastId });
+        flashGitResult(actionCwd, "error");
       } else {
-        toast.success(`Merged ${label}`, { id: toastId });
+        const label = result.merged.map((n) => `#${n}`).join(", ");
+        if (result.tag) {
+          toast.success(`Merged ${label} · Released ${result.tag}`, { id: toastId });
+        } else {
+          toast.success(`Merged ${label}`, { id: toastId });
+        }
+        flashGitResult(actionCwd, "success");
       }
-      flashGitResult(actionCwd, "success");
     } catch (err) {
+      // Network or unexpected error — mark activity as failed
+      setGitActivity((prev) =>
+        prev
+          ? {
+              ...prev,
+              completedAt: Date.now(),
+              error: err instanceof Error ? err.message : "Merge failed.",
+              steps: prev.steps.map((s) => ({
+                ...s,
+                status: s.status === "done" ? ("done" as const) : ("failed" as const),
+              })),
+            }
+          : null,
+      );
+      setTimeout(() => setGitActivity(null), 5000);
       toast.error(err instanceof Error ? err.message : "Merge failed.", { id: toastId });
       flashGitResult(actionCwd, "error");
     } finally {
@@ -459,6 +667,15 @@ export function GitPanel({ isActive }: { isActive: boolean }) {
   const handleCreateReleasePr = useCallback(async () => {
     if (!repoCwd) return;
     setIsBusy(true);
+    setGitActivity({
+      title: "Creating release PR",
+      steps: [
+        { id: "generate", label: "Generate PR content", status: "active" },
+        { id: "create", label: "Create pull request", status: "queued" },
+      ],
+      advanceMs: 5000,
+      startedAt: Date.now(),
+    });
     const toastId = toast.loading("Creating release PR...");
     try {
       // Determine target branch
@@ -491,8 +708,39 @@ export function GitPanel({ isActive }: { isActive: boolean }) {
       }
 
       const pr = await createPullRequest(repoCwd, targetBranch, prTitle, prBody);
+      setGitActivity((prev) =>
+        prev
+          ? {
+              ...prev,
+              completedAt: Date.now(),
+              completedTitle: "Release PR created",
+              summary: `#${pr.number} · ${prTitle}`,
+              steps: prev.steps.map((s) => ({
+                ...s,
+                status: "done" as const,
+                detail: s.id === "create" ? `#${pr.number}` : s.detail,
+                url: s.id === "create" ? pr.url : s.url,
+              })),
+            }
+          : null,
+      );
+      setTimeout(() => setGitActivity(null), 4000);
       toast.success(`Created release PR #${pr.number}`, { id: toastId });
     } catch (err) {
+      setGitActivity((prev) =>
+        prev
+          ? {
+              ...prev,
+              completedAt: Date.now(),
+              error: err instanceof Error ? err.message : "Failed to create release PR.",
+              steps: prev.steps.map((s) => ({
+                ...s,
+                status: s.status === "done" ? ("done" as const) : s.status === "active" ? ("failed" as const) : s.status,
+              })),
+            }
+          : null,
+      );
+      setTimeout(() => setGitActivity(null), 4000);
       toast.error(err instanceof Error ? err.message : "Failed to create release PR.", { id: toastId });
     } finally {
       await invalidateGitQueries(queryClient);
@@ -514,6 +762,7 @@ export function GitPanel({ isActive }: { isActive: boolean }) {
     setPendingDeleteBranch(null);
     setPendingDefaultAction(null);
     setIsDiscardConfirmOpen(false);
+    setGitActivity(null);
   }, [repoCwd]);
 
   if (!repoCwd) return null;
@@ -576,164 +825,173 @@ export function GitPanel({ isActive }: { isActive: boolean }) {
             </div>
           )}
 
-          {/* Actions row */}
-          <div className="grid grid-cols-5 gap-2">
-            {/* Primary action — spans full width */}
-            {quickAction.kind !== "show_hint" && (
-              <Button
-                variant={quickAction.disabled || currentPr?.state === "open" ? "outline" : "default"}
-                disabled={isBusy || quickAction.disabled}
-                onClick={runQuickAction}
-                className="col-span-5 h-auto justify-center gap-2 py-3"
-              >
-                <QuickActionIcon quickAction={quickAction} />
-                {quickAction.label}
-              </Button>
-            )}
-            {menuItems.map((item) => (
-              <Button
-                key={item.id}
-                variant={item.highlighted ? "default" : "outline"}
-                disabled={isBusy || item.disabled}
-                onClick={() => handleMenuItem(item)}
-                className="h-auto flex-col gap-1 py-3"
-              >
-                <ActionIcon icon={item.icon} />
-                <span className="text-[11px]">{item.label}</span>
-              </Button>
-            ))}
-            <Button
-              variant={currentPr?.state === "open" && gitStatus?.hasWorkingTreeChanges ? "default" : "outline"}
-              onClick={() => {
-                if (!hasOriginRemote) {
-                  toast.info("Publish to GitHub first before creating branches.");
-                  return;
-                }
-                if (!gitStatus?.hasWorkingTreeChanges) {
-                  toast.info("Make local changes first to create a feature branch.");
-                  return;
-                }
-                void runAction({ action: "commit_push", featureBranch: true, skipDefaultBranchPrompt: true });
-              }}
-              disabled={isBusy || !hasOriginRemote || !gitStatus?.hasWorkingTreeChanges}
-              className="h-auto flex-col gap-1 py-3"
-            >
-              <HugeiconsIcon icon={GitBranchIcon} className="size-3.5" />
-              <span className="text-[11px]">New branch</span>
-            </Button>
-            <Button
-              variant="outline"
-              onClick={() => setIsDiscardConfirmOpen(true)}
-              disabled={isBusy || !gitStatus?.hasWorkingTreeChanges}
-              className="h-auto flex-col gap-1 py-3 text-destructive hover:text-destructive"
-            >
-              <HugeiconsIcon icon={Cancel01Icon} className="size-3.5" />
-              <span className="text-[11px]">Discard</span>
-            </Button>
-          </div>
-
-          {/* Release PR — only on pre-release branch */}
-          {isPreReleaseBranch && !hasExistingReleasePr && preReleaseAheadCount > 0 && !gitStatus?.hasWorkingTreeChanges && (
-            <Button
-              variant="outline"
-              disabled={isBusy}
-              onClick={handleCreateReleasePr}
-              className="w-full justify-center gap-2 border-purple-500/30 py-3 text-purple-400 hover:bg-purple-500/10 hover:text-purple-300"
-            >
-              <HugeiconsIcon icon={GitPullRequestIcon} className="size-3.5" />
-              Create Release PR → main
-              <span className="inline-flex items-center gap-0.5 text-[11px] tabular-nums opacity-70">
-                <span>↑</span>
-                {preReleaseAheadCount}
-              </span>
-            </Button>
-          )}
-
-          {/* Pull Requests */}
-          <div className="flex flex-col gap-3">
-            <SectionHeader count={displayPrStack.length}>Pull Requests</SectionHeader>
-            {displayPrStack.length === 0 ? (
-              <div className="flex items-center gap-2 rounded-xl border border-dashed py-6 justify-center text-muted-foreground/40">
-                <HugeiconsIcon icon={GitPullRequestIcon} className="size-4" />
-                <span className="text-xs">No pull requests yet</span>
-              </div>
-            ) : (
-              <div className="divide-y rounded-xl border">
-                {displayPrStack.map((pr) => {
-                  const isCurrent = pr.number === currentPr?.number;
-                  return (
-                    <div
-                      key={pr.number}
-                      className="flex w-full items-center gap-2.5 px-3 py-2"
-                    >
-                      <HugeiconsIcon
-                        icon={pr.state === "merged" ? GitMergeIcon : GitPullRequestIcon}
-                        className={cn(
-                          "size-3.5 shrink-0",
-                          pr.state === "open" ? "text-emerald-500" : pr.state === "merged" ? "text-purple-400" : "text-muted-foreground/40",
-                        )}
-                      />
-                      <span className="text-xs text-muted-foreground">#{pr.number}</span>
-                      <span className="truncate text-sm">{pr.title}</span>
-                      <span className="ml-auto shrink-0 text-[11px] text-muted-foreground/40">{pr.headBranch} → {pr.baseBranch}</span>
-                      {isCurrent && <Badge variant="default" className="shrink-0 text-[10px]">Current</Badge>}
-                      {pr.state === "merged" && (
-                        <Badge variant="secondary" className="shrink-0 text-[10px] text-purple-400">Merged</Badge>
-                      )}
-                      <button
-                        type="button"
-                        className="shrink-0 rounded-md p-1 text-muted-foreground/40 transition-colors hover:bg-accent hover:text-foreground"
-                        onClick={() => void window.electronAPI?.shell.openExternal(pr.url)}
-                      >
-                        <GitHubIcon className="size-3.5" />
-                      </button>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-
-            {/* Merge actions for current PR */}
-            {currentPr?.state === "open" && (
-              <div className="flex gap-1.5">
-                {prStack.length <= 1 ? (
+          {gitActivity ? (
+            <GitActivityView
+              activity={gitActivity}
+              onDismiss={() => setGitActivity(null)}
+            />
+          ) : (
+            <>
+              {/* Actions row */}
+              <div className="grid grid-cols-5 gap-2">
+                {/* Primary action — spans full width */}
+                {quickAction.kind !== "show_hint" && (
                   <Button
-                    size="sm"
-                    variant={!gitStatus?.hasWorkingTreeChanges && gitStatus?.aheadCount === 0 ? "default" : "outline"}
-                    disabled={isBusy}
-                    onClick={() => setMergeDialogScope("current")}
-                    className="gap-1.5"
+                    variant={quickAction.disabled || currentPr?.state === "open" ? "outline" : "default"}
+                    disabled={isBusy || quickAction.disabled}
+                    onClick={runQuickAction}
+                    className="col-span-5 h-auto justify-center gap-2 py-3"
                   >
-                    <HugeiconsIcon icon={GitMergeIcon} className="size-3" />
-                    Merge PR
+                    <QuickActionIcon quickAction={quickAction} />
+                    {quickAction.label}
                   </Button>
+                )}
+                {menuItems.map((item) => (
+                  <Button
+                    key={item.id}
+                    variant={item.highlighted ? "default" : "outline"}
+                    disabled={isBusy || item.disabled}
+                    onClick={() => handleMenuItem(item)}
+                    className="h-auto flex-col gap-1 py-3"
+                  >
+                    <ActionIcon icon={item.icon} />
+                    <span className="text-[11px]">{item.label}</span>
+                  </Button>
+                ))}
+                <Button
+                  variant={currentPr?.state === "open" && gitStatus?.hasWorkingTreeChanges ? "default" : "outline"}
+                  onClick={() => {
+                    if (!hasOriginRemote) {
+                      toast.info("Publish to GitHub first before creating branches.");
+                      return;
+                    }
+                    if (!gitStatus?.hasWorkingTreeChanges) {
+                      toast.info("Make local changes first to create a feature branch.");
+                      return;
+                    }
+                    void runAction({ action: "commit_push", featureBranch: true, skipDefaultBranchPrompt: true });
+                  }}
+                  disabled={isBusy || !hasOriginRemote || !gitStatus?.hasWorkingTreeChanges}
+                  className="h-auto flex-col gap-1 py-3"
+                >
+                  <HugeiconsIcon icon={GitBranchIcon} className="size-3.5" />
+                  <span className="text-[11px]">New branch</span>
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={() => setIsDiscardConfirmOpen(true)}
+                  disabled={isBusy || !gitStatus?.hasWorkingTreeChanges}
+                  className="h-auto flex-col gap-1 py-3 text-destructive hover:text-destructive"
+                >
+                  <HugeiconsIcon icon={Cancel01Icon} className="size-3.5" />
+                  <span className="text-[11px]">Discard</span>
+                </Button>
+              </div>
+
+              {/* Release PR — only on pre-release branch */}
+              {isPreReleaseBranch && !hasExistingReleasePr && preReleaseAheadCount > 0 && !gitStatus?.hasWorkingTreeChanges && (
+                <Button
+                  variant="outline"
+                  disabled={isBusy}
+                  onClick={handleCreateReleasePr}
+                  className="w-full justify-center gap-2 border-purple-500/30 py-3 text-purple-400 hover:bg-purple-500/10 hover:text-purple-300"
+                >
+                  <HugeiconsIcon icon={GitPullRequestIcon} className="size-3.5" />
+                  Create Release PR → main
+                  <span className="inline-flex items-center gap-0.5 text-[11px] tabular-nums opacity-70">
+                    <span>↑</span>
+                    {preReleaseAheadCount}
+                  </span>
+                </Button>
+              )}
+
+              {/* Pull Requests */}
+              <div className="flex flex-col gap-3">
+                <SectionHeader count={displayPrStack.length}>Pull Requests</SectionHeader>
+                {displayPrStack.length === 0 ? (
+                  <div className="flex items-center gap-2 rounded-xl border border-dashed py-6 justify-center text-muted-foreground/40">
+                    <HugeiconsIcon icon={GitPullRequestIcon} className="size-4" />
+                    <span className="text-xs">No pull requests yet</span>
+                  </div>
                 ) : (
-                  <>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      disabled={isBusy}
-                      onClick={() => setMergeDialogScope("current")}
-                      className="gap-1.5"
-                    >
-                      <HugeiconsIcon icon={GitMergeIcon} className="size-3" />
-                      Merge PR
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant={!gitStatus?.hasWorkingTreeChanges && gitStatus?.aheadCount === 0 ? "default" : "outline"}
-                      disabled={isBusy}
-                      onClick={() => setMergeDialogScope("stack")}
-                      className="gap-1.5"
-                    >
-                      <HugeiconsIcon icon={GitMergeIcon} className="size-3" />
-                      Merge stack
-                    </Button>
-                  </>
+                  <div className="divide-y rounded-xl border">
+                    {displayPrStack.map((pr) => {
+                      const isCurrent = pr.number === currentPr?.number;
+                      return (
+                        <div
+                          key={pr.number}
+                          className="flex w-full items-center gap-2.5 px-3 py-2"
+                        >
+                          <HugeiconsIcon
+                            icon={pr.state === "merged" ? GitMergeIcon : GitPullRequestIcon}
+                            className={cn(
+                              "size-3.5 shrink-0",
+                              pr.state === "open" ? "text-emerald-500" : pr.state === "merged" ? "text-purple-400" : "text-muted-foreground/40",
+                            )}
+                          />
+                          <span className="text-xs text-muted-foreground">#{pr.number}</span>
+                          <span className="truncate text-sm">{pr.title}</span>
+                          <span className="ml-auto shrink-0 text-[11px] text-muted-foreground/40">{pr.headBranch} → {pr.baseBranch}</span>
+                          {isCurrent && <Badge variant="default" className="shrink-0 text-[10px]">Current</Badge>}
+                          {pr.state === "merged" && (
+                            <Badge variant="secondary" className="shrink-0 text-[10px] text-purple-400">Merged</Badge>
+                          )}
+                          <button
+                            type="button"
+                            className="shrink-0 rounded-md p-1 text-muted-foreground/40 transition-colors hover:bg-accent hover:text-foreground"
+                            onClick={() => void window.electronAPI?.shell.openExternal(pr.url)}
+                          >
+                            <GitHubIcon className="size-3.5" />
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {/* Merge actions for current PR */}
+                {currentPr?.state === "open" && (
+                  <div className="flex gap-1.5">
+                    {prStack.length <= 1 ? (
+                      <Button
+                        size="sm"
+                        variant={!gitStatus?.hasWorkingTreeChanges && gitStatus?.aheadCount === 0 ? "default" : "outline"}
+                        disabled={isBusy}
+                        onClick={() => setMergeDialogScope("current")}
+                        className="gap-1.5"
+                      >
+                        <HugeiconsIcon icon={GitMergeIcon} className="size-3" />
+                        Merge PR
+                      </Button>
+                    ) : (
+                      <>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          disabled={isBusy}
+                          onClick={() => setMergeDialogScope("current")}
+                          className="gap-1.5"
+                        >
+                          <HugeiconsIcon icon={GitMergeIcon} className="size-3" />
+                          Merge PR
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant={!gitStatus?.hasWorkingTreeChanges && gitStatus?.aheadCount === 0 ? "default" : "outline"}
+                          disabled={isBusy}
+                          onClick={() => setMergeDialogScope("stack")}
+                          className="gap-1.5"
+                        >
+                          <HugeiconsIcon icon={GitMergeIcon} className="size-3" />
+                          Merge stack
+                        </Button>
+                      </>
+                    )}
+                  </div>
                 )}
               </div>
-            )}
-          </div>
+            </>
+          )}
 
         </div>
       </div>
