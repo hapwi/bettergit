@@ -2,6 +2,7 @@ import { FitAddon } from "@xterm/addon-fit"
 import { Terminal as XTermTerminal, type ITheme } from "@xterm/xterm"
 import { Plus, X } from "lucide-react"
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef } from "react"
+import "@xterm/xterm/css/xterm.css"
 
 import { type TerminalProjectState, useAppStore } from "@/store"
 import { cn } from "@/lib/utils"
