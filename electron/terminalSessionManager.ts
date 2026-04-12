@@ -169,7 +169,6 @@ function killProcessTree(pid: number): void {
   for (const signal of ["SIGHUP", "SIGTERM", "SIGKILL"] as const) {
     try {
       process.kill(-pid, signal);
-      return;
     } catch (error) {
       const code =
         typeof error === "object" &&
@@ -186,7 +185,6 @@ function killProcessTree(pid: number): void {
   for (const signal of ["SIGHUP", "SIGTERM", "SIGKILL"] as const) {
     try {
       process.kill(pid, signal);
-      return;
     } catch (error) {
       const code =
         typeof error === "object" &&
