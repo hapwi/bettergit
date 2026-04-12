@@ -1,7 +1,5 @@
-import { useState, useRef, useEffect, useCallback, lazy, Suspense } from "react"
+import { useState, useRef, useEffect, lazy, Suspense } from "react"
 import { useAppStore } from "@/store"
-import { RepoSidebar } from "@/components/git/RepoSidebar"
-import { Dashboard } from "@/components/git/Dashboard"
 import { WelcomeScreen } from "@/components/git/WelcomeScreen"
 import { SidebarProvider, useSidebar } from "@/components/ui/sidebar"
 import { cn } from "@/lib/utils"
@@ -19,9 +17,19 @@ const DiffViewer = lazy(async () => {
   return { default: mod.DiffViewer }
 })
 
+const Dashboard = lazy(async () => {
+  const mod = await import("@/components/git/Dashboard")
+  return { default: mod.Dashboard }
+})
+
 const GitPanel = lazy(async () => {
   const mod = await import("@/components/git/GitPanel")
   return { default: mod.GitPanel }
+})
+
+const RepoSidebar = lazy(async () => {
+  const mod = await import("@/components/git/RepoSidebar")
+  return { default: mod.RepoSidebar }
 })
 
 const TerminalPanel = lazy(async () => {
@@ -134,11 +142,12 @@ function Toolbar({
 function AppContent() {
   const [activeTab, setActiveTab] = useState<ActiveTab>("dashboard")
   const [isDiffOpen, setIsDiffOpen] = useState(false)
-  const [terminalProjects, setTerminalProjects] = useState<Set<string>>(new Set())
   const repoCwd = useAppStore((s) => s.repoCwd)
-  const recentProjects = useAppStore((s) => s.recentProjects)
+  const terminalProjects = useAppStore((s) => s.terminalProjects)
+  const ensureTerminalProject = useAppStore((s) => s.ensureTerminalProject)
+  const addTerminalTab = useAppStore((s) => s.addTerminalTab)
+  const removeTerminalProject = useAppStore((s) => s.removeTerminalProject)
   const terminalRefs = useRef(new Map<string, React.MutableRefObject<TerminalPanelHandle | null>>())
-  const pendingMenuNewTabProjectRef = useRef<string | null>(null)
   const setTerminalHandle = (projectCwd: string, handle: TerminalPanelHandle | null) => {
     let existing = terminalRefs.current.get(projectCwd)
     if (!existing) {
@@ -147,44 +156,6 @@ function AppContent() {
     }
     existing.current = handle
   }
-
-  const startTerminalForProject = useCallback((projectCwd: string | null) => {
-    if (!projectCwd) return
-    setTerminalProjects((prev) => {
-      if (prev.has(projectCwd)) return prev
-      const next = new Set(prev)
-      next.add(projectCwd)
-      return next
-    })
-  }, [])
-
-  useEffect(() => {
-    const validProjects = new Set(recentProjects.map((project) => project.path))
-    setTerminalProjects((prev) => {
-      let changed = false
-      const next = new Set<string>()
-      for (const projectPath of prev) {
-        if (validProjects.has(projectPath)) {
-          next.add(projectPath)
-        } else {
-          changed = true
-          terminalRefs.current.delete(projectPath)
-        }
-      }
-      return changed ? next : prev
-    })
-  }, [recentProjects])
-
-  useEffect(() => {
-    const projectCwd = pendingMenuNewTabProjectRef.current
-    if (!projectCwd || !terminalProjects.has(projectCwd)) return
-
-    const ref = terminalRefs.current.get(projectCwd)
-    if (!ref?.current) return
-
-    ref.current.addTab()
-    pendingMenuNewTabProjectRef.current = null
-  }, [terminalProjects])
 
   // Cmd+W: close pane/tab in terminal first, then close window
   useEffect(() => {
@@ -209,40 +180,23 @@ function AppContent() {
 
       setActiveTab("terminal")
 
-      if (!terminalProjects.has(repoCwd)) {
-        pendingMenuNewTabProjectRef.current = repoCwd
-        startTerminalForProject(repoCwd)
+      if (!terminalProjects[repoCwd]) {
+        ensureTerminalProject(repoCwd)
         return
       }
 
-      // Defer until the terminal panel is visible.
-      setTimeout(() => {
-        const ref = terminalRefs.current.get(repoCwd)
-        ref?.current?.addTab()
-      }, 0)
+      addTerminalTab(repoCwd)
     })
     return cleanup
-  }, [repoCwd, startTerminalForProject, terminalProjects])
+  }, [addTerminalTab, ensureTerminalProject, repoCwd, terminalProjects])
 
-  const closeTerminalForProject = (projectCwd: string) => {
-    setTerminalProjects((prev) => {
-      if (!prev.has(projectCwd)) return prev
-      const next = new Set(prev)
-      next.delete(projectCwd)
-      return next
-    })
-    terminalRefs.current.delete(projectCwd)
-  }
-
-  const hasStartedTerminal = repoCwd ? terminalProjects.has(repoCwd) : false
+  const hasStartedTerminal = repoCwd ? Boolean(terminalProjects[repoCwd]) : false
 
   return (
     <>
       <Toolbar
         activeTab={activeTab}
-        onTabChange={(tab) => {
-          setActiveTab(tab)
-        }}
+        onTabChange={setActiveTab}
         onDiffOpen={() => setIsDiffOpen(true)}
       />
       <main className="flex min-h-0 flex-1 flex-col overflow-hidden pt-[52px]">
@@ -251,7 +205,9 @@ function AppContent() {
             "absolute inset-0 overflow-hidden",
             activeTab === "dashboard" ? "z-10" : "hidden"
           )}>
-            <Dashboard isActive={activeTab === "dashboard"} />
+            <Suspense fallback={null}>
+              <Dashboard isActive={activeTab === "dashboard"} />
+            </Suspense>
           </div>
           <div className={cn(
             "absolute inset-0 overflow-hidden",
@@ -275,7 +231,7 @@ function AppContent() {
                 </div>
                 <button
                   type="button"
-                  onClick={() => startTerminalForProject(repoCwd)}
+                  onClick={() => repoCwd && ensureTerminalProject(repoCwd)}
                   className="rounded-lg bg-foreground px-4 py-2 text-sm font-medium text-background transition-opacity hover:opacity-90"
                 >
                   Start Terminal
@@ -284,16 +240,16 @@ function AppContent() {
             </div>
           ) : null}
           <Suspense fallback={null}>
-            {Array.from(terminalProjects).map((projectCwd) => (
+            {Object.keys(terminalProjects).map((projectCwd) => (
               <div key={projectCwd} className={cn(
-                "absolute inset-0 overflow-hidden",
+                "absolute inset-0 overflow-hidden p-3",
                 activeTab === "terminal" && repoCwd === projectCwd && !isDiffOpen ? "z-10" : "pointer-events-none invisible"
               )}>
                 <TerminalPanel
                   ref={(handle) => setTerminalHandle(projectCwd, handle)}
                   cwd={projectCwd}
                   isVisible={activeTab === "terminal" && repoCwd === projectCwd && !isDiffOpen}
-                  onAllTabsClosed={() => closeTerminalForProject(projectCwd)}
+                  onAllTabsClosed={() => removeTerminalProject(projectCwd)}
                 />
               </div>
             ))}
@@ -324,7 +280,9 @@ export function App() {
 
   return (
     <SidebarProvider className="overflow-hidden rounded-2xl bg-sidebar">
-      <RepoSidebar />
+      <Suspense fallback={<div className="w-[var(--sidebar-width)] shrink-0 bg-sidebar" />}>
+        <RepoSidebar />
+      </Suspense>
       <div className="relative z-[11] flex h-screen min-w-0 flex-1 flex-col overflow-hidden rounded-l-2xl bg-background text-foreground">
         <AppContent />
       </div>

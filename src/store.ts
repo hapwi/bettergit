@@ -4,10 +4,16 @@ const MAX_RECENT = 10;
 const RECENT_PROJECTS_STORAGE_KEY = "bettergit:recent-projects";
 const LEGACY_RECENT_REPOS_STORAGE_KEY = "bettergit:recent-repos";
 const TERMINAL_APP_STORAGE_KEY = "bettergit:terminal-app";
+const TERMINAL_PROJECTS_STORAGE_KEY = "bettergit:terminal-projects";
 
 export interface RecentProject {
   path: string;
   pinned: boolean;
+}
+
+export interface TerminalProjectState {
+  tabIds: string[];
+  activeTabId: string | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -56,6 +62,52 @@ function parseStoredProjects(value: unknown): RecentProject[] {
   }));
 }
 
+function createTerminalTabId(): string {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+  return `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+function createDefaultTerminalProjectState(): TerminalProjectState {
+  const tabId = createTerminalTabId();
+  return {
+    tabIds: [tabId],
+    activeTabId: tabId,
+  };
+}
+
+function normalizeTerminalProjectState(value: unknown): TerminalProjectState | null {
+  if (!value || typeof value !== "object") return null;
+  const candidate = value as Partial<TerminalProjectState>;
+  if (!Array.isArray(candidate.tabIds)) return null;
+
+  const tabIds = [...new Set(candidate.tabIds)]
+    .map((tabId) => (typeof tabId === "string" ? tabId.trim() : ""))
+    .filter((tabId) => tabId.length > 0);
+  if (tabIds.length === 0) return null;
+
+  const activeTabId =
+    typeof candidate.activeTabId === "string" && tabIds.includes(candidate.activeTabId)
+      ? candidate.activeTabId
+      : (tabIds[0] ?? null);
+
+  return { tabIds, activeTabId };
+}
+
+function parseStoredTerminalProjects(value: unknown): Record<string, TerminalProjectState> {
+  if (!value || typeof value !== "object") return {};
+
+  return Object.fromEntries(
+    Object.entries(value).flatMap(([projectPath, projectState]) => {
+      const normalizedProjectPath = projectPath.trim();
+      if (!normalizedProjectPath) return [];
+      const normalizedState = normalizeTerminalProjectState(projectState);
+      return normalizedState ? [[normalizedProjectPath, normalizedState] as const] : [];
+    }),
+  );
+}
+
 function stripProjectPath<T>(map: Record<string, T>, pathToRemove: string): Record<string, T> {
   if (!(pathToRemove in map)) return map;
   const next = { ...map };
@@ -79,7 +131,11 @@ function findLastPinnedIndex(projects: RecentProject[]): number {
   return -1;
 }
 
-function loadFromLocalStorage(): { projects: RecentProject[]; terminalApp: string | null } {
+function loadFromLocalStorage(): {
+  projects: RecentProject[];
+  terminalApp: string | null;
+  terminalProjects: Record<string, TerminalProjectState>;
+} {
   try {
     const recentProjects = parseStoredProjects(
       JSON.parse(localStorage.getItem(RECENT_PROJECTS_STORAGE_KEY) ?? "null"),
@@ -88,26 +144,35 @@ function loadFromLocalStorage(): { projects: RecentProject[]; terminalApp: strin
       JSON.parse(localStorage.getItem(LEGACY_RECENT_REPOS_STORAGE_KEY) ?? "[]"),
     );
     const terminalApp = localStorage.getItem(TERMINAL_APP_STORAGE_KEY);
+    const terminalProjects = parseStoredTerminalProjects(
+      JSON.parse(localStorage.getItem(TERMINAL_PROJECTS_STORAGE_KEY) ?? "{}"),
+    );
     return {
       projects: recentProjects.length > 0 ? recentProjects : fallbackRepos,
       terminalApp,
+      terminalProjects,
     };
   } catch {
-    return { projects: [], terminalApp: null };
+    return { projects: [], terminalApp: null, terminalProjects: {} };
   }
 }
 
-function saveSettings(projects: RecentProject[], terminalApp: string | null) {
+function saveSettings(
+  projects: RecentProject[],
+  terminalApp: string | null,
+  terminalProjects: Record<string, TerminalProjectState>,
+) {
   const normalizedProjects = normalizeProjects(projects);
   const recentRepos = normalizedProjects.map((project) => project.path);
 
   // Save to both localStorage (fast sync read) and file (survives restarts)
   localStorage.setItem(RECENT_PROJECTS_STORAGE_KEY, JSON.stringify(normalizedProjects));
   localStorage.setItem(LEGACY_RECENT_REPOS_STORAGE_KEY, JSON.stringify(recentRepos));
+  localStorage.setItem(TERMINAL_PROJECTS_STORAGE_KEY, JSON.stringify(terminalProjects));
   if (terminalApp) localStorage.setItem(TERMINAL_APP_STORAGE_KEY, terminalApp);
   else localStorage.removeItem(TERMINAL_APP_STORAGE_KEY);
 
-  persistToFile({ recentProjects: normalizedProjects, recentRepos, terminalApp });
+  persistToFile({ recentProjects: normalizedProjects, recentRepos, terminalApp, terminalProjects });
 }
 
 // ---------------------------------------------------------------------------
@@ -118,6 +183,7 @@ interface AppStore {
   repoCwd: string | null;
   recentProjects: RecentProject[];
   terminalApp: string | null;
+  terminalProjects: Record<string, TerminalProjectState>;
   gitBusyMap: Record<string, boolean>;
   gitResultMap: Record<string, "success" | "error" | null>;
   setRepoCwd: (cwd: string | null) => void;
@@ -126,6 +192,11 @@ interface AppStore {
   renameRecentRepo: (oldPath: string, newPath: string) => void;
   togglePinnedRepo: (cwd: string) => void;
   setTerminalApp: (app: string | null) => void;
+  ensureTerminalProject: (cwd: string) => void;
+  addTerminalTab: (cwd: string) => string;
+  closeTerminalTab: (cwd: string, tabId: string) => void;
+  setActiveTerminalTab: (cwd: string, tabId: string) => void;
+  removeTerminalProject: (cwd: string) => void;
   setGitBusy: (cwd: string, busy: boolean) => void;
   flashGitResult: (cwd: string, result: "success" | "error") => void;
 }
@@ -137,6 +208,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
   repoCwd: initial.projects[0]?.path ?? null,
   recentProjects: initial.projects,
   terminalApp: initial.terminalApp,
+  terminalProjects: initial.terminalProjects,
   gitBusyMap: {},
   gitResultMap: {},
 
@@ -147,7 +219,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
       if (!existing.some((project) => project.path === cwd)) {
         const recent = normalizeProjects([...existing, { path: cwd, pinned: false }]);
         set({ recentProjects: recent });
-        saveSettings(recent, get().terminalApp);
+        saveSettings(recent, get().terminalApp, get().terminalProjects);
       }
     }
   },
@@ -158,15 +230,17 @@ export const useAppStore = create<AppStore>((set, get) => ({
     set((state) => ({
       repoCwd: nextRepoCwd,
       recentProjects: recent,
+      terminalProjects: stripProjectPath(state.terminalProjects, cwd),
       gitBusyMap: stripProjectPath(state.gitBusyMap, cwd),
       gitResultMap: stripProjectPath(state.gitResultMap, cwd),
     }));
-    saveSettings(recent, get().terminalApp);
+    void window.electronAPI?.terminal.closeProject({ projectPath: cwd, deleteHistory: true });
+    saveSettings(recent, get().terminalApp, stripProjectPath(get().terminalProjects, cwd));
   },
 
   setTerminalApp: (app) => {
     set({ terminalApp: app });
-    saveSettings(get().recentProjects, app);
+    saveSettings(get().recentProjects, app, get().terminalProjects);
   },
 
   reorderRepos: (activePath, overPath) => {
@@ -183,7 +257,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
     projects.splice(newIndex, 0, moved);
     const normalizedProjects = normalizeProjects(projects);
     set({ recentProjects: normalizedProjects });
-    saveSettings(normalizedProjects, get().terminalApp);
+    saveSettings(normalizedProjects, get().terminalApp, get().terminalProjects);
   },
 
   renameRecentRepo: (oldPath, newPath) => {
@@ -197,10 +271,16 @@ export const useAppStore = create<AppStore>((set, get) => ({
     set((state) => ({
       repoCwd: state.repoCwd === oldPath ? normalizedPath : state.repoCwd,
       recentProjects: normalizedProjects,
+      terminalProjects: renameProjectPath(state.terminalProjects, oldPath, normalizedPath),
       gitBusyMap: renameProjectPath(state.gitBusyMap, oldPath, normalizedPath),
       gitResultMap: renameProjectPath(state.gitResultMap, oldPath, normalizedPath),
     }));
-    saveSettings(normalizedProjects, get().terminalApp);
+    void window.electronAPI?.terminal.renameProject({ oldPath, newPath: normalizedPath });
+    saveSettings(
+      normalizedProjects,
+      get().terminalApp,
+      renameProjectPath(get().terminalProjects, oldPath, normalizedPath),
+    );
   },
 
   togglePinnedRepo: (cwd) => {
@@ -221,7 +301,85 @@ export const useAppStore = create<AppStore>((set, get) => ({
 
     const normalizedProjects = normalizeProjects(projects);
     set({ recentProjects: normalizedProjects });
-    saveSettings(normalizedProjects, get().terminalApp);
+    saveSettings(normalizedProjects, get().terminalApp, get().terminalProjects);
+  },
+
+  ensureTerminalProject: (cwd) => {
+    const existing = get().terminalProjects[cwd];
+    if (existing) {
+      if (get().repoCwd !== cwd) {
+        set({ repoCwd: cwd });
+      }
+      return;
+    }
+
+    const nextTerminalProjects = {
+      ...get().terminalProjects,
+      [cwd]: createDefaultTerminalProjectState(),
+    };
+    set({ terminalProjects: nextTerminalProjects, repoCwd: cwd });
+    saveSettings(get().recentProjects, get().terminalApp, nextTerminalProjects);
+  },
+
+  addTerminalTab: (cwd) => {
+    const nextTabId = createTerminalTabId();
+    const existing = get().terminalProjects[cwd] ?? createDefaultTerminalProjectState();
+    const nextTerminalProjects = {
+      ...get().terminalProjects,
+      [cwd]: {
+        tabIds: [...existing.tabIds, nextTabId],
+        activeTabId: nextTabId,
+      },
+    };
+    set({ terminalProjects: nextTerminalProjects, repoCwd: cwd });
+    saveSettings(get().recentProjects, get().terminalApp, nextTerminalProjects);
+    return nextTabId;
+  },
+
+  closeTerminalTab: (cwd, tabId) => {
+    const existing = get().terminalProjects[cwd];
+    if (!existing || !existing.tabIds.includes(tabId)) return;
+
+    const nextTabIds = existing.tabIds.filter((id) => id !== tabId);
+    const nextTerminalProjects = { ...get().terminalProjects };
+    if (nextTabIds.length === 0) {
+      delete nextTerminalProjects[cwd];
+    } else {
+      nextTerminalProjects[cwd] = {
+        tabIds: nextTabIds,
+        activeTabId:
+          existing.activeTabId === tabId
+            ? (nextTabIds[nextTabIds.length - 1] ?? null)
+            : existing.activeTabId,
+      };
+    }
+
+    set({ terminalProjects: nextTerminalProjects });
+    void window.electronAPI?.terminal.closeSession({ projectPath: cwd, tabId, deleteHistory: true });
+    saveSettings(get().recentProjects, get().terminalApp, nextTerminalProjects);
+  },
+
+  setActiveTerminalTab: (cwd, tabId) => {
+    const existing = get().terminalProjects[cwd];
+    if (!existing || !existing.tabIds.includes(tabId) || existing.activeTabId === tabId) return;
+    const nextTerminalProjects = {
+      ...get().terminalProjects,
+      [cwd]: {
+        ...existing,
+        activeTabId: tabId,
+      },
+    };
+    set({ terminalProjects: nextTerminalProjects });
+    saveSettings(get().recentProjects, get().terminalApp, nextTerminalProjects);
+  },
+
+  removeTerminalProject: (cwd) => {
+    const existing = get().terminalProjects[cwd];
+    if (!existing) return;
+    const nextTerminalProjects = stripProjectPath(get().terminalProjects, cwd);
+    set({ terminalProjects: nextTerminalProjects });
+    void window.electronAPI?.terminal.closeProject({ projectPath: cwd, deleteHistory: true });
+    saveSettings(get().recentProjects, get().terminalApp, nextTerminalProjects);
   },
 
   setGitBusy: (cwd, busy) => set((s) => ({
@@ -241,6 +399,7 @@ window.electronAPI?.settings.load().then((file) => {
   const fallbackFileRepos = parseStoredProjects(file.recentRepos);
   const recentProjects = fileProjects.length > 0 ? fileProjects : fallbackFileRepos;
   const fileTermApp = (file.terminalApp as string | null) ?? null;
+  const fileTerminalProjects = parseStoredTerminalProjects(file.terminalProjects);
 
   // If localStorage was empty but file has data, restore from file
   if (state.recentProjects.length === 0 && recentProjects.length > 0) {
@@ -248,6 +407,7 @@ window.electronAPI?.settings.load().then((file) => {
       recentProjects,
       repoCwd: recentProjects[0]?.path ?? null,
       terminalApp: fileTermApp,
+      terminalProjects: fileTerminalProjects,
     });
     // Sync back to localStorage
     localStorage.setItem(RECENT_PROJECTS_STORAGE_KEY, JSON.stringify(recentProjects));
@@ -255,6 +415,16 @@ window.electronAPI?.settings.load().then((file) => {
       LEGACY_RECENT_REPOS_STORAGE_KEY,
       JSON.stringify(recentProjects.map((project) => project.path)),
     );
+    localStorage.setItem(TERMINAL_PROJECTS_STORAGE_KEY, JSON.stringify(fileTerminalProjects));
     if (fileTermApp) localStorage.setItem(TERMINAL_APP_STORAGE_KEY, fileTermApp);
+    return;
+  }
+
+  if (
+    Object.keys(state.terminalProjects).length === 0 &&
+    Object.keys(fileTerminalProjects).length > 0
+  ) {
+    useAppStore.setState({ terminalProjects: fileTerminalProjects });
+    localStorage.setItem(TERMINAL_PROJECTS_STORAGE_KEY, JSON.stringify(fileTerminalProjects));
   }
 });

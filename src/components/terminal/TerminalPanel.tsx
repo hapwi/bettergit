@@ -1,392 +1,266 @@
-import { useEffect, useRef, useState, useCallback, forwardRef, useImperativeHandle } from "react"
-import { Restty, getBuiltinTheme } from "restty"
-import type { GhosttyTheme } from "restty"
+import { FitAddon } from "@xterm/addon-fit"
+import { Terminal as XTermTerminal, type ITheme } from "@xterm/xterm"
 import { Plus, X } from "lucide-react"
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef } from "react"
+
+import { type TerminalProjectState, useAppStore } from "@/store"
 import { cn } from "@/lib/utils"
-import { serverFetch } from "@/lib/server"
 
-const TERMINAL_SHELL_BG = "#3b3d46"
+function normalizeComputedColor(value: string | null | undefined, fallback: string): string {
+  const normalizedValue = value?.trim().toLowerCase()
+  if (
+    !normalizedValue ||
+    normalizedValue === "transparent" ||
+    normalizedValue === "rgba(0, 0, 0, 0)" ||
+    normalizedValue === "rgba(0 0 0 / 0)"
+  ) {
+    return fallback
+  }
+  return value ?? fallback
+}
 
-// ---------------------------------------------------------------------------
-// WebSocket PtyTransport — one per pane (including splits)
-// ---------------------------------------------------------------------------
+function resolveThemeColor(cssVar: string, fallback: string): string {
+  const raw = getComputedStyle(document.documentElement).getPropertyValue(cssVar).trim()
+  if (!raw) return fallback
+  const probe = document.createElement("div")
+  probe.style.color = raw
+  probe.style.position = "absolute"
+  probe.style.visibility = "hidden"
+  document.body.appendChild(probe)
+  const resolved = getComputedStyle(probe).color
+  probe.remove()
+  return normalizeComputedColor(resolved, fallback)
+}
 
-function createWsPtyTransport(serverPort: number, cwd: string) {
-  let ws: WebSocket | null = null
-  let connected = false
-  let sessionId: string | null = null
-  let destroyed = false
-  let reconnectTimer: ReturnType<typeof setTimeout> | null = null
+function terminalThemeFromApp(): ITheme {
+  const isDark = document.documentElement.classList.contains("dark")
+  const fallbackBackground = isDark ? "rgb(46, 46, 46)" : "rgb(255, 255, 255)"
+  const fallbackForeground = isDark ? "rgb(237, 241, 247)" : "rgb(28, 33, 41)"
+  const background = resolveThemeColor("--card", fallbackBackground)
+  const foreground = resolveThemeColor("--foreground", fallbackForeground)
 
-  function connectWs(callbacks: {
-    onConnect?: () => void
-    onDisconnect?: () => void
-    onData?: (data: string) => void
-    onExit?: (code: number) => void
-  }) {
-    if (destroyed) return
-
-    ws = new WebSocket(`ws://127.0.0.1:${serverPort}/ws/pty?cwd=${encodeURIComponent(cwd)}`)
-
-    ws.onopen = () => {
-      ws!.send(JSON.stringify({ type: "create", cwd }))
-    }
-
-    ws.onmessage = (event) => {
-      try {
-        const msg = JSON.parse(event.data)
-        switch (msg.type) {
-          case "created":
-            sessionId = msg.sessionId
-            connected = true
-            callbacks.onConnect?.()
-            break
-          case "output":
-            callbacks.onData?.(msg.data)
-            break
-          case "exit":
-            connected = false
-            callbacks.onExit?.(msg.code ?? 0)
-            callbacks.onDisconnect?.()
-            break
-        }
-      } catch { /* ignore */ }
-    }
-
-    ws.onclose = () => {
-      const wasConnected = connected
-      connected = false
-      sessionId = null
-      ws = null
-      callbacks.onDisconnect?.()
-      // Reconnect if the socket dropped unexpectedly (was connected and we
-      // haven't been intentionally destroyed). Creates a fresh PTY session.
-      if (wasConnected && !destroyed) {
-        reconnectTimer = setTimeout(() => connectWs(callbacks), 500)
-      }
+  if (isDark) {
+    return {
+      background,
+      foreground,
+      cursor: "rgb(180, 203, 255)",
+      selectionBackground: "rgba(180, 203, 255, 0.25)",
+      black: "rgb(24, 30, 38)",
+      red: "rgb(255, 122, 142)",
+      green: "rgb(134, 231, 149)",
+      yellow: "rgb(244, 205, 114)",
+      blue: "rgb(137, 190, 255)",
+      magenta: "rgb(208, 176, 255)",
+      cyan: "rgb(124, 232, 237)",
+      white: "rgb(210, 218, 230)",
+      brightBlack: "rgb(110, 120, 136)",
+      brightRed: "rgb(255, 168, 180)",
+      brightGreen: "rgb(176, 245, 186)",
+      brightYellow: "rgb(255, 224, 149)",
+      brightBlue: "rgb(174, 210, 255)",
+      brightMagenta: "rgb(229, 203, 255)",
+      brightCyan: "rgb(167, 244, 247)",
+      brightWhite: "rgb(244, 247, 252)",
     }
   }
 
   return {
-    async connect(options: { callbacks: Parameters<typeof connectWs>[0] }) {
-      connectWs(options.callbacks)
-    },
-
-    disconnect() {
-      destroyed = true
-      if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null }
-      if (ws && sessionId) {
-        try { ws.send(JSON.stringify({ type: "destroy", sessionId })) } catch { /* */ }
-      }
-      ws?.close()
-      ws = null
-      connected = false
-      sessionId = null
-    },
-
-    sendInput(data: string) {
-      if (!connected || !ws || !sessionId) return false
-      ws.send(JSON.stringify({ type: "input", sessionId, data }))
-      return true
-    },
-
-    resize(cols: number, rows: number) {
-      if (!connected || !ws || !sessionId) return false
-      ws.send(JSON.stringify({ type: "resize", sessionId, cols, rows }))
-      return true
-    },
-
-    isConnected: () => connected,
-    destroy() { this.disconnect() },
+    background,
+    foreground,
+    cursor: "rgb(38, 56, 78)",
+    selectionBackground: "rgba(37, 63, 99, 0.2)",
+    black: "rgb(44, 53, 66)",
+    red: "rgb(191, 70, 87)",
+    green: "rgb(60, 126, 86)",
+    yellow: "rgb(146, 112, 35)",
+    blue: "rgb(72, 102, 163)",
+    magenta: "rgb(132, 86, 149)",
+    cyan: "rgb(53, 127, 141)",
+    white: "rgb(210, 215, 223)",
+    brightBlack: "rgb(112, 123, 140)",
+    brightRed: "rgb(212, 95, 112)",
+    brightGreen: "rgb(85, 148, 111)",
+    brightYellow: "rgb(173, 133, 45)",
+    brightBlue: "rgb(91, 124, 194)",
+    brightMagenta: "rgb(153, 107, 172)",
+    brightCyan: "rgb(70, 149, 164)",
+    brightWhite: "rgb(236, 240, 246)",
   }
 }
 
-// ---------------------------------------------------------------------------
-// Ghostty config
-// ---------------------------------------------------------------------------
-
-interface GhosttyConfig {
-  theme: string | null
-  fontFamily: string | null
-  fontSize: number | null
-  background: string | null
-  backgroundOpacity?: number | null
-  foreground: string | null
-  raw: Record<string, string>
+function writeSystemMessage(terminal: XTermTerminal, message: string): void {
+  terminal.write(`\r\n[terminal] ${message}\r\n`)
 }
 
-let cachedConfig: GhosttyConfig | null = null
-const MAX_SCROLLBACK_BYTES = 2_000_000
-let resttyScrollbarWorkaroundInstalled = false
-
-function installResttyScrollbarWorkaround() {
-  if (resttyScrollbarWorkaroundInstalled || typeof window === "undefined" || typeof window.matchMedia !== "function") {
-    return
-  }
-
-  const originalMatchMedia = window.matchMedia.bind(window)
-  window.matchMedia = ((query: string) => {
-    const result = originalMatchMedia(query)
-    if (query.trim() !== "(any-pointer: coarse)") {
-      return result
-    }
-
-    return {
-      ...result,
-      matches: true,
-      media: query,
-      onchange: result.onchange,
-      addListener: result.addListener ? result.addListener.bind(result) : undefined,
-      removeListener: result.removeListener ? result.removeListener.bind(result) : undefined,
-      addEventListener: result.addEventListener.bind(result),
-      removeEventListener: result.removeEventListener.bind(result),
-      dispatchEvent: result.dispatchEvent.bind(result),
-    } as MediaQueryList
-  }) as typeof window.matchMedia
-
-  resttyScrollbarWorkaroundInstalled = true
-}
-
-async function loadGhosttyConfig(): Promise<GhosttyConfig> {
-  if (cachedConfig) return cachedConfig
-  try {
-    cachedConfig = await serverFetch<GhosttyConfig>("/api/ghostty-config")
-    return cachedConfig
-  } catch {
-    return { theme: null, fontFamily: null, fontSize: null, background: null, backgroundOpacity: null, foreground: null, raw: {} }
+function writeTerminalSnapshot(terminal: XTermTerminal, history: string): void {
+  terminal.write("\u001bc")
+  if (history.length > 0) {
+    terminal.write(history)
   }
 }
 
-// ---------------------------------------------------------------------------
-// Single terminal tab — one Restty with split support
-// ---------------------------------------------------------------------------
-
-interface TerminalTab {
-  id: string
-  title: string
-}
-
-let tabCounter = 0
-
-function TerminalInstance({
-  cwd,
-  isActive,
-  serverPort,
-  ghosttyConfig,
-  resttyRef,
-}: {
+interface TerminalViewportProps {
+  projectPath: string
   cwd: string
+  tabId: string
   isActive: boolean
-  serverPort: number
-  ghosttyConfig: GhosttyConfig | null
-  resttyRef: React.MutableRefObject<Restty | null>
-}) {
+}
+
+function TerminalViewport({ projectPath, cwd, tabId, isActive }: TerminalViewportProps) {
   const containerRef = useRef<HTMLDivElement>(null)
-  const layoutFrameRef = useRef<number | null>(null)
+  const terminalRef = useRef<XTermTerminal | null>(null)
+  const fitAddonRef = useRef<FitAddon | null>(null)
 
-  const cancelScheduledLayoutSync = useCallback(() => {
-    if (layoutFrameRef.current !== null) {
-      cancelAnimationFrame(layoutFrameRef.current)
-      layoutFrameRef.current = null
-    }
-  }, [])
+  const fitAndResize = useCallback(() => {
+    const terminal = terminalRef.current
+    const fitAddon = fitAddonRef.current
+    if (!terminal || !fitAddon) return
 
-  const scheduleLayoutSync = useCallback((focusActivePane = false) => {
-    cancelScheduledLayoutSync()
-    layoutFrameRef.current = requestAnimationFrame(() => {
-      layoutFrameRef.current = null
-      const restty = resttyRef.current
-      if (!restty) return
-      restty.forEachPane((pane) => {
-        pane.updateSize(true)
-      })
-      if (focusActivePane) {
-        restty.activePane()?.focus()
-      }
-    })
-  }, [cancelScheduledLayoutSync, resttyRef])
-
-  useEffect(() => {
-    const container = containerRef.current
-    if (!container || !serverPort || !ghosttyConfig) return
-
-    installResttyScrollbarWorkaround()
-
-    let destroyed = false
-    const fontSize = ghosttyConfig.fontSize ?? 16
-
-    // Resolve the theme once for all panes in this instance
-    let resolvedTheme: GhosttyTheme | null = null
-    if (ghosttyConfig.theme) resolvedTheme = getBuiltinTheme(ghosttyConfig.theme)
-    if (!resolvedTheme) resolvedTheme = getBuiltinTheme("GitHub Dark")
-
-    const restty = new Restty({
-      root: container,
-      autoInit: false,
-      defaultContextMenu: false,
-      searchUi: false,
-      shortcuts: false,
-      onLayoutChanged: () => {
-        scheduleLayoutSync()
-      },
-      // Factory: called for each pane (initial + every split)
-      appOptions: () => ({
-        ptyTransport: createWsPtyTransport(serverPort, cwd),
-        fontSize,
-        fontSizeMode: "height" as const,
-        autoResize: true,
-        attachWindowEvents: true,
-        // Keep long-running sessions responsive instead of letting scrollback
-        // grow until the native scroll host and renderer bog down.
-        maxScrollbackBytes: MAX_SCROLLBACK_BYTES,
-      }),
-      onPaneCreated: (pane) => {
-        pane.app.init().then(() => {
-          if (destroyed) return
-          if (resolvedTheme) pane.app.applyTheme(resolvedTheme)
-          pane.app.connectPty()
-          pane.app.focus()
-        })
-      },
-    })
-    resttyRef.current = restty
-
-    return () => {
-      destroyed = true
-      cancelScheduledLayoutSync()
-      restty.destroy()
-      resttyRef.current = null
-    }
-  }, [cancelScheduledLayoutSync, cwd, ghosttyConfig, resttyRef, scheduleLayoutSync, serverPort])
-
-  // Pause/resume when visibility changes
-  useEffect(() => {
-    const restty = resttyRef.current
-    if (!restty) return
-
-    restty.forEachPane((pane) => {
-      pane.setPaused(!isActive)
-    })
-
-    if (!isActive) {
-      cancelScheduledLayoutSync()
-      restty.activePane()?.blur()
+    try {
+      fitAddon.fit()
+    } catch {
       return
     }
 
-    scheduleLayoutSync(true)
-  }, [cancelScheduledLayoutSync, isActive, resttyRef, scheduleLayoutSync])
+    void window.electronAPI?.terminal.resizeSession({
+      projectPath,
+      tabId,
+      cols: terminal.cols,
+      rows: terminal.rows,
+    }).catch(() => undefined)
+  }, [projectPath, tabId])
 
   useEffect(() => {
-    const container = containerRef.current
-    if (!container || typeof ResizeObserver === "undefined") return
+    const mount = containerRef.current
+    const terminalApi = window.electronAPI?.terminal
+    if (!mount || !terminalApi) return
 
-    const observer = new ResizeObserver(() => {
-      if (!isActive) return
-      scheduleLayoutSync()
+    const fitAddon = new FitAddon()
+    const terminal = new XTermTerminal({
+      cursorBlink: true,
+      lineHeight: 1.2,
+      fontSize: 12,
+      scrollback: 5_000,
+      fontFamily: '"SF Mono", "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace',
+      theme: terminalThemeFromApp(),
     })
 
-    observer.observe(container)
-    return () => observer.disconnect()
-  }, [isActive, scheduleLayoutSync])
+    terminal.loadAddon(fitAddon)
+    terminal.open(mount)
+    terminalRef.current = terminal
+    fitAddonRef.current = fitAddon
+
+    const unsubscribeEvents = terminalApi.onEvent((event) => {
+      if (event.projectPath !== projectPath || event.tabId !== tabId) return
+      if (event.type === "output" && event.data) {
+        terminal.write(event.data)
+        return
+      }
+      if (event.type === "error" && event.message) {
+        writeSystemMessage(terminal, event.message)
+        return
+      }
+      if (event.type === "exited") {
+        const details = [
+          typeof event.exitCode === "number" ? `code ${event.exitCode}` : null,
+          typeof event.exitSignal === "number" ? `signal ${event.exitSignal}` : null,
+        ]
+          .filter((value): value is string => value !== null)
+          .join(", ")
+        writeSystemMessage(
+          terminal,
+          details.length > 0 ? `Process exited (${details})` : "Process exited",
+        )
+      }
+    })
+
+    const inputDisposable = terminal.onData((data) => {
+      void terminalApi.writeToSession({ projectPath, tabId, data }).catch((error) => {
+        writeSystemMessage(
+          terminal,
+          error instanceof Error ? error.message : "Terminal write failed",
+        )
+      })
+    })
+
+    const resizeObserver =
+      typeof ResizeObserver === "undefined"
+        ? null
+        : new ResizeObserver(() => {
+            fitAndResize()
+          })
+    resizeObserver?.observe(mount)
+    window.addEventListener("resize", fitAndResize)
+
+    const themeObserver = new MutationObserver(() => {
+      const activeTerminal = terminalRef.current
+      if (!activeTerminal) return
+      activeTerminal.options.theme = terminalThemeFromApp()
+      activeTerminal.refresh(0, activeTerminal.rows - 1)
+    })
+    themeObserver.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ["class", "style"],
+    })
+
+    const boot = window.setTimeout(() => {
+      fitAndResize()
+      void terminalApi
+        .openSession({
+          projectPath,
+          tabId,
+          cwd,
+          cols: terminal.cols,
+          rows: terminal.rows,
+        })
+        .then((snapshot) => {
+          writeTerminalSnapshot(terminal, snapshot.history)
+          if (isActive) {
+            terminal.focus()
+          }
+        })
+        .catch((error) => {
+          writeSystemMessage(
+            terminal,
+            error instanceof Error ? error.message : "Failed to open terminal",
+          )
+        })
+    }, 20)
+
+    return () => {
+      window.clearTimeout(boot)
+      unsubscribeEvents()
+      inputDisposable.dispose()
+      resizeObserver?.disconnect()
+      window.removeEventListener("resize", fitAndResize)
+      themeObserver.disconnect()
+      terminalRef.current = null
+      fitAddonRef.current = null
+      terminal.dispose()
+    }
+  }, [cwd, fitAndResize, isActive, projectPath, tabId])
+
+  useEffect(() => {
+    if (!isActive) return
+    const frame = window.requestAnimationFrame(() => {
+      fitAndResize()
+      terminalRef.current?.focus()
+    })
+    return () => {
+      window.cancelAnimationFrame(frame)
+    }
+  }, [fitAndResize, isActive])
 
   return (
     <div
       ref={containerRef}
       className={cn(
-        "absolute inset-0",
+        "absolute left-4 right-0 top-1 bottom-4 overflow-hidden [&>.xterm]:h-full [&>.xterm]:bg-transparent [&_.xterm-viewport]:!bg-transparent [&_.xterm-screen]:bg-transparent [&_.xterm-helpers]:bg-transparent",
         !isActive && "pointer-events-none invisible",
       )}
     />
   )
 }
-
-function NativeTerminalInstance({
-  surfaceId,
-  cwd,
-  isActive,
-  backgroundColor,
-}: {
-  surfaceId: string
-  cwd: string
-  isActive: boolean
-  backgroundColor: string
-}) {
-  const containerRef = useRef<HTMLDivElement>(null)
-  const [created, setCreated] = useState(false)
-
-  const syncBounds = useCallback(() => {
-    if (!created) return
-    const container = containerRef.current
-    if (!container) return
-    const rect = container.getBoundingClientRect()
-    if (rect.width <= 0 || rect.height <= 0) return
-    void window.electronAPI?.terminalHost.setSurfaceBounds(surfaceId, {
-      x: Math.round(rect.left),
-      y: Math.round(rect.top),
-      width: Math.round(rect.width),
-      height: Math.round(rect.height),
-    })
-  }, [created, surfaceId])
-
-  useEffect(() => {
-    let cancelled = false
-    window.electronAPI?.terminalHost.createSurface(surfaceId, cwd).then((ok) => {
-      if (!cancelled) {
-        setCreated(ok)
-      }
-    }).catch(() => {
-      if (!cancelled) {
-        setCreated(false)
-      }
-    })
-
-    return () => {
-      cancelled = true
-      setCreated(false)
-      void window.electronAPI?.terminalHost.destroySurface(surfaceId)
-    }
-  }, [cwd, surfaceId])
-
-  useEffect(() => {
-    if (!created) return
-    syncBounds()
-    void window.electronAPI?.terminalHost.setSurfaceBackground(surfaceId, backgroundColor)
-    void window.electronAPI?.terminalHost.setSurfaceVisible(surfaceId, isActive)
-    if (isActive) {
-      void window.electronAPI?.terminalHost.focusSurface(surfaceId)
-    }
-  }, [backgroundColor, created, isActive, surfaceId, syncBounds])
-
-  useEffect(() => {
-    const container = containerRef.current
-    if (!container || typeof ResizeObserver === "undefined") return
-
-    const observer = new ResizeObserver(() => {
-      syncBounds()
-    })
-    observer.observe(container)
-    window.addEventListener("resize", syncBounds)
-    return () => {
-      observer.disconnect()
-      window.removeEventListener("resize", syncBounds)
-    }
-  }, [syncBounds])
-
-  return (
-    <div
-      ref={containerRef}
-      className={cn(
-        "absolute inset-0",
-        !isActive && "pointer-events-none invisible",
-      )}
-    />
-  )
-}
-
-// ---------------------------------------------------------------------------
-// TerminalPanel — multi-tab container with split support
-// ---------------------------------------------------------------------------
 
 export interface TerminalPanelHandle {
   closePaneOrTab: () => boolean
@@ -401,220 +275,133 @@ interface TerminalPanelProps {
   onAllTabsClosed?: () => void
 }
 
-export const TerminalPanel = forwardRef<TerminalPanelHandle, TerminalPanelProps>(function TerminalPanel({ cwd, isVisible, onAllTabsClosed }, ref) {
-  const [tabs, setTabs] = useState<TerminalTab[]>(() => {
-    const id = String(++tabCounter)
-    return [{ id, title: "Terminal" }]
-  })
-  const [activeTabId, setActiveTabId] = useState(() => tabs[0].id)
-  const [serverPort, setServerPort] = useState(0)
-  const [ghosttyConfig, setGhosttyConfig] = useState<GhosttyConfig | null>(null)
-  const [cardBg] = useState(TERMINAL_SHELL_BG)
-  const [nativeHostAvailable, setNativeHostAvailable] = useState(false)
-  const hadTabsRef = useRef(tabs.length > 0)
-
-  // One restty ref per tab
-  const resttyRefs = useRef(new Map<string, React.MutableRefObject<Restty | null>>())
-
-  function getResttyRef(tabId: string) {
-    let ref = resttyRefs.current.get(tabId)
-    if (!ref) {
-      ref = { current: null }
-      resttyRefs.current.set(tabId, ref)
-    }
-    return ref
+function activeTabIdFromPanel(panelState: TerminalProjectState | null): string | null {
+  if (!panelState) return null
+  if (panelState.activeTabId && panelState.tabIds.includes(panelState.activeTabId)) {
+    return panelState.activeTabId
   }
+  return panelState.tabIds[0] ?? null
+}
 
-  // Load server port + Ghostty config once
-  useEffect(() => {
-    window.electronAPI?.server.getPort().then((port) => setServerPort(port))
-    window.electronAPI?.terminalHost.isAvailable().then(async (available) => {
-      setNativeHostAvailable(available)
-    }).catch(() => setNativeHostAvailable(false))
-    loadGhosttyConfig().then((config) => {
-      setGhosttyConfig(config)
-    })
-  }, [])
+export const TerminalPanel = forwardRef<TerminalPanelHandle, TerminalPanelProps>(function TerminalPanel(
+  { cwd, isVisible, onAllTabsClosed },
+  ref,
+) {
+  const panelState = useAppStore((s) => s.terminalProjects[cwd] ?? null)
+  const addTerminalTab = useAppStore((s) => s.addTerminalTab)
+  const closeTerminalTab = useAppStore((s) => s.closeTerminalTab)
+  const setActiveTerminalTab = useAppStore((s) => s.setActiveTerminalTab)
+  const hadTabsRef = useRef(Boolean(panelState && panelState.tabIds.length > 0))
 
-  const addTab = useCallback(() => {
-    const id = String(++tabCounter)
-    const num = tabs.length + 1
-    setTabs((prev) => [...prev, { id, title: `Terminal ${num}` }])
-    setActiveTabId(id)
-  }, [tabs.length])
-
-  const closeTab = useCallback(
-    (id: string) => {
-      // Don't delete the restty ref here — the TerminalInstance's cleanup
-      // effect handles destroying the Restty instance. Eagerly deleting the
-      // ref before React unmounts the component can leave the active tab's
-      // ref temporarily missing, causing blank terminals.
-      setTabs((prev) => {
-        const next = prev.filter((t) => t.id !== id)
-        if (next.length === 0) {
-          setActiveTabId("")
-          return []
-        }
-        if (activeTabId === id) {
-          setActiveTabId(next[next.length - 1].id)
-        }
-        // Renumber titles
-        return next.map((t, i) => ({
-          ...t,
-          title: i === 0 ? "Terminal" : `Terminal ${i + 1}`,
-        }))
-      })
-    },
-    [activeTabId],
-  )
-
-  // Clean up stale restty refs after tabs are removed and components unmount
-  useEffect(() => {
-    const tabIds = new Set(tabs.map((t) => t.id))
-    for (const id of resttyRefs.current.keys()) {
-      if (!tabIds.has(id)) {
-        resttyRefs.current.delete(id)
-      }
-    }
-  }, [tabs])
+  const activeTabId = activeTabIdFromPanel(panelState)
 
   useEffect(() => {
-    if (tabs.length > 0) {
+    const hasTabs = Boolean(panelState && panelState.tabIds.length > 0)
+    if (hasTabs) {
       hadTabsRef.current = true
       return
     }
     if (!hadTabsRef.current) return
     hadTabsRef.current = false
     onAllTabsClosed?.()
-  }, [onAllTabsClosed, tabs.length])
+  }, [onAllTabsClosed, panelState])
 
-  // Expose closePaneOrTab to parent via ref
   const closePaneOrTab = useCallback((): boolean => {
-    if (nativeHostAvailable) {
-      if (tabs.length >= 1) {
-        closeTab(activeTabId)
-        return true
-      }
-      return false
-    }
+    if (!activeTabId) return false
+    closeTerminalTab(cwd, activeTabId)
+    return true
+  }, [activeTabId, closeTerminalTab, cwd])
 
-    const resttyRefObj = resttyRefs.current.get(activeTabId)
-    const restty = resttyRefObj?.current
+  const addTab = useCallback(() => {
+    addTerminalTab(cwd)
+  }, [addTerminalTab, cwd])
 
-    // First try to close a split pane within the active tab
-    if (restty) {
-      const panes = restty.getPanes()
-      if (panes.length > 1) {
-        const active = restty.getActivePane()
-        if (active) {
-          restty.closePane(active.id)
-          return true
-        }
-      }
-    }
+  useImperativeHandle(
+    ref,
+    () => ({
+      closePaneOrTab,
+      splitVertical: () => undefined,
+      splitHorizontal: () => undefined,
+      addTab,
+    }),
+    [addTab, closePaneOrTab],
+  )
 
-    // Close the active tab
-    if (tabs.length >= 1) {
-      closeTab(activeTabId)
-      return true
-    }
-
-    // Nothing left to close — signal to caller
-    return false
-  }, [activeTabId, tabs.length, closeTab, nativeHostAvailable])
-
-  const splitVertical = useCallback(() => {
-    return
-  }, [])
-
-  const splitHorizontal = useCallback(() => {
-    return
-  }, [])
-
-  useImperativeHandle(ref, () => ({ closePaneOrTab, splitVertical, splitHorizontal, addTab }), [closePaneOrTab, splitVertical, splitHorizontal, addTab])
+  if (!panelState || panelState.tabIds.length === 0) {
+    return (
+      <div className="flex h-full items-center justify-center p-6">
+        <button
+          type="button"
+          onClick={addTab}
+          className="flex items-center gap-2 rounded-lg border border-dashed border-border/70 bg-card/60 px-5 py-3 text-sm text-muted-foreground transition-colors hover:border-border hover:bg-muted/60 hover:text-foreground"
+        >
+          <Plus className="size-4" />
+          New Terminal
+        </button>
+      </div>
+    )
+  }
 
   return (
-    <div className="flex h-full w-full flex-col bg-background p-4">
-      <div
-        className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-white/[0.08] shadow-2xl"
-        style={{ backgroundColor: cardBg }}
-      >
-        {/* Tab bar */}
-        <div className="flex shrink-0 items-center gap-1 px-3 pt-2 pb-1">
-          <div className="flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto">
-            {tabs.map((tab) => (
-              <button
-                key={tab.id}
-                type="button"
-                onClick={() => setActiveTabId(tab.id)}
+    <div className="flex h-full min-h-0 flex-col overflow-hidden rounded-4xl bg-card shadow-md ring-1 ring-foreground/5 dark:ring-foreground/10">
+      <div className="flex h-10 shrink-0 items-center gap-1 px-4 pt-1">
+        <div className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto">
+          {panelState.tabIds.map((tabId, index) => {
+            const isTabActive = activeTabId === tabId
+            const label = index === 0 ? "Terminal" : `Terminal ${index + 1}`
+            return (
+              <div
+                key={tabId}
                 className={cn(
-                  "group flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-medium transition-colors",
-                  activeTabId === tab.id
-                    ? "bg-white/[0.08] text-white/80"
-                    : "text-white/30 hover:text-white/50",
+                  "group flex shrink-0 items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs transition-colors",
+                  isTabActive
+                    ? "bg-muted text-foreground"
+                    : "text-muted-foreground hover:bg-muted/50 hover:text-foreground",
                 )}
               >
-                <span className="truncate">{tab.title}</span>
-                <span
-                  role="button"
-                  onClick={(e) => { e.stopPropagation(); closeTab(tab.id) }}
-                  className="rounded p-0.5 opacity-0 transition-opacity hover:bg-white/[0.08] group-hover:opacity-100"
+                <button
+                  type="button"
+                  onClick={() => setActiveTerminalTab(cwd, tabId)}
+                  className="truncate font-medium"
                 >
-                  <X className="size-2.5" />
-                </span>
-              </button>
-            ))}
-          </div>
-
-          {/* Add button */}
-          <div className="flex shrink-0 items-center gap-0.5">
-            <button
-              type="button"
-              onClick={addTab}
-              className="rounded-md p-1 text-white/30 transition-colors hover:bg-white/[0.06] hover:text-white/60"
-              title="New terminal"
-            >
-              <Plus className="size-3.5" />
-            </button>
-          </div>
+                  {label}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => closeTerminalTab(cwd, tabId)}
+                  className="rounded p-0.5 text-muted-foreground/50 opacity-0 transition-opacity hover:text-foreground group-hover:opacity-100"
+                  aria-label={`Close ${label}`}
+                >
+                  <X className="size-3" />
+                </button>
+              </div>
+            )
+          })}
         </div>
 
-        {/* Terminal instances */}
-        <div className="relative min-h-0 flex-1 overflow-hidden rounded-b-[11px] m-2 mt-0">
-          {tabs.length === 0 ? (
-            <div className="flex h-full items-center justify-center">
-              <button
-                type="button"
-                onClick={addTab}
-                className="flex items-center gap-2 rounded-lg px-4 py-2 text-sm text-white/30 transition-colors hover:bg-white/[0.06] hover:text-white/50"
-              >
-                <Plus className="size-4" />
-                New Terminal
-              </button>
-            </div>
-          ) : (
-            tabs.map((tab) => (
-              nativeHostAvailable ? (
-                <NativeTerminalInstance
-                  key={tab.id}
-                  surfaceId={tab.id}
-                  cwd={cwd}
-                  isActive={isVisible && activeTabId === tab.id}
-                  backgroundColor={cardBg}
-                />
-              ) : (
-                <TerminalInstance
-                  key={tab.id}
-                  cwd={cwd}
-                  isActive={isVisible && activeTabId === tab.id}
-                  serverPort={serverPort}
-                  ghosttyConfig={ghosttyConfig}
-                  resttyRef={getResttyRef(tab.id)}
-                />
-              )
-            ))
-          )}
-        </div>
+        <button
+          type="button"
+          onClick={addTab}
+          className="shrink-0 rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+          aria-label="New terminal tab"
+        >
+          <Plus className="size-3.5" />
+        </button>
+      </div>
+
+      <div
+        data-terminal-panel-body
+        className="relative min-h-0 flex-1 overflow-hidden bg-card"
+      >
+        {panelState.tabIds.map((tabId) => (
+          <TerminalViewport
+            key={tabId}
+            projectPath={cwd}
+            cwd={cwd}
+            tabId={tabId}
+            isActive={isVisible && activeTabId === tabId}
+          />
+        ))}
       </div>
     </div>
   )

@@ -16,26 +16,31 @@ contextBridge.exposeInMainWorld("electronAPI", {
     renameDirectory: (currentPath: string, newName: string): Promise<string> =>
       ipcRenderer.invoke("project:renameDirectory", currentPath, newName),
   },
-  terminalHost: {
-    isAvailable: (): Promise<boolean> => ipcRenderer.invoke("terminal-host:isAvailable"),
-    createSurface: (surfaceId: string, cwd: string): Promise<boolean> =>
-      ipcRenderer.invoke("terminal-host:createSurface", surfaceId, cwd),
-    destroySurface: (surfaceId: string): Promise<void> =>
-      ipcRenderer.invoke("terminal-host:destroySurface", surfaceId),
-    setSurfaceBounds: (
-      surfaceId: string,
-      bounds: { x: number; y: number; width: number; height: number },
-    ): Promise<void> => ipcRenderer.invoke("terminal-host:setSurfaceBounds", surfaceId, bounds),
-    getResolvedAppearance: (): Promise<{ backgroundColor?: string; backgroundOpacity?: number } | undefined> =>
-      ipcRenderer.invoke("terminal-host:getResolvedAppearance"),
-    setSurfaceBackground: (surfaceId: string, color: string): Promise<void> =>
-      ipcRenderer.invoke("terminal-host:setSurfaceBackground", surfaceId, color),
-    setSurfaceVisible: (surfaceId: string, visible: boolean): Promise<void> =>
-      ipcRenderer.invoke("terminal-host:setSurfaceVisible", surfaceId, visible),
-    focusSurface: (surfaceId: string): Promise<void> =>
-      ipcRenderer.invoke("terminal-host:focusSurface", surfaceId),
-    splitSurface: (surfaceId: string, direction: "right" | "down" | "left" | "up"): Promise<void> =>
-      ipcRenderer.invoke("terminal-host:splitSurface", surfaceId, direction),
+  terminal: {
+    openSession: (input: {
+      projectPath: string;
+      tabId: string;
+      cwd: string;
+      cols: number;
+      rows: number;
+    }) => ipcRenderer.invoke("terminal:openSession", input),
+    writeToSession: (input: { projectPath: string; tabId: string; data: string }) =>
+      ipcRenderer.invoke("terminal:writeToSession", input),
+    resizeSession: (input: { projectPath: string; tabId: string; cols: number; rows: number }) =>
+      ipcRenderer.invoke("terminal:resizeSession", input),
+    closeSession: (input: { projectPath: string; tabId: string; deleteHistory?: boolean }) =>
+      ipcRenderer.invoke("terminal:closeSession", input),
+    closeProject: (input: { projectPath: string; deleteHistory?: boolean }) =>
+      ipcRenderer.invoke("terminal:closeProject", input),
+    renameProject: (input: { oldPath: string; newPath: string }) =>
+      ipcRenderer.invoke("terminal:renameProject", input),
+    onEvent: (callback: (event: unknown) => void): (() => void) => {
+      const handler = (_event: Electron.IpcRendererEvent, payload: unknown) => callback(payload);
+      ipcRenderer.on("terminal:event", handler);
+      return () => {
+        ipcRenderer.removeListener("terminal:event", handler);
+      };
+    },
   },
   settings: {
     load: (): Promise<Record<string, unknown>> => ipcRenderer.invoke("settings:load"),
