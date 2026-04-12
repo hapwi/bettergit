@@ -19,24 +19,25 @@ function normalizeComputedColor(value: string | null | undefined, fallback: stri
   return value ?? fallback
 }
 
-function terminalThemeFromApp(mountElement?: HTMLElement | null): ITheme {
+function resolveThemeColor(cssVar: string, fallback: string): string {
+  const raw = getComputedStyle(document.documentElement).getPropertyValue(cssVar).trim()
+  if (!raw) return fallback
+  const probe = document.createElement("div")
+  probe.style.color = raw
+  probe.style.position = "absolute"
+  probe.style.visibility = "hidden"
+  document.body.appendChild(probe)
+  const resolved = getComputedStyle(probe).color
+  probe.remove()
+  return normalizeComputedColor(resolved, fallback)
+}
+
+function terminalThemeFromApp(): ITheme {
   const isDark = document.documentElement.classList.contains("dark")
-  const fallbackBackground = isDark ? "rgb(14, 18, 24)" : "rgb(255, 255, 255)"
+  const fallbackBackground = isDark ? "rgb(46, 46, 46)" : "rgb(255, 255, 255)"
   const fallbackForeground = isDark ? "rgb(237, 241, 247)" : "rgb(28, 33, 41)"
-  const surface =
-    mountElement?.closest("[data-terminal-surface]") ??
-    mountElement?.closest("[data-terminal-panel-body]") ??
-    document.body
-  const surfaceStyles = getComputedStyle(surface)
-  const bodyStyles = getComputedStyle(document.body)
-  const background = normalizeComputedColor(
-    surfaceStyles.backgroundColor,
-    normalizeComputedColor(bodyStyles.backgroundColor, fallbackBackground),
-  )
-  const foreground = normalizeComputedColor(
-    surfaceStyles.color,
-    normalizeComputedColor(bodyStyles.color, fallbackForeground),
-  )
+  const background = resolveThemeColor("--card", fallbackBackground)
+  const foreground = resolveThemeColor("--card-foreground", fallbackForeground)
 
   if (isDark) {
     return {
@@ -141,7 +142,7 @@ function TerminalViewport({ projectPath, cwd, tabId, isActive }: TerminalViewpor
       fontSize: 12,
       scrollback: 5_000,
       fontFamily: '"SF Mono", "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace',
-      theme: terminalThemeFromApp(mount),
+      theme: terminalThemeFromApp(),
     })
 
     terminal.loadAddon(fitAddon)
@@ -194,7 +195,7 @@ function TerminalViewport({ projectPath, cwd, tabId, isActive }: TerminalViewpor
     const themeObserver = new MutationObserver(() => {
       const activeTerminal = terminalRef.current
       if (!activeTerminal) return
-      activeTerminal.options.theme = terminalThemeFromApp(containerRef.current)
+      activeTerminal.options.theme = terminalThemeFromApp()
       activeTerminal.refresh(0, activeTerminal.rows - 1)
     })
     themeObserver.observe(document.documentElement, {
@@ -254,7 +255,7 @@ function TerminalViewport({ projectPath, cwd, tabId, isActive }: TerminalViewpor
     <div
       ref={containerRef}
       className={cn(
-        "absolute inset-x-3 bottom-3 top-12 overflow-hidden rounded-[18px]",
+        "absolute inset-0 overflow-hidden [&>.xterm]:px-4 [&>.xterm]:pb-4 [&>.xterm]:pt-2",
         !isActive && "pointer-events-none invisible",
       )}
     />
@@ -293,7 +294,6 @@ export const TerminalPanel = forwardRef<TerminalPanelHandle, TerminalPanelProps>
   const hadTabsRef = useRef(Boolean(panelState && panelState.tabIds.length > 0))
 
   const activeTabId = activeTabIdFromPanel(panelState)
-  const projectName = cwd.split("/").filter(Boolean).pop() ?? cwd
 
   useEffect(() => {
     const hasTabs = Boolean(panelState && panelState.tabIds.length > 0)
@@ -343,14 +343,9 @@ export const TerminalPanel = forwardRef<TerminalPanelHandle, TerminalPanelProps>
   }
 
   return (
-    <div className="flex h-full min-h-0 flex-col overflow-hidden rounded-2xl border border-border/60 bg-card/50 shadow-sm">
-      <div className="flex min-h-14 shrink-0 items-center gap-3 border-b border-border/60 px-4">
-        <div className="min-w-0 shrink-0">
-          <p className="truncate text-sm font-semibold text-foreground">{projectName}</p>
-          <p className="truncate text-[11px] text-muted-foreground">{cwd}</p>
-        </div>
-
-        <div className="flex min-w-0 flex-1 items-center gap-2 overflow-x-auto">
+    <div className="flex h-full min-h-0 flex-col overflow-hidden rounded-4xl bg-card shadow-md ring-1 ring-foreground/5 dark:ring-foreground/10">
+      <div className="flex h-10 shrink-0 items-center gap-1 px-4 pt-1">
+        <div className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto">
           {panelState.tabIds.map((tabId, index) => {
             const isTabActive = activeTabId === tabId
             const label = index === 0 ? "Terminal" : `Terminal ${index + 1}`
@@ -358,10 +353,10 @@ export const TerminalPanel = forwardRef<TerminalPanelHandle, TerminalPanelProps>
               <div
                 key={tabId}
                 className={cn(
-                  "group flex shrink-0 items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs transition-colors",
+                  "group flex shrink-0 items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs transition-colors",
                   isTabActive
-                    ? "border-border bg-background text-foreground"
-                    : "border-transparent bg-transparent text-muted-foreground hover:bg-muted/60 hover:text-foreground",
+                    ? "bg-muted text-foreground"
+                    : "text-muted-foreground hover:bg-muted/50 hover:text-foreground",
                 )}
               >
                 <button
@@ -374,7 +369,7 @@ export const TerminalPanel = forwardRef<TerminalPanelHandle, TerminalPanelProps>
                 <button
                   type="button"
                   onClick={() => closeTerminalTab(cwd, tabId)}
-                  className="rounded p-0.5 text-muted-foreground/70 transition-colors hover:bg-muted hover:text-foreground"
+                  className="rounded p-0.5 text-muted-foreground/50 opacity-0 transition-opacity hover:text-foreground group-hover:opacity-100"
                   aria-label={`Close ${label}`}
                 >
                   <X className="size-3" />
@@ -384,30 +379,24 @@ export const TerminalPanel = forwardRef<TerminalPanelHandle, TerminalPanelProps>
           })}
         </div>
 
-        <div className="shrink-0">
-          <button
-            type="button"
-            onClick={addTab}
-            className="rounded-md border border-border/70 bg-background/80 p-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-            aria-label="New terminal tab"
-          >
-            <Plus className="size-4" />
-          </button>
-        </div>
+        <button
+          type="button"
+          onClick={addTab}
+          className="shrink-0 rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+          aria-label="New terminal tab"
+        >
+          <Plus className="size-3.5" />
+        </button>
       </div>
 
       <div
         data-terminal-panel-body
-        className="min-h-0 flex-1 overflow-hidden p-3"
+        className="min-h-0 flex-1 overflow-hidden"
       >
         <div
           data-terminal-surface
-          className="relative h-full min-h-0 overflow-hidden rounded-xl border border-border/70 bg-[#0b0d10]"
+          className="relative h-full min-h-0 overflow-hidden bg-card"
         >
-          <div className="pointer-events-none absolute inset-x-0 top-0 z-10 h-9 border-b border-white/5 bg-white/[0.02]" />
-          <div className="pointer-events-none absolute inset-x-0 top-0 z-10 flex h-9 items-center px-4 text-[11px] font-medium text-white/45">
-            {activeTabId ? `~/ ${projectName}` : "Terminal"}
-          </div>
           {panelState.tabIds.map((tabId) => (
             <TerminalViewport
               key={tabId}
