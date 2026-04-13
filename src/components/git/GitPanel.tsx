@@ -98,7 +98,7 @@ export function GitPanel({ isActive }: { isActive: boolean }) {
   );
   const { data: branches = [] } = useQuery(gitBranchesQueryOptions(repoCwd, { enabled: isEnabled }));
   const { data: openPrs = [] } = useQuery(gitOpenPrsQueryOptions(repoCwd, { enabled: isEnabled }));
-  const hasOriginRemote = branches.some((b) => b.name.startsWith("origin/") || b.upstream?.startsWith("origin/"));
+  const hasOriginRemote = gitStatus?.hasOriginRemote ?? false;
 
   // State
   const [isCommitDialogOpen, setIsCommitDialogOpen] = useState(false);
