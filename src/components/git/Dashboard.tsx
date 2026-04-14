@@ -6,8 +6,6 @@ import {
   Area,
   AreaChart,
   XAxis,
-  YAxis,
-  CartesianGrid,
   Pie,
   PieChart,
   Cell,
@@ -58,6 +56,26 @@ const PIE_COLORS = [
   "var(--chart-4)",
   "var(--chart-5)",
 ];
+
+function toSafeChartValue(value: unknown): number {
+  const parsed = typeof value === "number" ? value : Number(value)
+  if (!Number.isFinite(parsed) || parsed < 0) {
+    return 0
+  }
+  return Math.round(parsed)
+}
+
+function formatDayLabel(date: string): string {
+  const parsed = new Date(`${date}T00:00:00`)
+  if (Number.isNaN(parsed.getTime())) {
+    return date
+  }
+
+  return parsed.toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+  })
+}
 
 function SectionTitle({
   icon,
@@ -125,12 +143,9 @@ export function Dashboard({ isActive }: { isActive: boolean }) {
     const weeks: Array<{ week: string; commits: number }> = [];
     for (let i = 0; i < stats.dailyActivity.length; i += 7) {
       const slice = stats.dailyActivity.slice(i, i + 7);
-      const commits = slice.reduce((sum, d) => sum + d.commits, 0);
+      const commits = slice.reduce((sum, d) => sum + toSafeChartValue(d.commits), 0);
       const startDate = slice[0]?.date ?? "";
-      const label = new Date(startDate + "T00:00:00").toLocaleDateString("en-US", {
-        month: "short",
-        day: "numeric",
-      });
+      const label = formatDayLabel(startDate);
       weeks.push({ week: label, commits });
     }
     return weeks;
@@ -139,12 +154,9 @@ export function Dashboard({ isActive }: { isActive: boolean }) {
   const recentChanges = useMemo(() => {
     if (!stats) return [];
     return stats.dailyActivity.slice(-14).map((d) => ({
-      date: new Date(d.date + "T00:00:00").toLocaleDateString("en-US", {
-        month: "short",
-        day: "numeric",
-      }),
-      insertions: d.insertions,
-      deletions: d.deletions,
+      date: formatDayLabel(d.date),
+      insertions: toSafeChartValue(d.insertions),
+      deletions: toSafeChartValue(d.deletions),
     }));
   }, [stats]);
 
@@ -211,9 +223,7 @@ export function Dashboard({ isActive }: { isActive: boolean }) {
               {weeklyActivity.length > 0 ? (
                 <ChartContainer config={activityConfig} className="h-40 w-full">
                   <BarChart data={weeklyActivity} margin={{ top: 8, right: 4, bottom: 0, left: -20 }}>
-                    <CartesianGrid vertical={false} strokeDasharray="3 3" className="stroke-border/30" />
                     <XAxis dataKey="week" tickLine={false} axisLine={false} fontSize={10} />
-                    <YAxis tickLine={false} axisLine={false} fontSize={10} allowDecimals={false} />
                     <ChartTooltip content={<ChartTooltipContent />} />
                     <Bar dataKey="commits" fill="var(--color-commits)" radius={[6, 6, 0, 0]} />
                   </BarChart>
@@ -233,9 +243,7 @@ export function Dashboard({ isActive }: { isActive: boolean }) {
               {recentChanges.some((d) => d.insertions > 0 || d.deletions > 0) ? (
                 <ChartContainer config={changesConfig} className="h-40 w-full">
                   <AreaChart data={recentChanges} margin={{ top: 8, right: 4, bottom: 0, left: -20 }}>
-                    <CartesianGrid vertical={false} strokeDasharray="3 3" className="stroke-border/30" />
                     <XAxis dataKey="date" tickLine={false} axisLine={false} fontSize={10} />
-                    <YAxis tickLine={false} axisLine={false} fontSize={10} allowDecimals={false} />
                     <ChartTooltip content={<ChartTooltipContent />} />
                     <defs>
                       <linearGradient id="fillIns" x1="0" y1="0" x2="0" y2="1">
