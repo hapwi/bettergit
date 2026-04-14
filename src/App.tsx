@@ -140,7 +140,7 @@ function Toolbar({
 }
 
 function AppContent() {
-  const [activeTab, setActiveTab] = useState<ActiveTab>("dashboard")
+  const [activeTab, setActiveTab] = useState<ActiveTab>("git")
   const [isDiffOpen, setIsDiffOpen] = useState(false)
   const repoCwd = useAppStore((s) => s.repoCwd)
   const terminalProjects = useAppStore((s) => s.terminalProjects)
@@ -207,7 +207,7 @@ function AppContent() {
             activeTab === "dashboard" ? "z-10" : "hidden"
           )}>
             <Suspense fallback={null}>
-              <Dashboard isActive={activeTab === "dashboard"} />
+              {activeTab === "dashboard" ? <Dashboard isActive /> : null}
             </Suspense>
           </div>
           <div className={cn(

@@ -6,6 +6,7 @@ import { getStatus } from "./status";
 import { listBranches } from "./branches";
 import { getFullDiffPatch } from "./commits";
 import { listOpenPullRequests } from "./github";
+import type { GitStatus } from "./status";
 
 export const gitQueryKeys = {
   all: ["git"] as const,
@@ -14,6 +15,41 @@ export const gitQueryKeys = {
   diffPatch: (cwd: string | null) => ["git", "diffPatch", cwd] as const,
   openPrs: (cwd: string | null) => ["git", "open-prs", cwd] as const,
 };
+
+const STATUS_FAST_POLL_MS = 5_000;
+const STATUS_MEDIUM_POLL_MS = 15_000;
+const STATUS_IDLE_POLL_MS = 30_000;
+const BRANCHES_POLL_MS = 60_000;
+const OPEN_PRS_POLL_MS = 60_000;
+
+function isWindowVisible(): boolean {
+  if (typeof document === "undefined") return true;
+  return document.visibilityState === "visible";
+}
+
+function resolveStatusRefetchInterval(status: GitStatus | undefined): number | false {
+  if (!isWindowVisible()) return false;
+  if (!status) return STATUS_MEDIUM_POLL_MS;
+
+  if (
+    status.hasWorkingTreeChanges ||
+    status.aheadCount > 0 ||
+    status.behindCount > 0 ||
+    !status.hasCommits
+  ) {
+    return STATUS_FAST_POLL_MS;
+  }
+
+  if (!status.hasUpstream || !status.hasOriginRemote) {
+    return STATUS_MEDIUM_POLL_MS;
+  }
+
+  return STATUS_IDLE_POLL_MS;
+}
+
+function resolveVisibleRefetchInterval(intervalMs: number): number | false {
+  return isWindowVisible() ? intervalMs : false;
+}
 
 export function invalidateGitQueries(queryClient: QueryClient) {
   return queryClient.invalidateQueries({
@@ -35,8 +71,12 @@ export function gitStatusQueryOptions(
     enabled: options?.enabled ?? cwd !== null,
     staleTime: 10_000,
     gcTime: 5 * 60_000,
-    refetchInterval: options?.refetchInterval ?? 5_000,
-    refetchOnWindowFocus: "always" as const,
+    refetchInterval: (query) => {
+      if (options?.refetchInterval !== undefined) return options.refetchInterval;
+      return resolveStatusRefetchInterval(query.state.data as GitStatus | undefined);
+    },
+    refetchOnWindowFocus: true,
+    refetchIntervalInBackground: false,
     placeholderData: keepPreviousData,
   });
 }
@@ -63,7 +103,8 @@ export function gitBranchesQueryOptions(
     enabled: options?.enabled ?? cwd !== null,
     staleTime: 30_000,
     gcTime: 5 * 60_000,
-    refetchInterval: 30_000,
+    refetchInterval: () => resolveVisibleRefetchInterval(BRANCHES_POLL_MS),
+    refetchIntervalInBackground: false,
     placeholderData: keepPreviousData,
   });
 }
@@ -80,7 +121,8 @@ export function gitOpenPrsQueryOptions(
     enabled: options?.enabled ?? cwd !== null,
     staleTime: 15_000,
     gcTime: 5 * 60_000,
-    refetchInterval: 30_000,
+    refetchInterval: () => resolveVisibleRefetchInterval(OPEN_PRS_POLL_MS),
+    refetchIntervalInBackground: false,
     placeholderData: keepPreviousData,
   });
 }
