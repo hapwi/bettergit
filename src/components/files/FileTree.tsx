@@ -130,7 +130,7 @@ function InlineInput({
         placeholder={placeholder}
         onKeyDown={handleKeyDown}
         onBlur={() => finish(ref.current?.value.trim())}
-        className="w-full rounded-sm border border-primary/40 bg-white/[0.06] px-1.5 py-[2px] text-[13px] leading-[20px] text-foreground outline-none placeholder:text-muted-foreground/30"
+        className="w-full rounded-sm border border-primary/40 bg-white/[0.04] px-1.5 py-[2px] text-[13px] leading-[20px] text-foreground outline-none placeholder:text-muted-foreground/30"
       />
     </div>
   )
@@ -158,6 +158,10 @@ interface TreeNodeProps {
   onMutate: () => void
   /** Called after a file/folder is deleted, with the deleted path */
   onDelete: (deletedPath: string) => void
+  /** Called after a file/folder is renamed */
+  onRename: (oldPath: string, newPath: string) => void
+  /** Optional warning text for deleting a path with open unsaved files */
+  getDeleteWarning: (entryPath: string) => string | null
 }
 
 function TreeNode({
@@ -172,11 +176,14 @@ function TreeNode({
   onPendingAction,
   onMutate,
   onDelete,
+  onRename,
+  getDeleteWarning,
 }: TreeNodeProps) {
   const [expanded, setExpanded] = useState(false)
   const [children, setChildren] = useState<FileEntry[] | null>(null)
   const [loading, setLoading] = useState(false)
   const [deleteConfirm, setDeleteConfirm] = useState(false)
+  const [deleteWarning, setDeleteWarning] = useState<string | null>(null)
   const mountedExpandVersion = useRef(expandAllVersion)
   const mountedCollapseVersion = useRef(collapseAllVersion)
 
@@ -273,6 +280,7 @@ function TreeNode({
   }
 
   const handleDelete = () => {
+    setDeleteWarning(getDeleteWarning(entry.path))
     setDeleteConfirm(true)
   }
 
@@ -317,6 +325,7 @@ function TreeNode({
     const newPath = parentDir ? `${parentDir}/${newName}` : newName
     try {
       await renameEntry(cwd, entry.path, newPath)
+      onRename(entry.path, newPath)
       onMutate()
     } catch (err) {
       console.error("[FileTree]", err)
@@ -428,6 +437,8 @@ function TreeNode({
               onPendingAction={onPendingAction}
               onMutate={onMutate}
               onDelete={onDelete}
+              onRename={onRename}
+              getDeleteWarning={getDeleteWarning}
             />
           ))}
         </div>
@@ -435,13 +446,23 @@ function TreeNode({
 
       <ConfirmDialog
         open={deleteConfirm}
-        onOpenChange={setDeleteConfirm}
+        onOpenChange={(open) => {
+          setDeleteConfirm(open)
+          if (!open) setDeleteWarning(null)
+        }}
         title={`Delete ${isDir ? "folder" : "file"}`}
-        description={`Permanently delete "${entry.name}"${isDir ? " and all its contents" : ""}?`}
+        description={
+          deleteWarning
+            ? `Permanently delete "${entry.name}"${isDir ? " and all its contents" : ""}? ${deleteWarning}`
+            : `Permanently delete "${entry.name}"${isDir ? " and all its contents" : ""}?`
+        }
         confirmLabel="Delete"
         cancelLabel="Cancel"
         variant="destructive"
-        onConfirm={confirmDelete}
+        onConfirm={async () => {
+          await confirmDelete()
+          setDeleteWarning(null)
+        }}
       />
     </div>
   )
@@ -463,6 +484,10 @@ interface FileTreeProps {
   onPendingAction: (action: PendingAction | null) => void
   /** Called when a file/folder is deleted */
   onDelete: (deletedPath: string) => void
+  /** Called when a file/folder is renamed */
+  onRename: (oldPath: string, newPath: string) => void
+  /** Optional warning text for deleting a path with open unsaved files */
+  getDeleteWarning: (entryPath: string) => string | null
 }
 
 export type { PendingAction }
@@ -477,6 +502,8 @@ export function FileTree({
   pendingAction,
   onPendingAction,
   onDelete,
+  onRename,
+  getDeleteWarning,
 }: FileTreeProps) {
   const [entries, setEntries] = useState<FileEntry[]>([])
   const [initialLoading, setInitialLoading] = useState(true)
@@ -561,6 +588,8 @@ export function FileTree({
           onPendingAction={onPendingAction}
           onMutate={loadEntries}
           onDelete={onDelete}
+          onRename={onRename}
+          getDeleteWarning={getDeleteWarning}
         />
       ))}
     </div>

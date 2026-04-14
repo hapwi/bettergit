@@ -5,13 +5,13 @@ import { SidebarProvider, useSidebar } from "@/components/ui/sidebar"
 import { cn } from "@/lib/utils"
 import {
   LayoutDashboard,
-  GitBranchIcon,
   SidebarLeftIcon,
 } from "@hugeicons/core-free-icons"
 import { HugeiconsIcon } from "@hugeicons/react"
 import { Terminal, FileDiff, FolderOpen } from "lucide-react"
 import type { TerminalPanelHandle } from "@/components/terminal/TerminalPanel"
 import type { FileViewerHandle } from "@/components/files/FileViewer"
+import { GitHubIcon } from "@/components/icons"
 
 const DiffViewer = lazy(async () => {
   const mod = await import("@/components/git/DiffViewer")
@@ -124,7 +124,7 @@ function Toolbar({
               : "text-muted-foreground hover:text-foreground",
           )}
         >
-          <HugeiconsIcon icon={GitBranchIcon} className="size-3" />
+          <GitHubIcon className="size-3" />
           Git
         </button>
         <button

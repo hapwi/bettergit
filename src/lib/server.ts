@@ -5,6 +5,31 @@
 
 let _port: number | null = null;
 const SERVER_FETCH_TIMEOUT_MS = 15_000;
+const LONG_RUNNING_FETCH_TIMEOUT_MS = 10 * 60_000;
+
+interface ServerRequestOptions {
+  timeoutMs?: number;
+  retryOnConnectionError?: boolean;
+}
+
+function getRequestOptions(path: string): ServerRequestOptions {
+  if (
+    path === "/api/git/remote/push" ||
+    path === "/api/git/remote/pull" ||
+    path === "/api/git/remote/fetch" ||
+    path === "/api/git/actions/stacked"
+  ) {
+    return {
+      timeoutMs: LONG_RUNNING_FETCH_TIMEOUT_MS,
+      retryOnConnectionError: false,
+    };
+  }
+
+  return {
+    timeoutMs: SERVER_FETCH_TIMEOUT_MS,
+    retryOnConnectionError: true,
+  };
+}
 
 async function getServerPort(): Promise<number> {
   if (_port !== null) return _port;
@@ -21,22 +46,43 @@ async function restartServerPort(): Promise<void> {
   _port = (await window.electronAPI?.server.restart?.()) ?? (await getServerPort());
 }
 
-function isRetryableConnectionError(error: unknown): boolean {
-  if (!(error instanceof Error)) return false;
-  return error.name === "AbortError" || error instanceof TypeError;
+function isAbortError(error: unknown): boolean {
+  return error instanceof Error && error.name === "AbortError";
 }
 
-async function requestServer<T>(path: string, body?: unknown): Promise<T> {
+function isRetryableConnectionError(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
+  return error instanceof TypeError;
+}
+
+async function requestServer<T>(
+  path: string,
+  body?: unknown,
+  options?: ServerRequestOptions,
+): Promise<T> {
   const port = await getServerPort();
   const controller = new AbortController()
-  const timeout = window.setTimeout(() => controller.abort(), SERVER_FETCH_TIMEOUT_MS)
+  const timeoutMs = options?.timeoutMs ?? SERVER_FETCH_TIMEOUT_MS
+  const timeout = window.setTimeout(() => controller.abort(), timeoutMs)
 
-  const res = await fetch(`http://127.0.0.1:${port}${path}`, {
-    method: body !== undefined ? "POST" : "GET",
-    headers: body !== undefined ? { "Content-Type": "application/json" } : {},
-    body: body !== undefined ? JSON.stringify(body) : undefined,
-    signal: controller.signal,
-  }).finally(() => window.clearTimeout(timeout))
+  let res: Response
+  try {
+    res = await fetch(`http://127.0.0.1:${port}${path}`, {
+      method: body !== undefined ? "POST" : "GET",
+      headers: body !== undefined ? { "Content-Type": "application/json" } : {},
+      body: body !== undefined ? JSON.stringify(body) : undefined,
+      signal: controller.signal,
+    })
+  } catch (error) {
+    if (isAbortError(error)) {
+      throw new Error(
+        `Request timed out after ${Math.round(timeoutMs / 1000)}s. The operation may still be running.`,
+      )
+    }
+    throw error
+  } finally {
+    window.clearTimeout(timeout)
+  }
 
   if (!res.ok) {
     const text = await res.text();
@@ -53,14 +99,15 @@ async function requestServer<T>(path: string, body?: unknown): Promise<T> {
 }
 
 export async function serverFetch<T>(path: string, body?: unknown): Promise<T> {
+  const options = getRequestOptions(path)
   try {
-    return await requestServer<T>(path, body)
+    return await requestServer<T>(path, body, options)
   } catch (error) {
-    if (!isRetryableConnectionError(error)) {
+    if (!options.retryOnConnectionError || !isRetryableConnectionError(error)) {
       throw error
     }
 
     await restartServerPort()
-    return requestServer<T>(path, body)
+    return requestServer<T>(path, body, options)
   }
 }

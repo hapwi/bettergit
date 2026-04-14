@@ -15,7 +15,9 @@ export interface FileContent {
   content: string;
   size: number;
   isBinary: boolean;
+  isTooLarge: boolean;
   language: string;
+  mtimeMs: number;
 }
 
 /** Wrap a mutation in HMR pause/resume so Vite doesn't reload the app. */
@@ -46,9 +48,15 @@ export async function writeFile(
   cwd: string,
   relativePath: string,
   content: string,
-): Promise<{ ok: true }> {
+  expectedMtimeMs?: number | null,
+): Promise<{ ok: true; mtimeMs: number }> {
   return withHmrPause(() =>
-    serverFetch("/api/files/write", { cwd, relativePath, content }),
+    serverFetch("/api/files/write", {
+      cwd,
+      relativePath,
+      content,
+      expectedMtimeMs,
+    }),
   );
 }
 
