@@ -6,8 +6,6 @@ import {
   Area,
   AreaChart,
   XAxis,
-  YAxis,
-  CartesianGrid,
   Pie,
   PieChart,
   Cell,
@@ -65,27 +63,6 @@ function toSafeChartValue(value: unknown): number {
     return 0
   }
   return Math.round(parsed)
-}
-
-function buildIntegerTicks(maxValue: number): number[] {
-  const safeMax = Math.max(0, Math.ceil(maxValue))
-  if (safeMax <= 1) {
-    return [0, 1]
-  }
-
-  const segments = Math.min(4, safeMax)
-  const step = Math.max(1, Math.ceil(safeMax / segments))
-  const ticks = [0]
-
-  for (let value = step; value < safeMax; value += step) {
-    ticks.push(value)
-  }
-
-  if (ticks[ticks.length - 1] !== safeMax) {
-    ticks.push(safeMax)
-  }
-
-  return ticks
 }
 
 function formatDayLabel(date: string): string {
@@ -183,26 +160,6 @@ export function Dashboard({ isActive }: { isActive: boolean }) {
     }));
   }, [stats]);
 
-  const activityTicks = useMemo(
-    () => buildIntegerTicks(Math.max(...weeklyActivity.map((entry) => entry.commits), 0)),
-    [weeklyActivity],
-  )
-
-  const activityMax = activityTicks[activityTicks.length - 1] ?? 1
-
-  const changesTicks = useMemo(
-    () =>
-      buildIntegerTicks(
-        Math.max(
-          ...recentChanges.flatMap((entry) => [entry.insertions, entry.deletions]),
-          0,
-        ),
-      ),
-    [recentChanges],
-  )
-
-  const changesMax = changesTicks[changesTicks.length - 1] ?? 1
-
   if (!repoCwd) return null;
 
   if (statsLoading) {
@@ -266,16 +223,7 @@ export function Dashboard({ isActive }: { isActive: boolean }) {
               {weeklyActivity.length > 0 ? (
                 <ChartContainer config={activityConfig} className="h-40 w-full">
                   <BarChart data={weeklyActivity} margin={{ top: 8, right: 4, bottom: 0, left: -20 }}>
-                    <CartesianGrid vertical={false} strokeDasharray="3 3" className="stroke-border/30" />
                     <XAxis dataKey="week" tickLine={false} axisLine={false} fontSize={10} />
-                    <YAxis
-                      tickLine={false}
-                      axisLine={false}
-                      fontSize={10}
-                      allowDecimals={false}
-                      ticks={activityTicks}
-                      domain={[0, activityMax]}
-                    />
                     <ChartTooltip content={<ChartTooltipContent />} />
                     <Bar dataKey="commits" fill="var(--color-commits)" radius={[6, 6, 0, 0]} />
                   </BarChart>
@@ -295,16 +243,7 @@ export function Dashboard({ isActive }: { isActive: boolean }) {
               {recentChanges.some((d) => d.insertions > 0 || d.deletions > 0) ? (
                 <ChartContainer config={changesConfig} className="h-40 w-full">
                   <AreaChart data={recentChanges} margin={{ top: 8, right: 4, bottom: 0, left: -20 }}>
-                    <CartesianGrid vertical={false} strokeDasharray="3 3" className="stroke-border/30" />
                     <XAxis dataKey="date" tickLine={false} axisLine={false} fontSize={10} />
-                    <YAxis
-                      tickLine={false}
-                      axisLine={false}
-                      fontSize={10}
-                      allowDecimals={false}
-                      ticks={changesTicks}
-                      domain={[0, changesMax]}
-                    />
                     <ChartTooltip content={<ChartTooltipContent />} />
                     <defs>
                       <linearGradient id="fillIns" x1="0" y1="0" x2="0" y2="1">
