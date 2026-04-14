@@ -81,6 +81,7 @@ interface ElectronAPI {
   };
   server: {
     getPort: () => Promise<number>;
+    restart: () => Promise<number>;
   };
   project: {
     renameDirectory: (currentPath: string, newName: string) => Promise<string>;

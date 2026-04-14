@@ -16,6 +16,13 @@
   </p>
 </div>
 
+> [!WARNING]
+> Current macOS `.dmg` release is unsigned. If you install packaged app instead of building locally, macOS may block launch until you remove quarantine:
+>
+> ```bash
+> xattr -dr com.apple.quarantine /Applications/BetterGit.app
+> ```
+
 ## What is BetterGit?
 
 BetterGit is a desktop app for working with Git repositories without bouncing between a dozen terminal commands, browser tabs, and context switches.

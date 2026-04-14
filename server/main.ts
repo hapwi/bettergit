@@ -58,6 +58,16 @@ fixPath();
 const port = parseInt(process.env.BETTERGIT_SERVER_PORT ?? "0", 10);
 const userDataPath = process.env.BETTERGIT_USER_DATA ?? "";
 
+process.on("uncaughtException", (error) => {
+  console.error("[server] uncaughtException:", error);
+  setImmediate(() => process.exit(1));
+});
+
+process.on("unhandledRejection", (reason) => {
+  console.error("[server] unhandledRejection:", reason);
+  setImmediate(() => process.exit(1));
+});
+
 if (userDataPath) {
   ai.initModelPreference(userDataPath);
 }

@@ -17,6 +17,7 @@ contextBridge.exposeInMainWorld("electronAPI", {
   },
   server: {
     getPort: (): Promise<number> => ipcRenderer.invoke("server:getPort"),
+    restart: (): Promise<number> => ipcRenderer.invoke("server:restart"),
   },
   project: {
     renameDirectory: (currentPath: string, newName: string): Promise<string> =>
