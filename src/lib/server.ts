@@ -79,6 +79,7 @@ async function requestServer<T>(
     if (isAbortError(error)) {
       throw new Error(
         `Request timed out after ${Math.round(timeoutMs / 1000)}s. The operation may still be running.`,
+        { cause: error },
       )
     }
     throw error
