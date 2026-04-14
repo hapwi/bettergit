@@ -1,20 +1,8 @@
-<div align="center">
-  <img src="./build/bettergit-logo.png" alt="BetterGit" width="140" />
+# BetterGit
 
-  <h1>BetterGit</h1>
+**A desktop Git workspace for people who want Git to feel fast, visual, and usable.**
 
-  <p><strong>A desktop Git workspace for people who want Git to feel fast, visual, and usable.</strong></p>
-
-  <p>BetterGit combines repo awareness, branch and PR workflows, inline Git actions, a built-in terminal, and optional AI assistance in one focused desktop app.</p>
-
-  <p>
-    <img src="https://img.shields.io/badge/Electron-desktop-191919?style=for-the-badge&logo=electron&logoColor=white" alt="Electron" />
-    <img src="https://img.shields.io/badge/React-19-111827?style=for-the-badge&logo=react&logoColor=61DAFB" alt="React 19" />
-    <img src="https://img.shields.io/badge/TypeScript-typed-1f6feb?style=for-the-badge&logo=typescript&logoColor=white" alt="TypeScript" />
-    <img src="https://img.shields.io/badge/GitHub-PR%20aware-24292f?style=for-the-badge&logo=github&logoColor=white" alt="GitHub PR aware" />
-    <img src="https://img.shields.io/badge/AI-optional-7c3aed?style=for-the-badge" alt="AI optional" />
-  </p>
-</div>
+BetterGit combines repo awareness, branch and PR workflows, inline Git actions, a built-in terminal, and optional AI assistance in one focused desktop app.
 
 > [!WARNING]
 > Current macOS `.dmg` release is unsigned. If you install packaged app instead of building locally, macOS may block launch until you remove quarantine:

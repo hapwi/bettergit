@@ -1,0 +1,13 @@
+.git
+node_modules
+.electron-runtime
+release
+dist
+dist-ssr
+dist-electron
+dist-server
+coverage
+.turbo
+.vite
+logs
+*.log
