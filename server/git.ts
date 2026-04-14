@@ -1301,9 +1301,9 @@ export async function runStackedAction(input: StackedActionInput): Promise<Stack
     } else {
       const remoteExists = await hasOriginRemote({ cwd });
       if (!remoteExists) {
-        await createGhRepo({ cwd, visibility: "private" });
-        result.push = { status: "pushed", branch: currentBranch, setUpstream: true };
-      } else {
+    await createGhRepo({ cwd, visibility: "private" });
+    result.push = { status: "pushed", branch: currentBranch, setUpstream: true };
+  } else {
         const upstreamCheck = await execGit({
           cwd,
           args: ["config", "branch." + currentBranch + ".remote"],
@@ -1312,7 +1312,7 @@ export async function runStackedAction(input: StackedActionInput): Promise<Stack
         const pushArgs = needsUpstream
           ? ["push", "-u", "origin", currentBranch]
           : ["push"];
-        requireOk(await execGit({ cwd, args: pushArgs }), "push");
+        requireOk(await execGit({ cwd, args: pushArgs, timeoutMs: 10 * 60_000 }), "push");
         result.push = {
           status: "pushed",
           branch: currentBranch,

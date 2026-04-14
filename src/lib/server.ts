@@ -16,7 +16,8 @@ function getRequestOptions(path: string): ServerRequestOptions {
   if (
     path === "/api/git/remote/push" ||
     path === "/api/git/remote/pull" ||
-    path === "/api/git/remote/fetch"
+    path === "/api/git/remote/fetch" ||
+    path === "/api/git/actions/stacked"
   ) {
     return {
       timeoutMs: LONG_RUNNING_FETCH_TIMEOUT_MS,
