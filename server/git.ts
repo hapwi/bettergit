@@ -830,6 +830,7 @@ export interface PrListItem {
   url: string;
   baseBranch: string;
   headBranch: string;
+  headSha?: string;
   state: "open" | "closed" | "merged";
   author: string;
   updatedAt: string;
@@ -839,12 +840,14 @@ async function listPrs(
   cwd: string,
   state: "open" | "merged",
   limit: number,
+  baseBranch?: string,
 ): Promise<PrListItem[]> {
   const repo = await readOriginRepoSlug(cwd);
   const args = [
     "pr", "list", "--state", state, "--limit", String(limit),
-    "--json", "number,title,url,baseRefName,headRefName,state,author,updatedAt",
+    "--json", "number,title,url,baseRefName,headRefName,headRefOid,state,author,updatedAt",
   ];
+  if (baseBranch) args.push("--base", baseBranch);
   if (repo) args.push("--repo", repo);
   const ghResult = await execGh({ cwd, args });
   if (ghResult.code !== 0) return [];
@@ -855,6 +858,7 @@ async function listPrs(
       url: string;
       baseRefName: string;
       headRefName: string;
+      headRefOid?: string;
       state: string;
       author: { login: string };
       updatedAt: string;
@@ -865,6 +869,7 @@ async function listPrs(
       url: pr.url,
       baseBranch: pr.baseRefName,
       headBranch: pr.headRefName,
+      headSha: pr.headRefOid ?? "",
       state,
       author: pr.author?.login ?? "",
       updatedAt: pr.updatedAt ?? "",
@@ -1509,6 +1514,31 @@ async function deleteBranchIfPresent(cwd: string, branchName: string) {
   }
 }
 
+async function deleteMergedBranchesForBase(cwd: string, baseBranch: string) {
+  const mergedPrs = await listPrs(cwd, "merged", 100, baseBranch);
+
+  for (const pr of mergedPrs) {
+    if (!pr.headBranch || isProtectedBranch(pr.headBranch)) continue;
+
+    const mergedHeadSha = pr.headSha?.trim();
+    if (!mergedHeadSha) continue;
+
+    const remoteSha = await resolveRevision(cwd, [
+      `refs/remotes/origin/${pr.headBranch}`,
+      `origin/${pr.headBranch}`,
+    ]);
+    const localSha = await resolveRevision(cwd, [pr.headBranch]);
+
+    // Only delete branches that still point at the merged PR tip. If the
+    // branch moved on after merge, leave it alone.
+    if (remoteSha && remoteSha !== mergedHeadSha) continue;
+    if (localSha && localSha !== mergedHeadSha) continue;
+    if (!remoteSha && !localSha) continue;
+
+    await deleteBranchIfPresent(cwd, pr.headBranch);
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Version bump — update package.json, commit, tag, push
 // ---------------------------------------------------------------------------
@@ -1764,6 +1794,15 @@ export async function mergePullRequests(input: MergePullRequestsInput): Promise<
 
     for (const branch of autoClosedBranches) {
       await deleteBranchIfPresent(cwd, branch);
+    }
+
+    const cleanupBases = new Set<string>();
+    if (isProtectedBranch(mergeBaseBranch)) cleanupBases.add(mergeBaseBranch);
+    for (const { headBranch } of merged) {
+      if (isProtectedBranch(headBranch)) cleanupBases.add(headBranch);
+    }
+    for (const branch of cleanupBases) {
+      await deleteMergedBranchesForBase(cwd, branch);
     }
 
     if (!finalBranch) {
