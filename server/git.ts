@@ -766,17 +766,17 @@ export async function push(input: {
     const branch = (await execGit({ cwd: input.cwd, args: ["branch", "--show-current"] })).stdout.trim();
     args.push("-u", "origin", branch);
   }
-  requireOk(await execGit({ cwd: input.cwd, args }), "push");
+  requireOk(await execGit({ cwd: input.cwd, args, timeoutMs: 10 * 60_000 }), "push");
   return { ok: true };
 }
 
 export async function pull(input: { cwd: string }): Promise<{ ok: true }> {
-  requireOk(await execGit({ cwd: input.cwd, args: ["pull", "--ff-only"] }), "pull");
+  requireOk(await execGit({ cwd: input.cwd, args: ["pull", "--ff-only"], timeoutMs: 10 * 60_000 }), "pull");
   return { ok: true };
 }
 
 export async function fetch(input: { cwd: string }): Promise<{ ok: true }> {
-  requireOk(await execGit({ cwd: input.cwd, args: ["fetch", "--prune"] }), "fetch");
+  requireOk(await execGit({ cwd: input.cwd, args: ["fetch", "--prune"], timeoutMs: 10 * 60_000 }), "fetch");
   return { ok: true };
 }
 
