@@ -48,10 +48,6 @@ interface LiveTerminalSession extends PersistedTerminalSession {
   disposeExit: (() => void) | null;
 }
 
-interface TerminalPersistenceShape {
-  terminalSessions?: Record<string, Record<string, PersistedTerminalSession>>;
-}
-
 interface OpenTerminalSessionInput {
   projectPath: string;
   tabId: string;
@@ -61,53 +57,6 @@ interface OpenTerminalSessionInput {
 }
 
 const DEFAULT_HISTORY_LIMIT = 400_000;
-
-function normalizePersistedSession(value: unknown): PersistedTerminalSession | null {
-  if (!value || typeof value !== "object") return null;
-  const candidate = value as Partial<PersistedTerminalSession>;
-  if (typeof candidate.cwd !== "string" || candidate.cwd.trim().length === 0) return null;
-  if (typeof candidate.history !== "string") return null;
-  if (
-    candidate.status !== "starting" &&
-    candidate.status !== "running" &&
-    candidate.status !== "exited" &&
-    candidate.status !== "error"
-  ) {
-    return null;
-  }
-
-  return {
-    cwd: candidate.cwd,
-    status: candidate.status,
-    history: candidate.history,
-    exitCode: typeof candidate.exitCode === "number" ? candidate.exitCode : null,
-    exitSignal: typeof candidate.exitSignal === "number" ? candidate.exitSignal : null,
-    updatedAt:
-      typeof candidate.updatedAt === "string" && candidate.updatedAt.length > 0
-        ? candidate.updatedAt
-        : new Date(0).toISOString(),
-  };
-}
-
-function normalizeTerminalPersistence(value: unknown): Record<string, Record<string, PersistedTerminalSession>> {
-  if (!value || typeof value !== "object") return {};
-  const candidate = value as TerminalPersistenceShape;
-  const next: Record<string, Record<string, PersistedTerminalSession>> = {};
-  for (const [projectPath, tabs] of Object.entries(candidate.terminalSessions ?? {})) {
-    if (!projectPath.trim() || !tabs || typeof tabs !== "object") continue;
-    const normalizedTabs = Object.fromEntries(
-      Object.entries(tabs).flatMap(([tabId, session]) => {
-        if (!tabId.trim()) return [];
-        const normalized = normalizePersistedSession(session);
-        return normalized ? [[tabId, normalized] as const] : [];
-      }),
-    );
-    if (Object.keys(normalizedTabs).length > 0) {
-      next[projectPath] = normalizedTabs;
-    }
-  }
-  return next;
-}
 
 function trimHistory(history: string): string {
   if (history.length <= DEFAULT_HISTORY_LIMIT) return history;
@@ -201,15 +150,7 @@ function killProcessTree(pid: number): void {
 export class TerminalSessionManager {
   private readonly listeners = new Set<(event: TerminalSessionEvent) => void>();
   private readonly sessions = new Map<string, LiveTerminalSession>();
-  private readonly persistedSessions: Record<string, Record<string, PersistedTerminalSession>>;
-  private persistTimer: NodeJS.Timeout | null = null;
-
-  constructor(
-    private readonly loadSettings: () => Record<string, unknown>,
-    private readonly saveSettings: (data: Record<string, unknown>) => void,
-  ) {
-    this.persistedSessions = normalizeTerminalPersistence(this.loadSettings());
-  }
+  private readonly persistedSessions: Record<string, Record<string, PersistedTerminalSession>> = {};
 
   subscribe(listener: (event: TerminalSessionEvent) => void): () => void {
     this.listeners.add(listener);
@@ -270,8 +211,11 @@ export class TerminalSessionManager {
     session.process.write(data);
   }
 
-  resize(projectPath: string, tabId: string, cols: number, rows: number): void {
-    const session = this.requireSession(projectPath, tabId);
+  resize(projectPath: string, tabId: string, cols: number, rows: number): boolean {
+    const session = this.sessions.get(this.getSessionKey(projectPath, tabId));
+    if (!session) {
+      return false;
+    }
     session.cols = cols;
     session.rows = rows;
     session.updatedAt = new Date().toISOString();
@@ -279,6 +223,7 @@ export class TerminalSessionManager {
       session.process.resize(cols, rows);
     }
     this.persistSession(session);
+    return true;
   }
 
   closeSession(projectPath: string, tabId: string, deleteHistory = true): void {
@@ -306,7 +251,6 @@ export class TerminalSessionManager {
 
     if (deleteHistory) {
       delete this.persistedSessions[projectPath];
-      this.schedulePersist();
     }
   }
 
@@ -327,16 +271,10 @@ export class TerminalSessionManager {
     if (this.persistedSessions[oldPath]) {
       this.persistedSessions[newPath] = this.persistedSessions[oldPath]!;
       delete this.persistedSessions[oldPath];
-      this.schedulePersist();
     }
   }
 
   shutdown(): void {
-    if (this.persistTimer) {
-      clearTimeout(this.persistTimer);
-      this.persistTimer = null;
-    }
-
     for (const session of this.sessions.values()) {
       session.status = "exited";
       session.pid = null;
@@ -345,7 +283,6 @@ export class TerminalSessionManager {
       this.stopSession(session);
     }
     this.sessions.clear();
-    this.flushPersistence();
   }
 
   private getSessionKey(projectPath: string, tabId: string): string {
@@ -376,7 +313,6 @@ export class TerminalSessionManager {
       exitSignal: session.exitSignal,
       updatedAt: session.updatedAt,
     };
-    this.schedulePersist();
   }
 
   private deletePersistedSession(projectPath: string, tabId: string): void {
@@ -386,19 +322,6 @@ export class TerminalSessionManager {
     if (Object.keys(projectSessions).length === 0) {
       delete this.persistedSessions[projectPath];
     }
-    this.schedulePersist();
-  }
-
-  private schedulePersist(): void {
-    if (this.persistTimer) return;
-    this.persistTimer = setTimeout(() => {
-      this.persistTimer = null;
-      this.flushPersistence();
-    }, 150);
-  }
-
-  private flushPersistence(): void {
-    this.saveSettings({ terminalSessions: this.persistedSessions });
   }
 
   private snapshot(session: LiveTerminalSession): TerminalSessionSnapshot {

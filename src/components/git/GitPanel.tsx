@@ -25,10 +25,7 @@ import { runStackedAction, type StackedAction } from "@/lib/git/stacked";
 import { pull } from "@/lib/git/remote";
 import { checkoutBranch, deleteBranch } from "@/lib/git/branches";
 import { discardAllChanges } from "@/lib/git/commits";
-import { createPullRequest } from "@/lib/git/github";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
-import { generatePrContent } from "@/lib/git/ai";
-import { execGit } from "@/lib/git/exec";
 import {
   buildMenuItems,
   resolveQuickAction,
@@ -47,7 +44,7 @@ import { DefaultBranchDialog } from "./DefaultBranchDialog";
 import { SwitchBranchDialog } from "./SwitchBranchDialog";
 import { MergeDialog } from "./MergeDialog";
 import { GitActivityView, type GitActivityState, type ActivityStep } from "./GitActivityView";
-import { parseVersion, type SemVer } from "./version";
+import { createReleasePullRequest, getCurrentVersion, getPreReleaseAheadCount, type SemVer } from "@/lib/git/workflows";
 
 // ---------------------------------------------------------------------------
 // Sub-components
@@ -621,16 +618,7 @@ export function GitPanel({ isActive }: { isActive: boolean }) {
   // Check how many commits pre-release is ahead of main
   const { data: preReleaseAheadCount = 0 } = useQuery({
     queryKey: ["git", "pre-release-ahead", repoCwd],
-    queryFn: async () => {
-      if (!repoCwd) return 0;
-      // Fetch first so we compare against the latest remote state
-      await execGit(repoCwd, ["fetch", "--quiet", "origin"]);
-      const mainExists = branches.some((b) => b.name === "main" || b.name === "origin/main");
-      const target = mainExists ? "origin/main" : "origin/master";
-      const result = await execGit(repoCwd, ["rev-list", "--count", `${target}..pre-release`]);
-      if (result.code !== 0) return 0;
-      return parseInt(result.stdout.trim(), 10);
-    },
+    queryFn: () => getPreReleaseAheadCount(repoCwd!),
     enabled: isActive && isPreReleaseBranch && repoCwd !== null,
     staleTime: 5_000,
     refetchInterval: 10_000,
@@ -639,27 +627,7 @@ export function GitPanel({ isActive }: { isActive: boolean }) {
   // Pre-fetch current version so MergeDialog can show it instantly
   const { data: currentVersion = null } = useQuery<SemVer | null>({
     queryKey: ["git", "current-version", repoCwd],
-    queryFn: async () => {
-      if (!repoCwd) return null;
-      await execGit(repoCwd, ["fetch", "--tags", "--quiet", "origin"]).catch(() => {});
-      const result = await execGit(repoCwd, ["tag", "--sort=-v:refname", "-l", "v*"]);
-      const tags = result.stdout.trim().split("\n").filter(Boolean);
-      for (const tag of tags) {
-        const parsed = parseVersion(tag);
-        if (parsed) return parsed;
-      }
-      const pkgResult = await execGit(repoCwd, ["show", "HEAD:package.json"]);
-      if (pkgResult.code === 0) {
-        try {
-          const pkg = JSON.parse(pkgResult.stdout) as { version?: string };
-          if (pkg.version) {
-            const parsed = parseVersion(pkg.version);
-            if (parsed) return parsed;
-          }
-        } catch { /* invalid JSON */ }
-      }
-      return { major: 0, minor: 0, patch: 0 };
-    },
+    queryFn: () => getCurrentVersion(repoCwd!),
     enabled: isActive && repoCwd !== null,
     staleTime: 30_000,
   });
@@ -678,43 +646,14 @@ export function GitPanel({ isActive }: { isActive: boolean }) {
     });
     const toastId = toast.loading("Creating release PR...");
     try {
-      // Determine target branch
-      const mainExists = branches.some((b) => b.name === "main" || b.name === "origin/main");
-      const targetBranch = mainExists ? "main" : "master";
-
-      // Get range context for AI
-      const [commitResult, diffStatResult, diffPatchResult] = await Promise.all([
-        execGit(repoCwd, ["log", `${targetBranch}..HEAD`, "--oneline", "--no-merges"]),
-        execGit(repoCwd, ["diff", `${targetBranch}...HEAD`, "--stat"]),
-        execGit(repoCwd, ["diff", `${targetBranch}...HEAD`]),
-      ]);
-
-      let prTitle = "Release: pre-release → " + targetBranch;
-      let prBody = "";
-
-      try {
-        const generated = await generatePrContent({
-          cwd: repoCwd,
-          baseBranch: targetBranch,
-          headBranch: "pre-release",
-          commitSummary: commitResult.stdout.slice(0, 20_000),
-          diffSummary: diffStatResult.stdout.slice(0, 20_000),
-          diffPatch: diffPatchResult.stdout.slice(0, 60_000),
-        });
-        prTitle = generated.title;
-        prBody = generated.body;
-      } catch {
-        // Use fallback title
-      }
-
-      const pr = await createPullRequest(repoCwd, targetBranch, prTitle, prBody);
+      const pr = await createReleasePullRequest(repoCwd);
       setGitActivity((prev) =>
         prev
           ? {
               ...prev,
               completedAt: Date.now(),
               completedTitle: "Release PR created",
-              summary: `#${pr.number} · ${prTitle}`,
+              summary: `#${pr.number} · ${pr.title}`,
               steps: prev.steps.map((s) => ({
                 ...s,
                 status: "done" as const,
@@ -746,7 +685,7 @@ export function GitPanel({ isActive }: { isActive: boolean }) {
       await invalidateGitQueries(queryClient);
       setIsBusy(false);
     }
-  }, [repoCwd, branches, queryClient, setIsBusy]);
+  }, [repoCwd, queryClient, setIsBusy]);
 
   // Track which repo owns the current action
   const actionRepoRef = useRef<string | null>(null);

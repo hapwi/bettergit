@@ -23,9 +23,7 @@ import {
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { useAppStore } from "@/store";
-import { getRepoStats, getRecentCommits, getOpenPrs, getMergedPrs } from "@/lib/git/stats";
-import { getOriginRepoSlug } from "@/lib/git/remote";
-import { execGh } from "@/lib/git/exec";
+import { getRepoStats, getRecentCommits, getOpenPrs, getMergedPrs, getForkParent } from "@/lib/git/stats";
 import { GitHubIcon } from "@/components/icons";
 import {
   Card,
@@ -107,15 +105,7 @@ export function Dashboard({ isActive }: { isActive: boolean }) {
   });
   const { data: forkInfo } = useQuery({
     queryKey: ["git", "fork-info", repoCwd],
-    queryFn: async () => {
-      const repo = await getOriginRepoSlug(repoCwd!);
-      if (!repo) return null;
-      const result = await execGh(repoCwd!, ["repo", "view", repo, "--json", "isFork,parent"]);
-      if (result.code !== 0) return null;
-      const data = JSON.parse(result.stdout) as { isFork: boolean; parent?: { name: string; owner: { login: string } } };
-      if (!data.isFork || !data.parent) return null;
-      return `${data.parent.owner.login}/${data.parent.name}`;
-    },
+    queryFn: () => getForkParent(repoCwd!),
     enabled: isEnabled,
     staleTime: Infinity,
     gcTime: 10 * 60_000,

@@ -242,7 +242,10 @@ function setupApplicationMenu() {
 
 app.whenReady().then(async () => {
   setupApplicationMenu();
-  terminalSessionManager = new TerminalSessionManager(loadSettings, saveSettings);
+  // Terminal tabs and PTY history are runtime-only. Clear legacy persisted
+  // state from older builds before creating the first window.
+  saveSettings({ terminalProjects: {}, terminalSessions: {} });
+  terminalSessionManager = new TerminalSessionManager();
   terminalSessionManager.subscribe((event) => {
     for (const win of BrowserWindow.getAllWindows()) {
       win.webContents.send("terminal:event", event);
