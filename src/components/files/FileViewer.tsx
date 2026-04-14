@@ -1,9 +1,8 @@
-import { useState, useCallback, useRef, useEffect, useImperativeHandle, forwardRef } from "react"
+import { useState, useCallback, useRef, useEffect, useImperativeHandle, forwardRef, lazy, Suspense } from "react"
 import { cn } from "@/lib/utils"
 import { useAppStore } from "@/store"
 import { readFile, writeFile, type FileContent } from "@/lib/files"
 import { FileTree, FileTreeActions, type PendingAction } from "./FileTree"
-import { FileEditor } from "./FileEditor"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import {
@@ -31,6 +30,11 @@ interface OpenFile {
   mtimeMs: number
   isDirty: boolean
 }
+
+const FileEditor = lazy(async () => {
+  const mod = await import("./FileEditor")
+  return { default: mod.FileEditor }
+})
 
 // ---------------------------------------------------------------------------
 // FileViewer
@@ -539,13 +543,21 @@ export const FileViewer = forwardRef<FileViewerHandle, { isActive?: boolean }>(f
                 </div>
               </div>
             ) : (
-              <FileEditor
-                key={activeFile.path}
-                defaultValue={getCurrentContent(activeFile)}
-                language={activeFile.language}
-                onContentChange={(value) => updateContent(activeFile.path, value)}
-                onSave={saveFile}
-              />
+              <Suspense
+                fallback={
+                  <div className="flex h-full items-center justify-center text-[12px] text-muted-foreground/50">
+                    Loading editor...
+                  </div>
+                }
+              >
+                <FileEditor
+                  key={activeFile.path}
+                  defaultValue={getCurrentContent(activeFile)}
+                  language={activeFile.language}
+                  onContentChange={(value) => updateContent(activeFile.path, value)}
+                  onSave={saveFile}
+                />
+              </Suspense>
             )
           ) : (
             <div className="flex h-full items-center justify-center">
