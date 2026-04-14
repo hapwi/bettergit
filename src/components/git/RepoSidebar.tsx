@@ -15,6 +15,7 @@ import {
   PinOffIcon,
   PencilEdit01Icon,
   Delete01Icon,
+  Cancel01Icon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import {
@@ -61,6 +62,7 @@ import {
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
 import { SettingsDialog } from "@/components/git/SettingsDialog";
+import { ProjectSettingsDialog } from "@/components/git/ProjectSettingsDialog";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { createGhRepo } from "@/lib/git/github";
@@ -109,6 +111,7 @@ function ProjectItem({
   onRename,
   onTogglePin,
   onRemove,
+  onSettings,
   gitBusy,
   gitResult,
 }: {
@@ -119,6 +122,7 @@ function ProjectItem({
   onRename: () => void;
   onTogglePin: () => void;
   onRemove: () => void;
+  onSettings: () => void;
   gitBusy: boolean;
   gitResult: "success" | "error" | null;
 }) {
@@ -174,6 +178,10 @@ function ProjectItem({
         </div>
       </ContextMenuTrigger>
       <ContextMenuContent>
+        <ContextMenuItem onSelect={onSettings}>
+          <HugeiconsIcon icon={Settings01Icon} className="size-4" />
+          Settings
+        </ContextMenuItem>
         <ContextMenuItem onSelect={onRename}>
           <HugeiconsIcon icon={PencilEdit01Icon} className="size-4" />
           Rename
@@ -200,6 +208,7 @@ function SidebarSetupCard({
   actionIcon,
   actionDisabled = false,
   onAction,
+  onDismiss,
 }: {
   tone?: "amber" | "blue";
   title: string;
@@ -208,31 +217,43 @@ function SidebarSetupCard({
   actionIcon: typeof Add01Icon;
   actionDisabled?: boolean;
   onAction: () => void;
+  onDismiss?: () => void;
 }) {
   const toneClasses = tone === "blue"
     ? {
         border: "border-blue-500/30",
         bg: "bg-blue-500/5",
         text: "text-blue-400/85",
-        button: "text-blue-400 hover:text-blue-300",
+        button: "text-blue-400 hover:text-blue-300 border-blue-500/30 bg-blue-500/10",
       }
     : {
         border: "border-amber-500/30",
         bg: "bg-amber-500/5",
         text: "text-amber-500/85",
-        button: "text-amber-500 hover:text-amber-400",
+        button: "text-amber-500 hover:text-amber-400 border-amber-500/30 bg-amber-500/10",
       };
 
   return (
     <div className={cn("mt-1 rounded-md border border-dashed px-2.5 py-2", toneClasses.border, toneClasses.bg)}>
       <div className="space-y-1">
-        <p className={cn("text-[11px] font-medium", toneClasses.text)}>{title}</p>
+        <div className="flex items-start justify-between gap-1">
+          <p className={cn("text-[11px] font-medium", toneClasses.text)}>{title}</p>
+          {onDismiss && (
+            <button
+              type="button"
+              onClick={onDismiss}
+              className="shrink-0 rounded p-0.5 text-muted-foreground/50 transition-colors hover:text-muted-foreground"
+            >
+              <HugeiconsIcon icon={Cancel01Icon} className="size-3" />
+            </button>
+          )}
+        </div>
         <p className="text-[11px] text-muted-foreground">{description}</p>
       </div>
       <Button
-        variant="ghost"
+        variant="outline"
         size="sm"
-        className={cn("mt-1 h-6 w-full justify-center text-[11px]", toneClasses.button)}
+        className={cn("mt-1.5 h-7 w-full justify-center text-[11px] font-medium", toneClasses.button)}
         disabled={actionDisabled}
         onClick={onAction}
       >
@@ -253,6 +274,8 @@ export function RepoSidebar() {
   const togglePinnedRepo = useAppStore((s) => s.togglePinnedRepo);
   const gitBusyMap = useAppStore((s) => s.gitBusyMap);
   const gitResultMap = useAppStore((s) => s.gitResultMap);
+  const dismissSetupCard = useAppStore((s) => s.dismissSetupCard);
+  const dismissedSetupCards = useAppStore((s) => s.dismissedSetupCards);
   const queryClient = useQueryClient();
   const { data: status } = useQuery(gitStatusQueryOptions(repoCwd));
   const { data: branches = [] } = useQuery(gitBranchesQueryOptions(repoCwd));
@@ -266,12 +289,15 @@ export function RepoSidebar() {
     !branches.some((b) => b.name === "main");
   const needsInitialCommit = Boolean(status && !status.hasCommits);
   const needsRemoteSetup = Boolean(status?.hasCommits && !hasOriginRemote);
+  const dismissedCards = repoCwd ? (dismissedSetupCards[repoCwd] ?? []) : [];
   const shouldShowPreReleaseSetup = Boolean(
     status?.hasCommits &&
     !status.isDetached &&
     hasOriginRemote &&
-    !hasPreRelease,
+    !hasPreRelease &&
+    !dismissedCards.includes("pre-release"),
   );
+  const shouldShowMasterRename = hasMasterNotMain && Boolean(status?.hasCommits) && hasOriginRemote && !dismissedCards.includes("master-rename");
 
   const handleOpen = async () => {
     const path = await window.electronAPI?.dialog.openDirectory();
@@ -296,6 +322,7 @@ export function RepoSidebar() {
   const [pendingRenameRepo, setPendingRenameRepo] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");
   const [pendingRemoveRepo, setPendingRemoveRepo] = useState<string | null>(null);
+  const [projectSettingsPath, setProjectSettingsPath] = useState<string | null>(null);
 
   const doRenameMasterToMain = async () => {
     if (!repoCwd) return;
@@ -559,6 +586,7 @@ export function RepoSidebar() {
                     description="Set up pre-release after the repo has a remote so feature work can stack cleanly."
                     actionLabel="Set up pre-release branch"
                     actionIcon={GitBranchIcon}
+                    onDismiss={() => repoCwd && dismissSetupCard(repoCwd, "pre-release")}
                     onAction={() => {
                       void (async () => {
                         if (!repoCwd) return;
@@ -578,13 +606,14 @@ export function RepoSidebar() {
                 )}
 
                 {/* Rename master → main */}
-                {hasMasterNotMain && status.hasCommits && hasOriginRemote && (
+                {shouldShowMasterRename && (
                   <SidebarSetupCard
                     tone="blue"
                     title='Default branch is "master"'
                     description='Rename it to "main" locally and on GitHub before enabling the rest of the workflow.'
                     actionLabel="Rename to main"
                     actionIcon={ExchangeIcon}
+                    onDismiss={() => repoCwd && dismissSetupCard(repoCwd, "master-rename")}
                     onAction={() => setRenameDialogOpen(true)}
                   />
                 )}
@@ -618,6 +647,7 @@ export function RepoSidebar() {
                         onRename={() => openRenameProjectDialog(project.path)}
                         onTogglePin={() => togglePinnedRepo(project.path)}
                         onRemove={() => setPendingRemoveRepo(project.path)}
+                        onSettings={() => setProjectSettingsPath(project.path)}
                         gitBusy={gitBusyMap[project.path] ?? false}
                         gitResult={gitResultMap[project.path] ?? null}
                       />
@@ -650,6 +680,7 @@ export function RepoSidebar() {
                       onRename={() => openRenameProjectDialog(project.path)}
                       onTogglePin={() => togglePinnedRepo(project.path)}
                       onRemove={() => setPendingRemoveRepo(project.path)}
+                      onSettings={() => setProjectSettingsPath(project.path)}
                       gitBusy={gitBusyMap[project.path] ?? false}
                       gitResult={gitResultMap[project.path] ?? null}
                     />
@@ -697,6 +728,14 @@ export function RepoSidebar() {
       />
 
       <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
+
+      {projectSettingsPath && (
+        <ProjectSettingsDialog
+          open={true}
+          onOpenChange={(open) => { if (!open) setProjectSettingsPath(null); }}
+          projectPath={projectSettingsPath}
+        />
+      )}
 
       <Dialog
         open={pendingRenameRepo !== null}

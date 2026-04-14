@@ -3,6 +3,7 @@ const RECENT_PROJECTS_STORAGE_KEY = "bettergit:recent-projects";
 const LEGACY_RECENT_REPOS_STORAGE_KEY = "bettergit:recent-repos";
 const TERMINAL_APP_STORAGE_KEY = "bettergit:terminal-app";
 const TERMINAL_PROJECTS_STORAGE_KEY = "bettergit:terminal-projects";
+const DISMISSED_CARDS_STORAGE_KEY = "bettergit:dismissed-setup-cards";
 
 export interface RecentProject {
   path: string;
@@ -129,10 +130,22 @@ function findLastPinnedIndex(projects: RecentProject[]): number {
   return -1;
 }
 
+function parseDismissedCards(value: unknown): Record<string, string[]> {
+  if (!value || typeof value !== "object") return {};
+  const result: Record<string, string[]> = {};
+  for (const [key, val] of Object.entries(value)) {
+    if (Array.isArray(val)) {
+      result[key] = val.filter((v): v is string => typeof v === "string");
+    }
+  }
+  return result;
+}
+
 function loadFromLocalStorage(): {
   projects: RecentProject[];
   terminalApp: string | null;
   terminalProjects: Record<string, TerminalProjectState>;
+  dismissedSetupCards: Record<string, string[]>;
 } {
   try {
     const recentProjects = parseStoredProjects(
@@ -145,13 +158,17 @@ function loadFromLocalStorage(): {
     const terminalProjects = parseStoredTerminalProjects(
       JSON.parse(localStorage.getItem(TERMINAL_PROJECTS_STORAGE_KEY) ?? "{}"),
     );
+    const dismissedSetupCards = parseDismissedCards(
+      JSON.parse(localStorage.getItem(DISMISSED_CARDS_STORAGE_KEY) ?? "{}"),
+    );
     return {
       projects: recentProjects.length > 0 ? recentProjects : fallbackRepos,
       terminalApp,
       terminalProjects,
+      dismissedSetupCards,
     };
   } catch {
-    return { projects: [], terminalApp: null, terminalProjects: {} };
+    return { projects: [], terminalApp: null, terminalProjects: {}, dismissedSetupCards: {} };
   }
 }
 
@@ -159,6 +176,7 @@ function saveSettings(
   projects: RecentProject[],
   terminalApp: string | null,
   terminalProjects: Record<string, TerminalProjectState>,
+  dismissedSetupCards?: Record<string, string[]>,
 ) {
   const normalizedProjects = normalizeProjects(projects);
   const recentRepos = normalizedProjects.map((project) => project.path);
@@ -169,8 +187,11 @@ function saveSettings(
   localStorage.setItem(TERMINAL_PROJECTS_STORAGE_KEY, JSON.stringify(terminalProjects));
   if (terminalApp) localStorage.setItem(TERMINAL_APP_STORAGE_KEY, terminalApp);
   else localStorage.removeItem(TERMINAL_APP_STORAGE_KEY);
+  if (dismissedSetupCards !== undefined) {
+    localStorage.setItem(DISMISSED_CARDS_STORAGE_KEY, JSON.stringify(dismissedSetupCards));
+  }
 
-  persistToFile({ recentProjects: normalizedProjects, recentRepos, terminalApp, terminalProjects });
+  persistToFile({ recentProjects: normalizedProjects, recentRepos, terminalApp, terminalProjects, dismissedSetupCards });
 }
 
 // ---------------------------------------------------------------------------
@@ -195,6 +216,10 @@ interface AppStore {
   closeTerminalTab: (cwd: string, tabId: string) => void;
   setActiveTerminalTab: (cwd: string, tabId: string) => void;
   removeTerminalProject: (cwd: string) => void;
+  dismissedSetupCards: Record<string, string[]>;
+  dismissSetupCard: (cwd: string, cardId: string) => void;
+  restoreSetupCard: (cwd: string, cardId: string) => void;
+  isSetupCardDismissed: (cwd: string, cardId: string) => boolean;
   setGitBusy: (cwd: string, busy: boolean) => void;
   flashGitResult: (cwd: string, result: "success" | "error") => void;
 }
@@ -209,6 +234,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
   terminalProjects: initial.terminalProjects,
   gitBusyMap: {},
   gitResultMap: {},
+  dismissedSetupCards: initial.dismissedSetupCards,
 
   setRepoCwd: (cwd) => {
     if (!cwd) {
@@ -385,6 +411,30 @@ export const useAppStore = create<AppStore>((set, get) => ({
     set({ terminalProjects: nextTerminalProjects });
     void window.electronAPI?.terminal.closeProject({ projectPath: cwd, deleteHistory: true });
     saveSettings(get().recentProjects, get().terminalApp, nextTerminalProjects);
+  },
+
+  dismissSetupCard: (cwd, cardId) => {
+    const current = get().dismissedSetupCards;
+    const cards = current[cwd] ?? [];
+    if (cards.includes(cardId)) return;
+    const next = { ...current, [cwd]: [...cards, cardId] };
+    set({ dismissedSetupCards: next });
+    saveSettings(get().recentProjects, get().terminalApp, get().terminalProjects, next);
+  },
+
+  restoreSetupCard: (cwd, cardId) => {
+    const current = get().dismissedSetupCards;
+    const cards = current[cwd];
+    if (!cards || !cards.includes(cardId)) return;
+    const filtered = cards.filter((id) => id !== cardId);
+    const next = { ...current, [cwd]: filtered };
+    if (filtered.length === 0) delete next[cwd];
+    set({ dismissedSetupCards: next });
+    saveSettings(get().recentProjects, get().terminalApp, get().terminalProjects, next);
+  },
+
+  isSetupCardDismissed: (cwd, cardId) => {
+    return (get().dismissedSetupCards[cwd] ?? []).includes(cardId);
   },
 
   setGitBusy: (cwd, busy) => set((s) => ({
