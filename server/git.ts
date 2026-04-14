@@ -1422,16 +1422,17 @@ export interface MergePullRequestsResult {
 }
 
 const PROTECTED_BRANCHES = ["main", "master", "pre-release"];
+const LONG_RUNNING_GIT_TIMEOUT_MS = 10 * 60_000
 
 function isProtectedBranch(name: string) {
   return PROTECTED_BRANCHES.includes(name);
 }
 
-async function gitRun(cwd: string, args: string[], timeout = 30_000) {
+async function gitRun(cwd: string, args: string[], timeout = LONG_RUNNING_GIT_TIMEOUT_MS) {
   return runProcess("git", args, cwd, timeout);
 }
 
-async function ghRun(cwd: string, args: string[], timeout = 30_000) {
+async function ghRun(cwd: string, args: string[], timeout = LONG_RUNNING_GIT_TIMEOUT_MS) {
   return runProcess("gh", args, cwd, timeout);
 }
 
@@ -1634,7 +1635,7 @@ export async function mergePullRequests(input: MergePullRequestsInput): Promise<
     if (!isStack && !isProtectedBranch(headBranch)) {
       mergeArgs.push("--delete-branch");
     }
-    const result = await ghRun(cwd, mergeArgs, 60_000);
+    const result = await ghRun(cwd, mergeArgs, LONG_RUNNING_GIT_TIMEOUT_MS);
     if (result.code === 0) return;
 
     const refreshed = await readPr(prNumber);
