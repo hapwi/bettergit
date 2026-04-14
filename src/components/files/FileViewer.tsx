@@ -420,17 +420,30 @@ export const FileViewer = forwardRef<FileViewerHandle, { isActive?: boolean }>(f
       <div className="flex min-w-0 flex-1 flex-col bg-[#1a1a1a]">
         {/* Tab bar */}
         {openFiles.length > 0 && (
-          <div ref={tabBarRef} className="flex h-[35px] shrink-0 items-end overflow-x-auto overflow-y-hidden bg-[#161616] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+          <div
+            ref={tabBarRef}
+            role="tablist"
+            aria-label="Open files"
+            className="flex h-[35px] shrink-0 items-end overflow-x-auto overflow-y-hidden bg-[#161616] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+          >
             {openFiles.map((file) => {
               const isDirty = file.isDirty
               const isFileActive = file.path === activeFilePath
               return (
                 <ContextMenu key={file.path}>
                   <ContextMenuTrigger asChild>
-                    <button
+                    <div
                       data-tab-path={file.path}
-                      type="button"
+                      role="tab"
+                      tabIndex={0}
+                      aria-selected={isFileActive}
                       onClick={() => setActiveFilePath(file.path)}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter" || event.key === " ") {
+                          event.preventDefault()
+                          setActiveFilePath(file.path)
+                        }
+                      }}
                       className={cn(
                         "group relative flex h-[32px] shrink-0 items-center gap-1.5 px-3 text-[12px] transition-colors",
                         isFileActive
@@ -459,7 +472,7 @@ export const FileViewer = forwardRef<FileViewerHandle, { isActive?: boolean }>(f
                           <X className="size-3" />
                         </button>
                       </span>
-                    </button>
+                    </div>
                   </ContextMenuTrigger>
                   <ContextMenuContent>
                     <ContextMenuItem onClick={() => requestCloseFile(file.path)}>

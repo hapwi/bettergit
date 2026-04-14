@@ -59,6 +59,47 @@ const PIE_COLORS = [
   "var(--chart-5)",
 ];
 
+function toSafeChartValue(value: unknown): number {
+  const parsed = typeof value === "number" ? value : Number(value)
+  if (!Number.isFinite(parsed) || parsed < 0) {
+    return 0
+  }
+  return Math.round(parsed)
+}
+
+function buildIntegerTicks(maxValue: number): number[] {
+  const safeMax = Math.max(0, Math.ceil(maxValue))
+  if (safeMax <= 1) {
+    return [0, 1]
+  }
+
+  const segments = Math.min(4, safeMax)
+  const step = Math.max(1, Math.ceil(safeMax / segments))
+  const ticks = [0]
+
+  for (let value = step; value < safeMax; value += step) {
+    ticks.push(value)
+  }
+
+  if (ticks[ticks.length - 1] !== safeMax) {
+    ticks.push(safeMax)
+  }
+
+  return ticks
+}
+
+function formatDayLabel(date: string): string {
+  const parsed = new Date(`${date}T00:00:00`)
+  if (Number.isNaN(parsed.getTime())) {
+    return date
+  }
+
+  return parsed.toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+  })
+}
+
 function SectionTitle({
   icon,
   title,
@@ -125,12 +166,9 @@ export function Dashboard({ isActive }: { isActive: boolean }) {
     const weeks: Array<{ week: string; commits: number }> = [];
     for (let i = 0; i < stats.dailyActivity.length; i += 7) {
       const slice = stats.dailyActivity.slice(i, i + 7);
-      const commits = slice.reduce((sum, d) => sum + d.commits, 0);
+      const commits = slice.reduce((sum, d) => sum + toSafeChartValue(d.commits), 0);
       const startDate = slice[0]?.date ?? "";
-      const label = new Date(startDate + "T00:00:00").toLocaleDateString("en-US", {
-        month: "short",
-        day: "numeric",
-      });
+      const label = formatDayLabel(startDate);
       weeks.push({ week: label, commits });
     }
     return weeks;
@@ -139,14 +177,31 @@ export function Dashboard({ isActive }: { isActive: boolean }) {
   const recentChanges = useMemo(() => {
     if (!stats) return [];
     return stats.dailyActivity.slice(-14).map((d) => ({
-      date: new Date(d.date + "T00:00:00").toLocaleDateString("en-US", {
-        month: "short",
-        day: "numeric",
-      }),
-      insertions: d.insertions,
-      deletions: d.deletions,
+      date: formatDayLabel(d.date),
+      insertions: toSafeChartValue(d.insertions),
+      deletions: toSafeChartValue(d.deletions),
     }));
   }, [stats]);
+
+  const activityTicks = useMemo(
+    () => buildIntegerTicks(Math.max(...weeklyActivity.map((entry) => entry.commits), 0)),
+    [weeklyActivity],
+  )
+
+  const activityMax = activityTicks[activityTicks.length - 1] ?? 1
+
+  const changesTicks = useMemo(
+    () =>
+      buildIntegerTicks(
+        Math.max(
+          ...recentChanges.flatMap((entry) => [entry.insertions, entry.deletions]),
+          0,
+        ),
+      ),
+    [recentChanges],
+  )
+
+  const changesMax = changesTicks[changesTicks.length - 1] ?? 1
 
   if (!repoCwd) return null;
 
@@ -213,7 +268,14 @@ export function Dashboard({ isActive }: { isActive: boolean }) {
                   <BarChart data={weeklyActivity} margin={{ top: 8, right: 4, bottom: 0, left: -20 }}>
                     <CartesianGrid vertical={false} strokeDasharray="3 3" className="stroke-border/30" />
                     <XAxis dataKey="week" tickLine={false} axisLine={false} fontSize={10} />
-                    <YAxis tickLine={false} axisLine={false} fontSize={10} allowDecimals={false} />
+                    <YAxis
+                      tickLine={false}
+                      axisLine={false}
+                      fontSize={10}
+                      allowDecimals={false}
+                      ticks={activityTicks}
+                      domain={[0, activityMax]}
+                    />
                     <ChartTooltip content={<ChartTooltipContent />} />
                     <Bar dataKey="commits" fill="var(--color-commits)" radius={[6, 6, 0, 0]} />
                   </BarChart>
@@ -235,7 +297,14 @@ export function Dashboard({ isActive }: { isActive: boolean }) {
                   <AreaChart data={recentChanges} margin={{ top: 8, right: 4, bottom: 0, left: -20 }}>
                     <CartesianGrid vertical={false} strokeDasharray="3 3" className="stroke-border/30" />
                     <XAxis dataKey="date" tickLine={false} axisLine={false} fontSize={10} />
-                    <YAxis tickLine={false} axisLine={false} fontSize={10} allowDecimals={false} />
+                    <YAxis
+                      tickLine={false}
+                      axisLine={false}
+                      fontSize={10}
+                      allowDecimals={false}
+                      ticks={changesTicks}
+                      domain={[0, changesMax]}
+                    />
                     <ChartTooltip content={<ChartTooltipContent />} />
                     <defs>
                       <linearGradient id="fillIns" x1="0" y1="0" x2="0" y2="1">
