@@ -10,7 +10,7 @@ import { GitBranchIcon, ExchangeIcon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { gitBranchesQueryOptions, gitStatusQueryOptions, invalidateGitQueries } from "@/lib/git/queries";
-import { execGit } from "@/lib/git/exec";
+import { createPreReleaseBranch, renameMasterToMain } from "@/lib/git/workflows";
 import { toast } from "sonner";
 
 export function ProjectSettingsDialog({
@@ -66,10 +66,7 @@ export function ProjectSettingsDialog({
                 onClick={() => {
                   void (async () => {
                     try {
-                      await execGit(projectPath, ["checkout", "-b", "pre-release"]);
-                      if (hasOriginRemote) {
-                        await execGit(projectPath, ["push", "-u", "origin", "pre-release"]);
-                      }
+                      await createPreReleaseBranch(projectPath);
                       toast.success("Created pre-release branch");
                       void invalidateGitQueries(queryClient);
                     } catch {
@@ -97,10 +94,7 @@ export function ProjectSettingsDialog({
                 onClick={() => {
                   void (async () => {
                     try {
-                      await execGit(projectPath, ["branch", "-m", "master", "main"]);
-                      await execGit(projectPath, ["push", "-u", "origin", "main"]);
-                      await execGit(projectPath, ["remote", "set-head", "origin", "main"]);
-                      await execGit(projectPath, ["push", "origin", "--delete", "master"]);
+                      await renameMasterToMain(projectPath);
                       toast.success("Renamed master to main (local + remote)");
                       void invalidateGitQueries(queryClient);
                     } catch (err) {

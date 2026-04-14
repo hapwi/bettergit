@@ -76,37 +76,6 @@ function createDefaultTerminalProjectState(): TerminalProjectState {
   };
 }
 
-function normalizeTerminalProjectState(value: unknown): TerminalProjectState | null {
-  if (!value || typeof value !== "object") return null;
-  const candidate = value as Partial<TerminalProjectState>;
-  if (!Array.isArray(candidate.tabIds)) return null;
-
-  const tabIds = [...new Set(candidate.tabIds)]
-    .map((tabId) => (typeof tabId === "string" ? tabId.trim() : ""))
-    .filter((tabId) => tabId.length > 0);
-  if (tabIds.length === 0) return null;
-
-  const activeTabId =
-    typeof candidate.activeTabId === "string" && tabIds.includes(candidate.activeTabId)
-      ? candidate.activeTabId
-      : (tabIds[0] ?? null);
-
-  return { tabIds, activeTabId };
-}
-
-function parseStoredTerminalProjects(value: unknown): Record<string, TerminalProjectState> {
-  if (!value || typeof value !== "object") return {};
-
-  return Object.fromEntries(
-    Object.entries(value).flatMap(([projectPath, projectState]) => {
-      const normalizedProjectPath = projectPath.trim();
-      if (!normalizedProjectPath) return [];
-      const normalizedState = normalizeTerminalProjectState(projectState);
-      return normalizedState ? [[normalizedProjectPath, normalizedState] as const] : [];
-    }),
-  );
-}
-
 function stripProjectPath<T>(map: Record<string, T>, pathToRemove: string): Record<string, T> {
   if (!(pathToRemove in map)) return map;
   const next = { ...map };
@@ -155,16 +124,13 @@ function loadFromLocalStorage(): {
       JSON.parse(localStorage.getItem(LEGACY_RECENT_REPOS_STORAGE_KEY) ?? "[]"),
     );
     const terminalApp = localStorage.getItem(TERMINAL_APP_STORAGE_KEY);
-    const terminalProjects = parseStoredTerminalProjects(
-      JSON.parse(localStorage.getItem(TERMINAL_PROJECTS_STORAGE_KEY) ?? "{}"),
-    );
     const dismissedSetupCards = parseDismissedCards(
       JSON.parse(localStorage.getItem(DISMISSED_CARDS_STORAGE_KEY) ?? "{}"),
     );
     return {
       projects: recentProjects.length > 0 ? recentProjects : fallbackRepos,
       terminalApp,
-      terminalProjects,
+      terminalProjects: {},
       dismissedSetupCards,
     };
   } catch {
@@ -175,7 +141,7 @@ function loadFromLocalStorage(): {
 function saveSettings(
   projects: RecentProject[],
   terminalApp: string | null,
-  terminalProjects: Record<string, TerminalProjectState>,
+  _terminalProjects: Record<string, TerminalProjectState>,
   dismissedSetupCards?: Record<string, string[]>,
 ) {
   const normalizedProjects = normalizeProjects(projects);
@@ -184,14 +150,14 @@ function saveSettings(
   // Save to both localStorage (fast sync read) and file (survives restarts)
   localStorage.setItem(RECENT_PROJECTS_STORAGE_KEY, JSON.stringify(normalizedProjects));
   localStorage.setItem(LEGACY_RECENT_REPOS_STORAGE_KEY, JSON.stringify(recentRepos));
-  localStorage.setItem(TERMINAL_PROJECTS_STORAGE_KEY, JSON.stringify(terminalProjects));
+  localStorage.removeItem(TERMINAL_PROJECTS_STORAGE_KEY);
   if (terminalApp) localStorage.setItem(TERMINAL_APP_STORAGE_KEY, terminalApp);
   else localStorage.removeItem(TERMINAL_APP_STORAGE_KEY);
   if (dismissedSetupCards !== undefined) {
     localStorage.setItem(DISMISSED_CARDS_STORAGE_KEY, JSON.stringify(dismissedSetupCards));
   }
 
-  persistToFile({ recentProjects: normalizedProjects, recentRepos, terminalApp, terminalProjects, dismissedSetupCards });
+  persistToFile({ recentProjects: normalizedProjects, recentRepos, terminalApp, dismissedSetupCards });
 }
 
 // ---------------------------------------------------------------------------
@@ -226,6 +192,7 @@ interface AppStore {
 
 // Sync load from localStorage for initial render
 const initial = loadFromLocalStorage();
+localStorage.removeItem(TERMINAL_PROJECTS_STORAGE_KEY);
 
 export const useAppStore = create<AppStore>((set, get) => ({
   repoCwd: initial.projects[0]?.path ?? null,
@@ -454,7 +421,6 @@ window.electronAPI?.settings.load().then((file) => {
   const fallbackFileRepos = parseStoredProjects(file.recentRepos);
   const recentProjects = fileProjects.length > 0 ? fileProjects : fallbackFileRepos;
   const fileTermApp = (file.terminalApp as string | null) ?? null;
-  const fileTerminalProjects = parseStoredTerminalProjects(file.terminalProjects);
 
   // If localStorage was empty but file has data, restore from file
   if (state.recentProjects.length === 0 && recentProjects.length > 0) {
@@ -462,7 +428,7 @@ window.electronAPI?.settings.load().then((file) => {
       recentProjects,
       repoCwd: recentProjects[0]?.path ?? null,
       terminalApp: fileTermApp,
-      terminalProjects: fileTerminalProjects,
+      terminalProjects: {},
     });
     // Sync back to localStorage
     localStorage.setItem(RECENT_PROJECTS_STORAGE_KEY, JSON.stringify(recentProjects));
@@ -470,16 +436,7 @@ window.electronAPI?.settings.load().then((file) => {
       LEGACY_RECENT_REPOS_STORAGE_KEY,
       JSON.stringify(recentProjects.map((project) => project.path)),
     );
-    localStorage.setItem(TERMINAL_PROJECTS_STORAGE_KEY, JSON.stringify(fileTerminalProjects));
     if (fileTermApp) localStorage.setItem(TERMINAL_APP_STORAGE_KEY, fileTermApp);
     return;
-  }
-
-  if (
-    Object.keys(state.terminalProjects).length === 0 &&
-    Object.keys(fileTerminalProjects).length > 0
-  ) {
-    useAppStore.setState({ terminalProjects: fileTerminalProjects });
-    localStorage.setItem(TERMINAL_PROJECTS_STORAGE_KEY, JSON.stringify(fileTerminalProjects));
   }
 });

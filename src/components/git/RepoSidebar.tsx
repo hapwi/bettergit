@@ -1,5 +1,4 @@
 import { useState, useEffect } from "react";
-import { execGit } from "@/lib/git/exec";
 import { CheckmarkCircle02Icon } from "@hugeicons/core-free-icons";
 import { useQuery } from "@tanstack/react-query";
 import {
@@ -66,6 +65,12 @@ import { ProjectSettingsDialog } from "@/components/git/ProjectSettingsDialog";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { createGhRepo } from "@/lib/git/github";
+import {
+  createPreReleaseBranch,
+  renameMasterToMain,
+  setupRepository,
+  switchToMain,
+} from "@/lib/git/workflows";
 
 const isDevBuild = import.meta.env.DEV;
 
@@ -328,47 +333,11 @@ export function RepoSidebar() {
     if (!repoCwd) return;
 
     try {
-      await execGit(repoCwd, ["branch", "-m", "master", "main"]);
-      await execGit(repoCwd, ["push", "-u", "origin", "main"]);
-      await execGit(repoCwd, ["remote", "set-head", "origin", "main"]);
-      await execGit(repoCwd, ["push", "origin", "--delete", "master"]);
+      await renameMasterToMain(repoCwd);
       toast.success("Renamed master to main (local + remote)");
       void invalidateGitQueries(queryClient);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Rename failed");
-    }
-  };
-
-  const ensureMainBranch = async () => {
-    if (!repoCwd || !status) return;
-
-    const mainExists = (await execGit(repoCwd, ["show-ref", "--verify", "--quiet", "refs/heads/main"])).code === 0;
-    if (mainExists) {
-      await execGit(repoCwd, ["switch", "main"]);
-      return;
-    }
-
-    if (status.branch === "master") {
-      await execGit(repoCwd, ["branch", "-m", "master", "main"]);
-      return;
-    }
-
-    if (status.isDetached) {
-      if (status.hasCommits) {
-        await execGit(repoCwd, ["switch", "-c", "main"]);
-      } else {
-        await execGit(repoCwd, ["checkout", "--orphan", "main"]);
-      }
-      return;
-    }
-
-    if (!status.branch) {
-      await execGit(repoCwd, ["checkout", "--orphan", "main"]);
-      return;
-    }
-
-    if (!status.hasCommits) {
-      await execGit(repoCwd, ["branch", "-m", status.branch, "main"]);
     }
   };
 
@@ -377,11 +346,8 @@ export function RepoSidebar() {
 
     setIsSettingUpRepository(true);
     try {
-      await ensureMainBranch();
-
-      if (status.hasWorkingTreeChanges) {
-        await execGit(repoCwd, ["add", "-A"]);
-        await execGit(repoCwd, ["commit", "-m", "Initial commit"]);
+      const result = await setupRepository(repoCwd);
+      if (result.committed) {
         toast.success("Repository initialized on main with an initial commit");
       } else {
         toast.success("Main branch is ready. Add files when you're ready for the first commit.");
@@ -400,7 +366,7 @@ export function RepoSidebar() {
 
     setIsSettingUpRepository(true);
     try {
-      await ensureMainBranch();
+      await switchToMain(repoCwd);
       toast.success('Switched repository to "main"');
       void invalidateGitQueries(queryClient);
     } catch (err) {
@@ -585,10 +551,7 @@ export function RepoSidebar() {
                       void (async () => {
                         if (!repoCwd) return;
                         try {
-                          await execGit(repoCwd, ["checkout", "-b", "pre-release"]);
-                          if (hasOriginRemote) {
-                            await execGit(repoCwd, ["push", "-u", "origin", "pre-release"]);
-                          }
+                          await createPreReleaseBranch(repoCwd);
                           toast.success("Created pre-release branch");
                           void invalidateGitQueries(queryClient);
                         } catch {

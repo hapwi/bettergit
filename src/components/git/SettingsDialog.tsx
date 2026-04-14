@@ -8,7 +8,7 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { execGh } from "@/lib/git/exec";
+import { getGhAuthStatus } from "@/lib/git/github";
 import { useAppStore } from "@/store";
 import { GitHubIcon, ClaudeIcon, CodexIcon } from "@/components/icons";
 import { ArrowLeft02Icon, AiMagicIcon } from "@hugeicons/core-free-icons";
@@ -88,19 +88,13 @@ export function SettingsDialog({
     // GitHub CLI
     let gh: ServiceStatus;
     try {
-      const result = await execGh(cwd, ["auth", "status"]);
-      const output = result.stdout + result.stderr;
-      if (result.code === 0 || output.includes("Logged in")) {
-        const match = output.match(/Logged in to (.+?) account (.+?)[\s(]/);
-        gh = {
-          label: "GitHub CLI",
-          status: "connected",
-          detail: match ? `${match[2]} on ${match[1]}` : "Authenticated",
-          icon: GitHubIcon,
-        };
-      } else {
-        gh = { label: "GitHub CLI", status: "disconnected", detail: "Run: gh auth login", icon: GitHubIcon };
-      }
+      const status = await getGhAuthStatus(cwd);
+      gh = {
+        label: "GitHub CLI",
+        status: status.connected ? "connected" : "disconnected",
+        detail: status.detail,
+        icon: GitHubIcon,
+      };
     } catch {
       gh = { label: "GitHub CLI", status: "disconnected", detail: "gh CLI not found", icon: GitHubIcon };
     }

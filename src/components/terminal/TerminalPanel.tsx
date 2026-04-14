@@ -111,6 +111,12 @@ function TerminalViewport({ projectPath, cwd, tabId, isActive }: TerminalViewpor
   const containerRef = useRef<HTMLDivElement>(null)
   const terminalRef = useRef<XTermTerminal | null>(null)
   const fitAddonRef = useRef<FitAddon | null>(null)
+  const isActiveRef = useRef(isActive)
+  const sessionReadyRef = useRef(false)
+
+  useEffect(() => {
+    isActiveRef.current = isActive
+  }, [isActive])
 
   const fitAndResize = useCallback(() => {
     const terminal = terminalRef.current
@@ -120,6 +126,10 @@ function TerminalViewport({ projectPath, cwd, tabId, isActive }: TerminalViewpor
     try {
       fitAddon.fit()
     } catch {
+      return
+    }
+
+    if (!sessionReadyRef.current) {
       return
     }
 
@@ -150,6 +160,7 @@ function TerminalViewport({ projectPath, cwd, tabId, isActive }: TerminalViewpor
     terminal.open(mount)
     terminalRef.current = terminal
     fitAddonRef.current = fitAddon
+    sessionReadyRef.current = false
 
     const unsubscribeEvents = terminalApi.onEvent((event) => {
       if (event.projectPath !== projectPath || event.tabId !== tabId) return
@@ -215,8 +226,10 @@ function TerminalViewport({ projectPath, cwd, tabId, isActive }: TerminalViewpor
           rows: terminal.rows,
         })
         .then((snapshot) => {
+          sessionReadyRef.current = true
           writeTerminalSnapshot(terminal, snapshot.history)
-          if (isActive) {
+          fitAndResize()
+          if (isActiveRef.current) {
             terminal.focus()
           }
         })
@@ -237,9 +250,10 @@ function TerminalViewport({ projectPath, cwd, tabId, isActive }: TerminalViewpor
       themeObserver.disconnect()
       terminalRef.current = null
       fitAddonRef.current = null
+      sessionReadyRef.current = false
       terminal.dispose()
     }
-  }, [cwd, fitAndResize, isActive, projectPath, tabId])
+  }, [cwd, fitAndResize, projectPath, tabId])
 
   useEffect(() => {
     if (!isActive) return
