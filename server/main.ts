@@ -47,6 +47,7 @@ import {
   versionBump,
 } from "./git";
 import * as ai from "./ai";
+import * as files from "./files";
 import { getProjectFavicon } from "./favicon";
 import { fixPath } from "./env";
 
@@ -144,6 +145,13 @@ const routes: Record<string, RouteHandler> = {
   "POST /api/ai/branch-name": async (body) => ai.generateBranchName(body as Parameters<typeof ai.generateBranchName>[0]),
   "POST /api/ai/set-model": async (body) => { ai.setModel((body as { model: string }).model); return { ok: true }; },
   "POST /api/project/favicon": async (body) => ({ favicon: await getProjectFavicon((body as { cwd: string }).cwd) }),
+  "POST /api/files/list": async (body) => files.listDirectory(body as Parameters<typeof files.listDirectory>[0]),
+  "POST /api/files/read": async (body) => files.readFile(body as Parameters<typeof files.readFile>[0]),
+  "POST /api/files/write": async (body) => files.writeFile(body as Parameters<typeof files.writeFile>[0]),
+  "POST /api/files/create": async (body) => files.createFile(body as Parameters<typeof files.createFile>[0]),
+  "POST /api/files/mkdir": async (body) => files.createDirectory(body as Parameters<typeof files.createDirectory>[0]),
+  "POST /api/files/delete": async (body) => files.deleteEntry(body as Parameters<typeof files.deleteEntry>[0]),
+  "POST /api/files/rename": async (body) => files.renameEntry(body as Parameters<typeof files.renameEntry>[0]),
 };
 
 const server = http.createServer(async (req, res) => {
