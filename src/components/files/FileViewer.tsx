@@ -364,7 +364,7 @@ export const FileViewer = forwardRef<FileViewerHandle, { isActive?: boolean }>(f
   if (!repoCwd) return null
 
   return (
-    <div className={cn("flex h-full", !isActive && "hidden")}>
+    <div className={cn("flex h-full overflow-hidden", !isActive && "hidden")}>
       {/* File tree sidebar */}
       <div
         className="flex shrink-0 flex-col bg-[#161616]"
@@ -372,7 +372,7 @@ export const FileViewer = forwardRef<FileViewerHandle, { isActive?: boolean }>(f
       >
         <div className="flex h-[35px] items-center justify-between px-3">
           <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/50">
-            Explorer
+            Files
           </span>
           <FileTreeActions
             onNewFile={() => setPendingTreeAction({ type: "new-file", parentPath: "" })}

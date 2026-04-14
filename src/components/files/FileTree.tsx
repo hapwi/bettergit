@@ -130,7 +130,7 @@ function InlineInput({
         placeholder={placeholder}
         onKeyDown={handleKeyDown}
         onBlur={() => finish(ref.current?.value.trim())}
-        className="w-full rounded-sm border border-primary/40 bg-white/[0.06] px-1.5 py-[2px] text-[13px] leading-[20px] text-foreground outline-none placeholder:text-muted-foreground/30"
+        className="w-full rounded-sm border border-primary/40 bg-white/[0.04] px-1.5 py-[2px] text-[13px] leading-[20px] text-foreground outline-none placeholder:text-muted-foreground/30"
       />
     </div>
   )
