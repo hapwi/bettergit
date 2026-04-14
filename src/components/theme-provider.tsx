@@ -68,7 +68,7 @@ function isEditableTarget(target: EventTarget | null) {
   }
 
   const editableParent = target.closest(
-    "input, textarea, select, [contenteditable='true']"
+    "input, textarea, select, [contenteditable='true'], .monaco-editor"
   )
   if (editableParent) {
     return true

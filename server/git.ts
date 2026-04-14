@@ -766,17 +766,17 @@ export async function push(input: {
     const branch = (await execGit({ cwd: input.cwd, args: ["branch", "--show-current"] })).stdout.trim();
     args.push("-u", "origin", branch);
   }
-  requireOk(await execGit({ cwd: input.cwd, args }), "push");
+  requireOk(await execGit({ cwd: input.cwd, args, timeoutMs: 10 * 60_000 }), "push");
   return { ok: true };
 }
 
 export async function pull(input: { cwd: string }): Promise<{ ok: true }> {
-  requireOk(await execGit({ cwd: input.cwd, args: ["pull", "--ff-only"] }), "pull");
+  requireOk(await execGit({ cwd: input.cwd, args: ["pull", "--ff-only"], timeoutMs: 10 * 60_000 }), "pull");
   return { ok: true };
 }
 
 export async function fetch(input: { cwd: string }): Promise<{ ok: true }> {
-  requireOk(await execGit({ cwd: input.cwd, args: ["fetch", "--prune"] }), "fetch");
+  requireOk(await execGit({ cwd: input.cwd, args: ["fetch", "--prune"], timeoutMs: 10 * 60_000 }), "fetch");
   return { ok: true };
 }
 
@@ -1301,9 +1301,9 @@ export async function runStackedAction(input: StackedActionInput): Promise<Stack
     } else {
       const remoteExists = await hasOriginRemote({ cwd });
       if (!remoteExists) {
-        await createGhRepo({ cwd, visibility: "private" });
-        result.push = { status: "pushed", branch: currentBranch, setUpstream: true };
-      } else {
+    await createGhRepo({ cwd, visibility: "private" });
+    result.push = { status: "pushed", branch: currentBranch, setUpstream: true };
+  } else {
         const upstreamCheck = await execGit({
           cwd,
           args: ["config", "branch." + currentBranch + ".remote"],
@@ -1312,7 +1312,7 @@ export async function runStackedAction(input: StackedActionInput): Promise<Stack
         const pushArgs = needsUpstream
           ? ["push", "-u", "origin", currentBranch]
           : ["push"];
-        requireOk(await execGit({ cwd, args: pushArgs }), "push");
+        requireOk(await execGit({ cwd, args: pushArgs, timeoutMs: 10 * 60_000 }), "push");
         result.push = {
           status: "pushed",
           branch: currentBranch,
@@ -1422,16 +1422,17 @@ export interface MergePullRequestsResult {
 }
 
 const PROTECTED_BRANCHES = ["main", "master", "pre-release"];
+const LONG_RUNNING_GIT_TIMEOUT_MS = 10 * 60_000
 
 function isProtectedBranch(name: string) {
   return PROTECTED_BRANCHES.includes(name);
 }
 
-async function gitRun(cwd: string, args: string[], timeout = 30_000) {
+async function gitRun(cwd: string, args: string[], timeout = LONG_RUNNING_GIT_TIMEOUT_MS) {
   return runProcess("git", args, cwd, timeout);
 }
 
-async function ghRun(cwd: string, args: string[], timeout = 30_000) {
+async function ghRun(cwd: string, args: string[], timeout = LONG_RUNNING_GIT_TIMEOUT_MS) {
   return runProcess("gh", args, cwd, timeout);
 }
 
@@ -1634,7 +1635,7 @@ export async function mergePullRequests(input: MergePullRequestsInput): Promise<
     if (!isStack && !isProtectedBranch(headBranch)) {
       mergeArgs.push("--delete-branch");
     }
-    const result = await ghRun(cwd, mergeArgs, 60_000);
+    const result = await ghRun(cwd, mergeArgs, LONG_RUNNING_GIT_TIMEOUT_MS);
     if (result.code === 0) return;
 
     const refreshed = await readPr(prNumber);

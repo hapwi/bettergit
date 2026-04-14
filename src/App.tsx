@@ -5,12 +5,13 @@ import { SidebarProvider, useSidebar } from "@/components/ui/sidebar"
 import { cn } from "@/lib/utils"
 import {
   LayoutDashboard,
-  GitBranchIcon,
   SidebarLeftIcon,
 } from "@hugeicons/core-free-icons"
 import { HugeiconsIcon } from "@hugeicons/react"
-import { Terminal, FileDiff } from "lucide-react"
+import { Terminal, FileDiff, FolderOpen } from "lucide-react"
 import type { TerminalPanelHandle } from "@/components/terminal/TerminalPanel"
+import type { FileViewerHandle } from "@/components/files/FileViewer"
+import { GitHubIcon } from "@/components/icons"
 
 const DiffViewer = lazy(async () => {
   const mod = await import("@/components/git/DiffViewer")
@@ -37,7 +38,12 @@ const TerminalPanel = lazy(async () => {
   return { default: mod.TerminalPanel }
 })
 
-type ActiveTab = "dashboard" | "git" | "terminal"
+const FileViewer = lazy(async () => {
+  const mod = await import("@/components/files/FileViewer")
+  return { default: mod.FileViewer }
+})
+
+type ActiveTab = "dashboard" | "git" | "files" | "terminal"
 
 function Toolbar({
   activeTab,
@@ -118,8 +124,21 @@ function Toolbar({
               : "text-muted-foreground hover:text-foreground",
           )}
         >
-          <HugeiconsIcon icon={GitBranchIcon} className="size-3" />
+          <GitHubIcon className="size-3" />
           Git
+        </button>
+        <button
+          type="button"
+          onClick={() => onTabChange("files")}
+          className={cn(
+            "flex items-center gap-1.5 rounded-[5px] px-2.5 py-1 text-xs font-medium transition-colors",
+            activeTab === "files"
+              ? "bg-background text-foreground shadow-sm"
+              : "text-muted-foreground hover:text-foreground",
+          )}
+        >
+          <FolderOpen className="size-3" />
+          Files
         </button>
         <button
           type="button"
@@ -147,6 +166,7 @@ function AppContent() {
   const ensureTerminalProject = useAppStore((s) => s.ensureTerminalProject)
   const addTerminalTab = useAppStore((s) => s.addTerminalTab)
   const removeTerminalProject = useAppStore((s) => s.removeTerminalProject)
+  const fileViewerRef = useRef<FileViewerHandle | null>(null)
   const terminalRefs = useRef(new Map<string, React.MutableRefObject<TerminalPanelHandle | null>>())
   const setTerminalHandle = (projectCwd: string, handle: TerminalPanelHandle | null) => {
     let existing = terminalRefs.current.get(projectCwd)
@@ -157,9 +177,13 @@ function AppContent() {
     existing.current = handle
   }
 
-  // Cmd+W: close pane/tab in terminal first, then close window
+  // Cmd+W: close active tab in files/terminal first, then close window
   useEffect(() => {
     const cleanup = window.electronAPI?.onClosePaneOrWindow(() => {
+      if (activeTab === "files") {
+        const handled = fileViewerRef.current?.closeActiveTab()
+        if (handled) return
+      }
       if (activeTab === "terminal" && repoCwd) {
         const ref = terminalRefs.current.get(repoCwd)
         if (ref?.current) {
@@ -216,6 +240,14 @@ function AppContent() {
           )}>
             <Suspense fallback={null}>
               {activeTab === "git" ? <GitPanel isActive /> : null}
+            </Suspense>
+          </div>
+          <div className={cn(
+            "absolute inset-0 overflow-hidden",
+            activeTab === "files" ? "z-10" : "hidden"
+          )}>
+            <Suspense fallback={null}>
+              <FileViewer ref={fileViewerRef} isActive={activeTab === "files"} />
             </Suspense>
           </div>
           {activeTab === "terminal" && repoCwd && !hasStartedTerminal && !isDiffOpen ? (
