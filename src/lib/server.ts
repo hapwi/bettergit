@@ -18,6 +18,8 @@ function getRequestOptions(path: string): ServerRequestOptions {
     path === "/api/git/remote/pull" ||
     path === "/api/git/remote/fetch" ||
     path === "/api/git/actions/stacked" ||
+    // Release PR creation can include AI generation before `gh pr create`.
+    path === "/api/git/release/create-pr" ||
     path === "/api/git/merge-prs" ||
     path === "/api/github/pr/merge"
   ) {
