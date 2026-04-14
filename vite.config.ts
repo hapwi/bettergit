@@ -54,6 +54,11 @@ export default defineConfig({
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),
+      // Recharts hits a Rolldown/CJS interop bug unless Decimal resolves to its ESM entry.
+      "decimal.js-light": path.resolve(
+        __dirname,
+        "./node_modules/decimal.js-light/decimal.mjs",
+      ),
     },
   },
   // Build for Electron — use relative paths so file:// loading works

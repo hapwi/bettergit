@@ -1,4 +1,4 @@
-import { useRef, useCallback } from "react"
+import { useRef, useCallback, useEffect } from "react"
 import Editor, { type OnMount, type BeforeMount } from "@monaco-editor/react"
 import type { editor as MonacoEditor } from "monaco-editor"
 
@@ -78,7 +78,10 @@ export function FileEditor({
 }: FileEditorProps) {
   const editorRef = useRef<MonacoEditor.IStandaloneCodeEditor | null>(null)
   const onSaveRef = useRef(onSave)
-  onSaveRef.current = onSave
+
+  useEffect(() => {
+    onSaveRef.current = onSave
+  }, [onSave])
 
   const handleMount: OnMount = useCallback(
     (editor, monaco) => {
