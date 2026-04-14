@@ -463,13 +463,7 @@ export function RepoSidebar() {
 
   return (
     <Sidebar className="bg-sidebar">
-      <SidebarHeader className="pt-11">
-        {isDevBuild && (
-          <div className="mx-2 rounded-lg border border-amber-500/20 bg-amber-500/10 px-3 py-1.5 text-center text-xs font-medium tracking-wide text-amber-500">
-            Dev Build
-          </div>
-        )}
-      </SidebarHeader>
+      <SidebarHeader className="pt-11" />
 
       <SidebarContent>
         {/* Active project status */}
@@ -716,6 +710,11 @@ export function RepoSidebar() {
             <HugeiconsIcon icon={Settings01Icon} className="size-4" />
           </Button>
         </div>
+        {isDevBuild && (
+          <p className="text-center text-[10px] text-amber-400/70">
+            development build
+          </p>
+        )}
       </SidebarFooter>
 
       <ConfirmDialog
