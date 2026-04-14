@@ -23,7 +23,8 @@ import {
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { useAppStore } from "@/store";
-import { getRepoStats, getRecentCommits, getOpenPrs, getMergedPrs, getForkParent } from "@/lib/git/stats";
+import { getRepoStats, getRecentCommits, getOpenPrs, getMergedPrs } from "@/lib/git/stats";
+import { getForkParent } from "@/lib/git/github";
 import { GitHubIcon } from "@/components/icons";
 import {
   Card,
