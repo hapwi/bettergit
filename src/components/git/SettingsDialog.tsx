@@ -101,7 +101,7 @@ function getDesktopUpdateDescription(state: DesktopUpdateState | null): string {
     return "Updates unavailable";
   }
   if (!state.enabled) {
-    return "No update feed configured";
+    return "Packaged builds only";
   }
   if (state.status === "available" && state.availableVersion) {
     return `Download v${state.availableVersion}`;
@@ -113,19 +113,19 @@ function getDesktopUpdateDescription(state: DesktopUpdateState | null): string {
     return `Install v${state.downloadedVersion ?? state.availableVersion ?? "update"}`;
   }
   if (state.status === "up-to-date") {
-    return "Already on latest version";
+    return "No update ready";
   }
   if (state.status === "error") {
     return state.message ?? "Update failed";
   }
-  return `Current version: ${state.currentVersion}.`;
+  return `Current v${state.currentVersion}`;
 }
 
 function getDesktopUpdateSummary(state: DesktopUpdateState | null): string {
   if (!state) return "Updates unavailable";
   if (!state.enabled) return "Packaged builds only";
   if (state.status === "available" && state.availableVersion) {
-    return "Update available";
+    return `v${state.availableVersion} available`;
   }
   if (state.status === "downloading") {
     if (typeof state.downloadPercent === "number") {
@@ -134,16 +134,16 @@ function getDesktopUpdateSummary(state: DesktopUpdateState | null): string {
     return "Downloading update";
   }
   if (state.status === "downloaded") {
-    return "Ready to install";
+    return `v${state.downloadedVersion ?? state.availableVersion ?? "update"} downloaded`;
   }
   if (state.status === "up-to-date") {
-    return `v${state.currentVersion} installed`;
+    return `You are on v${state.currentVersion}`;
   }
   if (state.status === "error") {
     return state.message ?? "Update failed";
   }
   if (state.status === "checking") {
-    return "Checking now";
+    return "Checking for updates";
   }
   return `v${state.currentVersion}`;
 }
@@ -152,13 +152,13 @@ function getDesktopUpdateMeta(state: DesktopUpdateState | null): string {
   if (!state) return "No update feed";
   if (!state.enabled) return state.message ?? "Automatic updates unavailable";
   if (state.status === "available" && state.availableVersion) {
-    return `v${state.availableVersion} ready · current v${state.currentVersion}`;
+    return `Current v${state.currentVersion}`;
   }
   if (state.status === "downloaded") {
-    return `Restart to install v${state.downloadedVersion ?? state.availableVersion ?? "update"}`;
+    return "Restart app to install";
   }
   if (state.status === "downloading" && state.availableVersion) {
-    return `Target v${state.availableVersion}`;
+    return `Downloading v${state.availableVersion}`;
   }
   if (state.status === "error") {
     return state.errorContext === "download" ? "Retry download" : "Check again";
@@ -529,7 +529,7 @@ export function SettingsDialog({
                   />
                 </div>
               )}
-              <div className="mt-3 flex items-center gap-2">
+              <div className="mt-3 flex items-center gap-2 border-t border-border/50 pt-3">
                 <span className="min-w-0 truncate text-[10px] text-muted-foreground/60">
                   {getDesktopUpdateDescription(updateState)}
                 </span>

@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, Menu, shell } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, Menu, powerMonitor, shell } from "electron";
 import path from "node:path";
 import os from "node:os";
 import fs from "node:fs";
@@ -63,6 +63,8 @@ const AUTO_UPDATE_POLL_INTERVAL_MS = 4 * 60 * 60 * 1000;
 let serverProcess: ChildProcess | null = null;
 let serverPort = 0;
 let serverLogStream: fs.WriteStream | null = null;
+let serverStartPromise: Promise<number> | null = null;
+let serverRestartTimer: ReturnType<typeof setTimeout> | null = null;
 let terminalSessionManager: TerminalSessionManager | null = null;
 let updatePollTimer: ReturnType<typeof setInterval> | null = null;
 let updateStartupTimer: ReturnType<typeof setTimeout> | null = null;
@@ -71,6 +73,7 @@ let updateDownloadInFlight = false;
 let updateInstallInFlight = false;
 let updaterConfigured = false;
 let updateState: DesktopUpdateState = createInitialUpdateState(app.getVersion());
+let appIsQuitting = false;
 
 function appendMainLog(message: string): void {
   const line = `[${new Date().toISOString()}] ${message}\n`;
@@ -87,6 +90,29 @@ function ensurePackagedLogging(): void {
   serverLogStream = fs.createWriteStream(path.join(userDataDir, "server-child.log"), {
     flags: "a",
   });
+}
+
+function clearServerRestartTimer(): void {
+  if (!serverRestartTimer) return;
+  clearTimeout(serverRestartTimer);
+  serverRestartTimer = null;
+}
+
+function isServerProcessAlive(processRef: ChildProcess | null = serverProcess): boolean {
+  return Boolean(processRef && !processRef.killed && processRef.exitCode === null);
+}
+
+function scheduleServerRestart(reason: string): void {
+  if (appIsQuitting || serverStartPromise || serverRestartTimer) return;
+  appendMainLog(`scheduling server restart (${reason})`);
+  serverRestartTimer = setTimeout(() => {
+    serverRestartTimer = null;
+    void ensureServerRunning(`restart:${reason}`).catch((error) => {
+      const message = error instanceof Error ? error.message : String(error);
+      appendMainLog(`server restart failed (${reason}): ${message}`);
+    });
+  }, 1_000);
+  serverRestartTimer.unref();
 }
 
 async function findFreePort(): Promise<number> {
@@ -106,7 +132,7 @@ async function startServer(): Promise<number> {
     ? path.join(__dirname, "../dist-server/main.mjs")
     : path.join(__dirname, "../dist-server/main.mjs");
 
-  serverProcess = spawn(process.execPath, [serverEntry], {
+  const child = spawn(process.execPath, [serverEntry], {
     // Match hapcode: in prod, use homedir as cwd so claude CLI can find credentials.
     // In dev, use the project root.
     cwd: isDev ? path.join(__dirname, "..") : os.homedir(),
@@ -118,53 +144,95 @@ async function startServer(): Promise<number> {
     },
     stdio: ["ignore", "pipe", "pipe"],
   });
+  serverProcess = child;
 
   // Read the actual port from the server's stdout
   return new Promise((resolve, reject) => {
     let stdout = "";
+    let ready = false;
     const timer = setTimeout(() => reject(new Error("Server startup timed out")), 10_000);
 
-    serverProcess!.stdout!.on("data", (chunk: Buffer) => {
+    child.stdout!.on("data", (chunk: Buffer) => {
       if (serverLogStream) serverLogStream.write(chunk);
       stdout += chunk.toString();
       const match = stdout.match(/BETTERGIT_SERVER_PORT=(\d+)/);
       if (match) {
         clearTimeout(timer);
         serverPort = parseInt(match[1], 10);
+        ready = true;
         resolve(serverPort);
       }
     });
 
-    serverProcess!.stderr!.on("data", (chunk: Buffer) => {
+    child.stderr!.on("data", (chunk: Buffer) => {
       if (serverLogStream) serverLogStream.write(chunk);
       process.stderr.write(`[server] ${chunk.toString()}`);
     });
 
-    serverProcess!.on("error", (err) => {
+    child.on("error", (err) => {
       clearTimeout(timer);
+      if (serverProcess === child) {
+        serverProcess = null;
+        serverPort = 0;
+      }
       appendMainLog(`server process error: ${err.message}`);
+      scheduleServerRestart(`error:${err.message}`);
       reject(err);
     });
 
-    serverProcess!.on("exit", (code) => {
-      if (code !== null && code !== 0) {
-        clearTimeout(timer);
-        appendMainLog(`server exited before ready with code ${code}`);
-        reject(new Error(`Server exited with code ${code}`));
+    child.on("exit", (code, signal) => {
+      clearTimeout(timer);
+      if (serverProcess === child) {
+        serverProcess = null;
+        serverPort = 0;
+      }
+      const detail = code !== null ? `code ${code}` : signal ? `signal ${signal}` : "unknown";
+      appendMainLog(`server process exited (${detail})`);
+      if (!ready) {
+        reject(new Error(`Server exited with ${detail}`));
+      }
+      if (!appIsQuitting) {
+        scheduleServerRestart(`exit:${detail}`);
       }
     });
   });
 }
 
 function stopServer() {
+  clearServerRestartTimer();
   if (serverProcess) {
     serverProcess.kill();
     serverProcess = null;
   }
+  serverPort = 0;
   if (serverLogStream) {
     serverLogStream.end();
     serverLogStream = null;
   }
+}
+
+async function ensureServerRunning(reason: string): Promise<number> {
+  clearServerRestartTimer();
+
+  if (isServerProcessAlive() && serverPort !== 0) {
+    return serverPort;
+  }
+  if (serverStartPromise) {
+    return serverStartPromise;
+  }
+
+  appendMainLog(`starting server (${reason})`);
+  serverStartPromise = startServer()
+    .finally(() => {
+      serverStartPromise = null;
+    });
+  return serverStartPromise;
+}
+
+async function restartServer(reason: string): Promise<number> {
+  appendMainLog(`restarting server (${reason})`);
+  stopServer();
+  return ensureServerRunning(`forced:${reason}`);
 }
 
 function readAppUpdateYml(): Record<string, string> | null {
@@ -287,6 +355,7 @@ async function installDownloadedUpdate(): Promise<DesktopUpdateActionResult> {
   clearUpdateTimers();
 
   try {
+    appIsQuitting = true;
     stopServer();
     autoUpdater.quitAndInstall();
     return { accepted: true, completed: false, state: updateState };
@@ -521,7 +590,20 @@ app.whenReady().then(async () => {
   });
 
   try {
-    await startServer();
+    powerMonitor.on("resume", () => {
+      void ensureServerRunning("power-resume").catch((error) => {
+        const message = error instanceof Error ? error.message : String(error);
+        appendMainLog(`resume server check failed: ${message}`);
+      });
+    });
+    powerMonitor.on("unlock-screen", () => {
+      void ensureServerRunning("unlock-screen").catch((error) => {
+        const message = error instanceof Error ? error.message : String(error);
+        appendMainLog(`unlock server check failed: ${message}`);
+      });
+    });
+
+    await ensureServerRunning("app-ready");
     console.log(`[main] Server running on port ${serverPort}`);
   } catch (err) {
     console.error("[main] Failed to start server:", err);
@@ -541,12 +623,14 @@ app.whenReady().then(async () => {
 app.on("window-all-closed", () => {
   terminalSessionManager?.shutdown();
   if (process.platform !== "darwin") {
+    appIsQuitting = true;
     stopServer();
     app.quit();
   }
 });
 
 app.on("before-quit", () => {
+  appIsQuitting = true;
   clearUpdateTimers();
   terminalSessionManager?.shutdown();
   stopServer();
@@ -611,7 +695,8 @@ ipcMain.handle("shell:openTerminal", async (_event, dirPath: string, terminalApp
   }
 });
 
-ipcMain.handle("server:getPort", () => serverPort);
+ipcMain.handle("server:getPort", async () => ensureServerRunning("renderer:getPort"));
+ipcMain.handle("server:restart", async () => restartServer("renderer:restart"));
 
 ipcMain.handle("project:renameDirectory", (_event, currentPath: string, newName: string): string => {
   const trimmedName = newName.trim();
