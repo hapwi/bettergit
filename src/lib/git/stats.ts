@@ -58,7 +58,3 @@ export async function getOpenPrs(cwd: string): Promise<PrListItem[]> {
 export async function getMergedPrs(cwd: string, limit = 10): Promise<PrListItem[]> {
   return serverFetch("/api/git/dashboard/merged-prs", { cwd, limit });
 }
-
-export async function getForkParent(cwd: string): Promise<string | null> {
-  return serverFetch("/api/github/repo/fork-parent", { cwd });
-}

@@ -26,7 +26,25 @@ import { readFileSync } from "node:fs";
 
 const repoRoot = new URL("..", import.meta.url).pathname.replace(/\/$/, "");
 const pkg = JSON.parse(readFileSync(join(repoRoot, "package.json"), "utf8"));
-const version = pkg.version ?? "0.0.1";
+const version = process.env.BETTERGIT_BUILD_VERSION?.trim() || pkg.version || "0.0.1";
+
+function resolveGitHubPublishConfig() {
+  const rawRepo =
+    process.env.BETTERGIT_UPDATE_REPOSITORY?.trim() ||
+    process.env.GITHUB_REPOSITORY?.trim() ||
+    "";
+  if (!rawRepo) return undefined;
+
+  const [owner, repo, ...rest] = rawRepo.split("/");
+  if (!owner || !repo || rest.length > 0) return undefined;
+
+  return {
+    provider: "github",
+    owner,
+    repo,
+    releaseType: "release",
+  };
+}
 
 // 1. Create staging directory
 const stageRoot = mkdtempSync(join(tmpdir(), "bettergit-dist-"));
@@ -62,17 +80,18 @@ const stagePackage = {
       output: "dist-out",
       buildResources: "build",
     },
+    publish: resolveGitHubPublishConfig() ? [resolveGitHubPublishConfig()] : undefined,
     // Don't restrict files — let electron-builder use its defaults so that
     // node_modules (production deps like the Claude Agent SDK) are included
     // automatically. Matches hapcode's build config.
     mac: {
-      target: [{ target: "dmg", arch: ["arm64"] }],
+      target: ["dmg", "zip"],
       icon: "icon.icns",
       category: "public.app-category.developer-tools",
       identity: null,
     },
     dmg: {
-      writeUpdateInfo: false,
+      writeUpdateInfo: true,
     },
   },
   dependencies: {
@@ -80,6 +99,7 @@ const stagePackage = {
     // it has dynamic requires and subprocess spawning that break when inlined.
     // Same approach as hapcode's server build.
     "@anthropic-ai/claude-agent-sdk": pkg.dependencies["@anthropic-ai/claude-agent-sdk"] ?? "*",
+    "electron-updater": pkg.dependencies["electron-updater"] ?? "*",
     "node-pty": pkg.dependencies["node-pty"] ?? "*",
     "ws": pkg.dependencies["ws"] ?? "*",
   },
@@ -120,7 +140,7 @@ execSync("bun install --production", {
 });
 
 // 5. Run electron-builder with the same unsigned-build environment.
-console.log(`[dist] Building DMG (version=${version}, arch=arm64)...`);
+console.log(`[dist] Building macOS release assets (version=${version}, arch=arm64)...`);
 execSync("bunx electron-builder --mac --arm64 --publish never", {
   cwd: stageApp,
   stdio: "inherit",

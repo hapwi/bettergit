@@ -1,4 +1,42 @@
 interface ElectronAPI {
+  updates: {
+    getState: () => Promise<{
+      enabled: boolean;
+      status:
+        | "idle"
+        | "disabled"
+        | "checking"
+        | "available"
+        | "downloading"
+        | "downloaded"
+        | "up-to-date"
+        | "error";
+      currentVersion: string;
+      availableVersion: string | null;
+      downloadedVersion: string | null;
+      downloadPercent: number | null;
+      checkedAt: string | null;
+      message: string | null;
+      errorContext: "check" | "download" | "install" | null;
+    }>;
+    check: () => Promise<{
+      checked: boolean;
+      state: Awaited<ReturnType<ElectronAPI["updates"]["getState"]>>;
+    }>;
+    download: () => Promise<{
+      accepted: boolean;
+      completed: boolean;
+      state: Awaited<ReturnType<ElectronAPI["updates"]["getState"]>>;
+    }>;
+    install: () => Promise<{
+      accepted: boolean;
+      completed: boolean;
+      state: Awaited<ReturnType<ElectronAPI["updates"]["getState"]>>;
+    }>;
+    onState: (
+      callback: (state: Awaited<ReturnType<ElectronAPI["updates"]["getState"]>>) => void,
+    ) => () => void;
+  };
   terminal: {
     openSession: (input: {
       projectPath: string;

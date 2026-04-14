@@ -1,5 +1,11 @@
 import { contextBridge, ipcRenderer } from "electron";
 
+const UPDATE_STATE_CHANNEL = "desktop:update-state";
+const UPDATE_GET_STATE_CHANNEL = "desktop:update-get-state";
+const UPDATE_CHECK_CHANNEL = "desktop:update-check";
+const UPDATE_DOWNLOAD_CHANNEL = "desktop:update-download";
+const UPDATE_INSTALL_CHANNEL = "desktop:update-install";
+
 contextBridge.exposeInMainWorld("electronAPI", {
   dialog: {
     openDirectory: (): Promise<string | null> => ipcRenderer.invoke("dialog:openDirectory"),
@@ -45,6 +51,19 @@ contextBridge.exposeInMainWorld("electronAPI", {
   settings: {
     load: (): Promise<Record<string, unknown>> => ipcRenderer.invoke("settings:load"),
     save: (data: Record<string, unknown>): Promise<void> => ipcRenderer.invoke("settings:save", data),
+  },
+  updates: {
+    getState: () => ipcRenderer.invoke(UPDATE_GET_STATE_CHANNEL),
+    check: () => ipcRenderer.invoke(UPDATE_CHECK_CHANNEL),
+    download: () => ipcRenderer.invoke(UPDATE_DOWNLOAD_CHANNEL),
+    install: () => ipcRenderer.invoke(UPDATE_INSTALL_CHANNEL),
+    onState: (callback: (state: unknown) => void): (() => void) => {
+      const handler = (_event: Electron.IpcRendererEvent, payload: unknown) => callback(payload);
+      ipcRenderer.on(UPDATE_STATE_CHANNEL, handler);
+      return () => {
+        ipcRenderer.removeListener(UPDATE_STATE_CHANNEL, handler);
+      };
+    },
   },
   onClosePaneOrWindow: (callback: () => void): (() => void) => {
     const handler = () => callback();
