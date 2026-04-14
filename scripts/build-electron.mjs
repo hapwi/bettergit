@@ -8,7 +8,7 @@ const electronCommon = {
   bundle: true,
   platform: "node",
   target: "node20",
-  external: ["electron", "node-pty"],
+  external: ["electron", "node-pty", "electron-updater"],
   sourcemap: false,
   minify: false,
 };

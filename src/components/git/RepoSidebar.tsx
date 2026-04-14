@@ -74,6 +74,14 @@ import {
 
 const isDevBuild = import.meta.env.DEV;
 
+type ElectronUpdates = NonNullable<Window["electronAPI"]>["updates"];
+type DesktopUpdateState = Awaited<ReturnType<ElectronUpdates["getState"]>>;
+
+function hasPendingDesktopUpdate(state: DesktopUpdateState | null): boolean {
+  if (!state?.enabled) return false;
+  return state.status === "available" || state.status === "downloaded";
+}
+
 function ProjectFavicon({ cwd, fallback }: { cwd: string; fallback: string }) {
   const [src, setSrc] = useState<string | null>(null);
   const [error, setError] = useState(false);
@@ -328,6 +336,31 @@ export function RepoSidebar() {
   const [renameValue, setRenameValue] = useState("");
   const [pendingRemoveRepo, setPendingRemoveRepo] = useState<string | null>(null);
   const [projectSettingsPath, setProjectSettingsPath] = useState<string | null>(null);
+  const [updateState, setUpdateState] = useState<DesktopUpdateState | null>(null);
+
+  useEffect(() => {
+    const updates = window.electronAPI?.updates;
+    if (!updates) {
+      setUpdateState(null);
+      return;
+    }
+
+    let active = true;
+    void updates.getState().then((state) => {
+      if (active) setUpdateState(state);
+    }).catch(() => {
+      if (active) setUpdateState(null);
+    });
+
+    const cleanup = updates.onState((state) => {
+      if (active) setUpdateState(state);
+    });
+
+    return () => {
+      active = false;
+      cleanup();
+    };
+  }, []);
 
   const doRenameMasterToMain = async () => {
     if (!repoCwd) return;
@@ -668,9 +701,15 @@ export function RepoSidebar() {
             variant="outline"
             size="icon"
             onClick={() => setSettingsOpen(true)}
-            className="shrink-0"
+            className="relative shrink-0"
           >
             <HugeiconsIcon icon={Settings01Icon} className="size-4" />
+            {hasPendingDesktopUpdate(updateState) && (
+              <>
+                <span className="absolute right-2 top-2 size-2 rounded-full bg-blue-500/30" aria-hidden="true" />
+                <span className="absolute right-2 top-2 size-2 rounded-full bg-blue-500" aria-hidden="true" />
+              </>
+            )}
           </Button>
         </div>
         {isDevBuild && (
