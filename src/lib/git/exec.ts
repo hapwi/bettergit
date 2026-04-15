@@ -2,12 +2,8 @@
  * Low-level git/gh command execution via the bettergit server.
  */
 import { serverFetch } from "../server";
-
-export interface ExecResult {
-  code: number;
-  stdout: string;
-  stderr: string;
-}
+import type { ExecResult } from "../../../shared/exec";
+export type { ExecResult } from "../../../shared/exec";
 
 export async function execGit(
   cwd: string,

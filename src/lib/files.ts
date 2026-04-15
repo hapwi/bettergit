@@ -3,22 +3,8 @@
  */
 import { serverFetch } from "./server";
 import { pauseHmr, resumeHmr } from "./hmr";
-
-export interface FileEntry {
-  name: string;
-  path: string;
-  type: "file" | "directory";
-  size?: number;
-}
-
-export interface FileContent {
-  content: string;
-  size: number;
-  isBinary: boolean;
-  isTooLarge: boolean;
-  language: string;
-  mtimeMs: number;
-}
+import type { FileEntry, FileContent } from "../../shared/files";
+export type { FileEntry, FileContent } from "../../shared/files";
 
 /** Wrap a mutation in HMR pause/resume so Vite doesn't reload the app. */
 async function withHmrPause<T>(fn: () => Promise<T>): Promise<T> {

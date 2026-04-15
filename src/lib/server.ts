@@ -2,6 +2,7 @@
  * HTTP client for the bettergit server process.
  * All git, AI, and favicon operations go through here.
  */
+import type { ApiRoutes } from "../../shared/api";
 
 let _port: number | null = null;
 const SERVER_FETCH_TIMEOUT_MS = 15_000;
@@ -104,16 +105,21 @@ async function requestServer<T>(
   return res.json() as Promise<T>;
 }
 
-export async function serverFetch<T>(path: string, body?: unknown): Promise<T> {
+export async function serverFetch<P extends keyof ApiRoutes>(
+  path: P,
+  ...args: ApiRoutes[P]["input"] extends void ? [] : [body: ApiRoutes[P]["input"]]
+): Promise<ApiRoutes[P]["output"]>;
+export async function serverFetch<T>(path: string, body?: unknown): Promise<T>;
+export async function serverFetch(path: string, body?: unknown): Promise<unknown> {
   const options = getRequestOptions(path)
   try {
-    return await requestServer<T>(path, body, options)
+    return await requestServer<unknown>(path, body, options)
   } catch (error) {
     if (!options.retryOnConnectionError || !isRetryableConnectionError(error)) {
       throw error
     }
 
     await restartServerPort()
-    return requestServer<T>(path, body, options)
+    return requestServer<unknown>(path, body, options)
   }
 }

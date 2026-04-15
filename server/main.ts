@@ -147,6 +147,7 @@ const routes: Record<string, RouteHandler> = {
   "POST /api/ai/commit-msg": async (body) => ai.generateCommitMessage(body as Parameters<typeof ai.generateCommitMessage>[0]),
   "POST /api/ai/pr-content": async (body) => ai.generatePrContent(body as Parameters<typeof ai.generatePrContent>[0]),
   "POST /api/ai/branch-name": async (body) => ai.generateBranchName(body as Parameters<typeof ai.generateBranchName>[0]),
+  "POST /api/ai/check-cli": async (body) => ({ available: await ai.checkCli((body as { cli?: string }).cli ?? "claude") }),
   "POST /api/ai/set-model": async (body) => { ai.setModel((body as { model: string }).model); return { ok: true }; },
   "POST /api/project/favicon": async (body) => ({ favicon: await getProjectFavicon((body as { cwd: string }).cwd) }),
   "POST /api/files/list": async (body) => files.listDirectory(body as Parameters<typeof files.listDirectory>[0]),

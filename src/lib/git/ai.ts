@@ -2,21 +2,8 @@
  * AI text generation via the bettergit server.
  */
 import { serverFetch } from "../server";
-
-export interface CommitMessageResult {
-  subject: string;
-  body: string;
-  branch?: string;
-}
-
-export interface PrContentResult {
-  title: string;
-  body: string;
-}
-
-export interface BranchNameResult {
-  branch: string;
-}
+import type { CommitMessageResult, PrContentResult, BranchNameResult } from "../../../shared/ai";
+export type { CommitMessageResult, PrContentResult, BranchNameResult } from "../../../shared/ai";
 
 export async function generateCommitMessage(input: {
   cwd: string;

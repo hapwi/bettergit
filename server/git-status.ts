@@ -1,33 +1,5 @@
 import { execGit } from "./git-exec";
-
-export interface WorkingTreeFile {
-  path: string;
-  insertions: number;
-  deletions: number;
-  rawStatus: string;
-  indexStatus: string;
-  workingTreeStatus: string;
-  displayStatus: "M" | "A" | "D" | "R" | "C" | "U";
-  originalPath?: string;
-}
-
-export interface GitStatus {
-  branch: string | null;
-  isDetached: boolean;
-  isRepo: boolean;
-  hasCommits: boolean;
-  hasOriginRemote: boolean;
-  hasWorkingTreeChanges: boolean;
-  workingTree: {
-    files: WorkingTreeFile[];
-    insertions: number;
-    deletions: number;
-  };
-  hasUpstream: boolean;
-  aheadCount: number;
-  behindCount: number;
-  pr: null;
-}
+import type { WorkingTreeFile, GitStatus } from "../shared/git";
 
 export async function getStatus(input: { cwd: string }): Promise<GitStatus> {
   const { cwd } = input;

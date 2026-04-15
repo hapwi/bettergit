@@ -1,5 +1,6 @@
 import path from "node:path";
 import { execGh, readOriginRepoSlug, requireOk } from "./git-exec";
+import type { GhRepo, GhAuthStatus } from "../shared/github";
 
 export async function createGhRepo(input: {
   cwd: string;
@@ -52,14 +53,6 @@ export async function getForkParent(input: { cwd: string }): Promise<string | nu
   }
 }
 
-export interface GhRepo {
-  name: string;
-  nameWithOwner: string;
-  description: string;
-  isPrivate: boolean;
-  updatedAt: string;
-}
-
 export async function listGhRepos(input: {
   limit?: number;
 }): Promise<GhRepo[]> {
@@ -93,11 +86,6 @@ export async function cloneGhRepo(input: {
   });
   if (result.code !== 0) throw new Error(`Clone failed: ${result.stderr}`);
   return { clonedPath };
-}
-
-export interface GhAuthStatus {
-  connected: boolean;
-  detail: string;
 }
 
 export async function getGhAuthStatus(input: { cwd: string }): Promise<GhAuthStatus> {

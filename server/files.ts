@@ -1,34 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { runProcess } from "./env";
-
-// ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
-
-export interface FileEntry {
-  name: string;
-  path: string; // relative to repo root
-  type: "file" | "directory";
-  size?: number;
-}
-
-export interface ListDirectoryInput {
-  cwd: string;
-  relativePath?: string;
-}
-
-export interface ReadFileInput {
-  cwd: string;
-  relativePath: string;
-}
-
-export interface WriteFileInput {
-  cwd: string;
-  relativePath: string;
-  content: string;
-  expectedMtimeMs?: number | null;
-}
+import type { FileEntry, ListDirectoryInput, ReadFileInput, WriteFileInput } from "../shared/files";
 
 // ---------------------------------------------------------------------------
 // Helpers

@@ -241,7 +241,7 @@ export function SettingsDialog({
     // Claude Code CLI
     let claude: ServiceStatus;
     try {
-      const { available } = await serverFetch<{ available: boolean }>("/api/ai/check-cli?cli=claude");
+      const { available } = await serverFetch("/api/ai/check-cli", { cli: "claude" });
       claude = {
         label: "Claude Code",
         status: available ? "connected" : "disconnected",
@@ -255,7 +255,7 @@ export function SettingsDialog({
     // Codex CLI
     let codex: ServiceStatus;
     try {
-      const { available } = await serverFetch<{ available: boolean }>("/api/ai/check-cli?cli=codex");
+      const { available } = await serverFetch("/api/ai/check-cli", { cli: "codex" });
       codex = {
         label: "Codex",
         status: available ? "connected" : "disconnected",
@@ -279,7 +279,7 @@ export function SettingsDialog({
 
     // Load model
     import("@/lib/server").then(({ serverFetch }) =>
-      serverFetch<{ model: string }>("/api/ai/model").then((res) => setSelectedModel(res.model)),
+      serverFetch("/api/ai/model").then((res) => setSelectedModel(res.model)),
     ).catch(() => {});
 
     // Only check connections once per session (or if no cache)

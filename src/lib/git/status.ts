@@ -3,20 +3,8 @@
  */
 import { serverFetch } from "../server";
 import { execGit } from "./exec";
-import type { PullRequestSummary } from "./github";
-
-export type WorkingTreeDisplayStatus = "M" | "A" | "D" | "R" | "C" | "U";
-
-export interface WorkingTreeFile {
-  path: string;
-  insertions: number;
-  deletions: number;
-  rawStatus: string;
-  indexStatus: string;
-  workingTreeStatus: string;
-  displayStatus: WorkingTreeDisplayStatus;
-  originalPath?: string;
-}
+import type { WorkingTreeDisplayStatus, GitStatus } from "../../../shared/git";
+export type { WorkingTreeDisplayStatus, WorkingTreeFile, GitStatus } from "../../../shared/git";
 
 export interface WorkingTreeStatusDecoration {
   displayStatus: WorkingTreeDisplayStatus;
@@ -51,24 +39,6 @@ export function getWorkingTreeDisplayStatusLabel(status: WorkingTreeDisplayStatu
     case "U":
       return "Untracked";
   }
-}
-
-export interface GitStatus {
-  branch: string | null;
-  isDetached: boolean;
-  isRepo: boolean;
-  hasCommits: boolean;
-  hasOriginRemote: boolean;
-  hasWorkingTreeChanges: boolean;
-  workingTree: {
-    files: WorkingTreeFile[];
-    insertions: number;
-    deletions: number;
-  };
-  hasUpstream: boolean;
-  aheadCount: number;
-  behindCount: number;
-  pr: PullRequestSummary | null;
 }
 
 export async function getStatus(cwd: string): Promise<GitStatus> {
