@@ -395,8 +395,6 @@ export const TerminalPanel = forwardRef<TerminalPanelHandle, TerminalPanelProps>
   const hadTabsRef = useRef(Boolean(panelState && panelState.tabIds.length > 0))
 
   const activeTabId = activeTabIdFromPanel(panelState)
-  const activeTree = activeTabId ? panelState?.splitTrees[activeTabId] ?? null : null
-
   useEffect(() => {
     const hasTabs = Boolean(panelState && panelState.tabIds.length > 0)
     if (hasTabs) {
