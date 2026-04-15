@@ -451,7 +451,7 @@ export function Dashboard({ isActive }: { isActive: boolean }) {
           </div>
         </section>
 
-        <section className="grid gap-8 border-b border-border/60 pb-8 xl:grid-cols-[minmax(0,1.15fr)_minmax(320px,0.85fr)]">
+        <section className="grid gap-8 xl:grid-cols-[minmax(0,1.15fr)_minmax(320px,0.85fr)]">
           <div className="space-y-8">
             <Card>
               <CardContent className="space-y-4">
@@ -621,7 +621,7 @@ export function Dashboard({ isActive }: { isActive: boolean }) {
           </div>
         </section>
 
-        <section className="grid gap-8 border-b border-border/60 pb-8 xl:grid-cols-2">
+        <section className="grid gap-8 xl:grid-cols-2">
           <div className="space-y-4">
             <SectionHeader
               title="Open pull requests"
@@ -727,7 +727,7 @@ export function Dashboard({ isActive }: { isActive: boolean }) {
           </div>
         </section>
 
-        <section className="grid gap-8 border-b border-border/60 pb-8 xl:grid-cols-[minmax(0,1.1fr)_minmax(320px,0.9fr)]">
+        <section className="grid gap-8 xl:grid-cols-[minmax(0,1.1fr)_minmax(320px,0.9fr)]">
           <div className="space-y-4">
             <SectionHeader
               title="Recent commits"
