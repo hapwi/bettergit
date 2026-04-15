@@ -62,11 +62,7 @@ export function getEnvWithPath(): NodeJS.ProcessEnv {
   return env;
 }
 
-export interface ExecResult {
-  code: number;
-  stdout: string;
-  stderr: string;
-}
+export type { ExecResult } from "../shared/exec";
 
 export async function runProcess(
   command: string,

@@ -2,14 +2,8 @@
  * Branch operations — list, create, delete, checkout.
  */
 import { serverFetch } from "../server";
-
-export interface Branch {
-  name: string;
-  current: boolean;
-  isRemote: boolean;
-  isDefault: boolean;
-  upstream: string | null;
-}
+import type { Branch } from "../../../shared/git";
+export type { Branch } from "../../../shared/git";
 
 export async function listBranches(cwd: string): Promise<Branch[]> {
   return serverFetch("/api/git/branches/list", { cwd });

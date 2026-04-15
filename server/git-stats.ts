@@ -1,24 +1,5 @@
 import { execGit, execGh, readOriginRepoSlug } from "./git-exec";
-
-export interface DailyCommitStat {
-  date: string;
-  commits: number;
-  insertions: number;
-  deletions: number;
-}
-
-export interface AuthorStat {
-  name: string;
-  commits: number;
-}
-
-export interface RepoStats {
-  totalCommits: number;
-  totalBranches: number;
-  dailyActivity: DailyCommitStat[];
-  topAuthors: AuthorStat[];
-  recentTags: string[];
-}
+import type { DailyCommitStat, AuthorStat, RepoStats } from "../shared/stats";
 
 export async function getRepoStats(input: { cwd: string; days?: number }): Promise<RepoStats> {
   const { cwd } = input;

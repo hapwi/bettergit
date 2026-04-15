@@ -542,7 +542,7 @@ export function GitPanel({ isActive }: { isActive: boolean }) {
 
       // Delegate to server process — merge + optional version bump in one shot
       const { serverFetch } = await import("@/lib/server");
-      const result = await serverFetch<{ merged: number[]; tag: string | null; finalBranch: string | null; error: string | null }>("/api/git/merge-prs", {
+      const result = await serverFetch("/api/git/merge-prs", {
         cwd: actionCwd,
         scope,
         prs: prsToMerge,

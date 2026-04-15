@@ -97,7 +97,7 @@ function ProjectFavicon({ cwd, fallback }: { cwd: string; fallback: string }) {
   useEffect(() => {
     let cancelled = false;
     import("@/lib/server").then(({ serverFetch }) =>
-      serverFetch<{ favicon: string | null }>("/api/project/favicon", { cwd }).then((res) => {
+      serverFetch("/api/project/favicon", { cwd }).then((res) => {
         if (!cancelled) setSrc(res.favicon);
       }),
     ).catch(() => {

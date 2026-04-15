@@ -1,12 +1,5 @@
 import { execGit, requireOk } from "./git-exec";
-
-export interface Branch {
-  name: string;
-  current: boolean;
-  isRemote: boolean;
-  isDefault: boolean;
-  upstream: string | null;
-}
+import type { Branch } from "../shared/git";
 
 export async function listBranches(input: { cwd: string }): Promise<Branch[]> {
   const { cwd } = input;

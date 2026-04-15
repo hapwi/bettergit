@@ -1,15 +1,7 @@
 import { execGit } from "./git-exec";
-import { listPrs, type PrListItem } from "./git-pr";
+import { listPrs } from "./git-pr";
 import { formatTimeAgo } from "./git-utils";
-
-export interface RecentCommit {
-  sha: string;
-  shortSha: string;
-  subject: string;
-  author: string;
-  relativeDate: string;
-  date: string;
-}
+import type { RecentCommit } from "../shared/stats";
 
 export async function getRecentCommits(input: {
   cwd: string;

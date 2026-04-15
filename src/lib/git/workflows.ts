@@ -1,10 +1,6 @@
 import { serverFetch } from "../server";
-
-export interface SemVer {
-  major: number;
-  minor: number;
-  patch: number;
-}
+import type { SemVer } from "../../../shared/workflows";
+export type { SemVer } from "../../../shared/workflows";
 
 export async function switchToMain(cwd: string): Promise<void> {
   await serverFetch("/api/git/setup/switch-main", { cwd });
