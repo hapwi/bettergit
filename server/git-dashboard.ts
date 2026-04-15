@@ -203,6 +203,29 @@ export async function getDashboardData(input: {
     getMergedPrs({ cwd: input.cwd, limit: mergedPrLimit }),
   ]);
 
+  // Resolve tags for merged PRs that have a headSha
+  const prsWithSha = mergedPrs.filter((pr) => pr.headSha);
+  if (prsWithSha.length > 0) {
+    await Promise.all(
+      prsWithSha.map(async (pr) => {
+        try {
+          const result = await execGit({
+            cwd: input.cwd,
+            args: ["tag", "--sort=creatordate", "--contains", pr.headSha!, "--list", "v*"],
+          });
+          if (result.code === 0) {
+            const firstTag = result.stdout.split("\n").find(Boolean)?.trim();
+            if (firstTag) {
+              pr.tag = firstTag;
+            }
+          }
+        } catch {
+          // ignore — tag lookup is best-effort
+        }
+      }),
+    );
+  }
+
   return {
     stats,
     overview,

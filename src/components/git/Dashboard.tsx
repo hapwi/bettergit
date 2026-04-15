@@ -17,7 +17,7 @@ import {
   Clock04Icon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
-import { ArrowDownRight, ArrowUpRight } from "lucide-react";
+import { ArrowDownRight, ArrowUpRight, FileIcon } from "lucide-react";
 import { useAppStore } from "@/store";
 import {
   getDashboardData,
@@ -186,13 +186,11 @@ function resolveBranchStatus(status: GitStatus | undefined): string {
 }
 
 function SectionHeader({
-  icon,
   title,
   description,
   count,
   action,
 }: {
-  icon: DashboardIcon;
   title: string;
   description?: string;
   count?: number;
@@ -202,7 +200,6 @@ function SectionHeader({
     <div className="flex items-start justify-between gap-4">
       <div className="space-y-1">
         <div className="flex items-center gap-2">
-          <HugeiconsIcon icon={icon} className="size-4 text-muted-foreground" />
           <h2 className="text-sm font-semibold">{title}</h2>
           {count !== undefined ? (
             <span className="text-xs tabular-nums text-muted-foreground">{count}</span>
@@ -522,7 +519,6 @@ export function Dashboard({ isActive }: { isActive: boolean }) {
             <Card>
               <CardContent className="space-y-4">
               <SectionHeader
-                icon={GitCommitIcon}
                 title="Commit activity"
                 description="Weekly cadence over the last 30 days."
               />
@@ -547,7 +543,6 @@ export function Dashboard({ isActive }: { isActive: boolean }) {
             <Card>
               <CardContent className="space-y-4">
               <SectionHeader
-                icon={GitMergeIcon}
                 title="Code change volume"
                 description="Additions and deletions across the last 14 days."
               />
@@ -596,7 +591,6 @@ export function Dashboard({ isActive }: { isActive: boolean }) {
           <div className="space-y-8">
             <div className="space-y-4">
               <SectionHeader
-                icon={GitBranchIcon}
                 title="Working tree health"
                 description="What is changed locally right now."
               />
@@ -659,6 +653,7 @@ export function Dashboard({ isActive }: { isActive: boolean }) {
                 <div className="divide-y border-t border-border/60">
                   {overview.hotspots.map((file) => (
                     <div key={file.path} className="flex items-center gap-3 py-3">
+                      <FileIcon className="size-4 shrink-0 text-muted-foreground/50" />
                       <div className="min-w-0 flex-1">
                         <div className="truncate text-sm font-medium">{file.path}</div>
                         <div className="mt-1 text-xs text-muted-foreground">
@@ -693,7 +688,6 @@ export function Dashboard({ isActive }: { isActive: boolean }) {
         <section className="grid gap-8 border-b border-border/60 pb-8 xl:grid-cols-2">
           <div className="space-y-4">
             <SectionHeader
-              icon={GitPullRequestIcon}
               title="Open pull requests"
               description="Current review and merge queue."
               count={openPrs.length}
@@ -743,7 +737,6 @@ export function Dashboard({ isActive }: { isActive: boolean }) {
 
           <div className="space-y-4">
             <SectionHeader
-              icon={GitMergeIcon}
               title="Recently merged"
               description="Latest merged pull requests."
               count={mergedPrs.length}
@@ -753,20 +746,16 @@ export function Dashboard({ isActive }: { isActive: boolean }) {
                 {mergedPrs.slice(0, 5).map((pr) => {
                   const authorName = displayAuthorName(pr.author);
                   return (
-                  <button
-                    key={pr.number}
-                    type="button"
-                    className="flex w-full items-start gap-3 py-3 text-left transition-colors hover:bg-accent/20"
-                    onClick={() => void window.electronAPI?.shell.openExternal(pr.url)}
-                    title="Open merged pull request"
-                  >
-                    <HugeiconsIcon icon={GitMergeIcon} className="mt-1 size-4 shrink-0 text-violet-400" />
-                    <div className="min-w-0 flex-1 space-y-1.5">
-                      <div className="truncate text-sm font-medium">
-                        {pr.title}
+                  <div key={pr.number} className="flex items-center gap-3 py-3">
+                    <HugeiconsIcon icon={GitMergeIcon} className="size-4 shrink-0 text-violet-400" />
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2 truncate text-sm font-medium">
+                        <span className="truncate">#{pr.number} {pr.title}</span>
+                        {pr.tag ? (
+                          <Badge variant="secondary" className="shrink-0 font-mono text-[10px]">{pr.tag}</Badge>
+                        ) : null}
                       </div>
-                      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted-foreground">
-                        <span className="font-mono text-foreground/75">#{pr.number}</span>
+                      <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted-foreground">
                         <span className="inline-flex items-center gap-1.5">
                           <AvatarBadge
                             name={authorName}
@@ -775,18 +764,24 @@ export function Dashboard({ isActive }: { isActive: boolean }) {
                           />
                           <span>{authorName}</span>
                         </span>
+                        <span>{pr.headBranch} → {pr.baseBranch}</span>
                         <span>Merged {formatRelativeTime(pr.updatedAt)}</span>
                       </div>
-                      <div className="text-[11px] text-muted-foreground/70">
-                        {describeMergeTarget(pr.baseBranch, pr.headBranch)}
-                      </div>
                     </div>
-                  </button>
+                    <button
+                      type="button"
+                      className="shrink-0 rounded-md p-1 text-muted-foreground/50 transition-colors hover:bg-accent hover:text-foreground"
+                      onClick={() => void window.electronAPI?.shell.openExternal(pr.url)}
+                      title="Open pull request"
+                    >
+                      <GitHubIcon className="size-3.5" />
+                    </button>
+                  </div>
                   );
                 })}
                 {mergedPrs.length > 5 ? (
                   <div className="pt-3 text-xs text-muted-foreground">
-                    Showing 5 of {mergedPrs.length} merged pull requests
+                    Showing latest merged pull requests
                   </div>
                 ) : null}
               </div>
@@ -799,7 +794,6 @@ export function Dashboard({ isActive }: { isActive: boolean }) {
         <section className="grid gap-8 border-b border-border/60 pb-8 xl:grid-cols-[minmax(0,1.1fr)_minmax(320px,0.9fr)]">
           <div className="space-y-4">
             <SectionHeader
-              icon={Clock04Icon}
               title="Recent commits"
               description="Latest authored commits on this repo."
               count={recentCommits.length}
@@ -809,19 +803,11 @@ export function Dashboard({ isActive }: { isActive: boolean }) {
                 {recentCommits.slice(0, 6).map((commit) => {
                   const authorName = displayAuthorName(commit.author);
                   return (
-                  <button
-                    key={commit.sha}
-                    type="button"
-                    className="flex w-full items-start gap-3 py-3 text-left transition-colors hover:bg-accent/20"
-                    onClick={() => void window.electronAPI?.shell.openExternal(`https://github.com/search?q=${commit.sha}`)}
-                    title="Search commit on GitHub"
-                  >
-                    <Badge variant="outline" className="mt-0.5 shrink-0 font-mono text-[10px]">
-                      {commit.shortSha}
-                    </Badge>
-                    <div className="min-w-0 flex-1 space-y-1.5">
+                  <div key={commit.sha} className="flex items-center gap-3 py-3">
+                    <HugeiconsIcon icon={GitCommitIcon} className="size-4 shrink-0 text-muted-foreground" />
+                    <div className="min-w-0 flex-1">
                       <div className="truncate text-sm font-medium">{commit.subject}</div>
-                      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted-foreground">
+                      <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted-foreground">
                         <span className="inline-flex items-center gap-1.5">
                           <AvatarBadge
                             name={authorName}
@@ -830,13 +816,11 @@ export function Dashboard({ isActive }: { isActive: boolean }) {
                           />
                           <span>{authorName}</span>
                         </span>
+                        <span className="font-mono text-foreground/60">{commit.shortSha}</span>
                         <span>{formatRelativeTime(commit.date)}</span>
                       </div>
-                      <div className="text-[11px] text-muted-foreground/70">
-                        {formatFullDate(commit.date)}
-                      </div>
                     </div>
-                  </button>
+                  </div>
                   );
                 })}
                 {recentCommits.length > 6 ? (
@@ -853,7 +837,6 @@ export function Dashboard({ isActive }: { isActive: boolean }) {
           <div className="space-y-8">
             <div className="space-y-4">
               <SectionHeader
-                icon={GitBranchIcon}
                 title="Branch sprawl"
                 description="Local branches that have not moved in at least two weeks."
                 count={overview.staleBranchCount}
@@ -886,7 +869,6 @@ export function Dashboard({ isActive }: { isActive: boolean }) {
 
             <div className="space-y-4">
               <SectionHeader
-                icon={Tag01Icon}
                 title="Recent tags"
                 description="Latest release markers from the repository."
                 count={stats.recentTags.length}
@@ -915,7 +897,6 @@ export function Dashboard({ isActive }: { isActive: boolean }) {
         <section className="grid gap-8 xl:grid-cols-2">
           <div className="space-y-4">
             <SectionHeader
-              icon={UserIcon}
               title="Contributor mix"
               description="Share of commits over the last 30 days."
               count={stats.topAuthors.length}
@@ -983,7 +964,6 @@ export function Dashboard({ isActive }: { isActive: boolean }) {
 
           <div className="space-y-4">
             <SectionHeader
-              icon={GitCommitIcon}
               title="Release runway"
               description="Version context and pace toward the next cut."
             />
@@ -1012,12 +992,42 @@ export function Dashboard({ isActive }: { isActive: boolean }) {
                   {overview.release.commitsSinceLatestTag}
                 </span>
               </div>
-              <div className="flex items-center justify-between gap-4 py-3">
-                <span className="text-sm text-muted-foreground">Most active day</span>
-                <span className="text-right text-sm font-medium">
-                  {mostActiveDay ? `${formatDayLabel(mostActiveDay.date)} · ${mostActiveDay.commits}` : "No activity"}
-                </span>
-              </div>
+              {(() => {
+                const commits = overview.release.commitsSinceLatestTag;
+                const daysSince = overview.release.latestTagDate
+                  ? Math.floor((Date.now() - new Date(overview.release.latestTagDate).getTime()) / (1000 * 60 * 60 * 24))
+                  : null;
+                const hasTag = Boolean(overview.release.latestTag);
+
+                let label: string;
+                let tone: string;
+
+                if (!hasTag) {
+                  label = "No releases yet — consider tagging your first version.";
+                  tone = "text-muted-foreground";
+                } else if (commits === 0) {
+                  label = "Fully released — no unreleased changes.";
+                  tone = "text-emerald-600 dark:text-emerald-400";
+                } else if (commits <= 3 && (daysSince === null || daysSince < 7)) {
+                  label = "A few changes — no rush, but a patch release could be cut soon.";
+                  tone = "text-muted-foreground";
+                } else if (commits <= 10 || (daysSince !== null && daysSince < 14)) {
+                  label = `${commits} unreleased commits — consider a patch release.`;
+                  tone = "text-amber-700 dark:text-amber-400";
+                } else if (commits <= 30) {
+                  label = `${commits} commits over ${daysSince ?? "?"}d — a minor release is recommended.`;
+                  tone = "text-amber-700 dark:text-amber-400";
+                } else {
+                  label = `${commits} commits over ${daysSince ?? "?"}d — a minor or major release is overdue.`;
+                  tone = "text-rose-600 dark:text-rose-400";
+                }
+
+                return (
+                  <div className="py-3">
+                    <p className={`text-xs font-medium ${tone}`}>{label}</p>
+                  </div>
+                );
+              })()}
             </div>
           </div>
         </section>
