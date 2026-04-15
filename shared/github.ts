@@ -24,6 +24,12 @@ export interface GhAuthStatus {
   detail: string;
 }
 
+export interface GhViewer {
+  login: string;
+  avatarUrl: string;
+  url: string;
+}
+
 export interface GhRepo {
   name: string;
   nameWithOwner: string;

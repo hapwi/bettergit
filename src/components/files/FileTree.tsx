@@ -135,7 +135,7 @@ function InlineInput({
         placeholder={placeholder}
         onKeyDown={handleKeyDown}
         onBlur={() => finish(ref.current?.value.trim())}
-        className="w-full rounded-sm border border-primary/40 bg-white/[0.04] px-1.5 py-[2px] text-[13px] leading-[20px] text-foreground outline-none placeholder:text-muted-foreground/30"
+        className="w-full rounded-sm border border-primary/40 bg-accent/50 px-1.5 py-[2px] text-[13px] leading-[20px] text-foreground outline-none placeholder:text-muted-foreground/30"
       />
     </div>
   )
@@ -391,8 +391,8 @@ function TreeNode({
       className={cn(
         "group relative flex w-full items-center gap-[5px] overflow-hidden py-[2px] pr-7 text-left text-[13px] leading-[22px] transition-colors",
         isSelected
-          ? "bg-white/[0.08] text-foreground"
-          : "text-foreground/70 hover:bg-white/[0.04] hover:text-foreground/90",
+          ? "bg-accent text-foreground"
+          : "text-foreground/70 hover:bg-accent/50 hover:text-foreground/90",
         dotfile && !isSelected && "text-foreground/40",
       )}
       style={{ paddingLeft: depth * 6 + 8 }}
@@ -661,7 +661,7 @@ export function FileTreeActions({
         type="button"
         onClick={onNewFile}
         title="New file"
-        className="rounded p-1 text-muted-foreground/40 transition-colors hover:bg-white/[0.06] hover:text-muted-foreground"
+        className="rounded p-1 text-muted-foreground/40 transition-colors hover:bg-accent hover:text-muted-foreground"
       >
         <FilePlus className="size-3.5" />
       </button>
@@ -669,7 +669,7 @@ export function FileTreeActions({
         type="button"
         onClick={onNewFolder}
         title="New folder"
-        className="rounded p-1 text-muted-foreground/40 transition-colors hover:bg-white/[0.06] hover:text-muted-foreground"
+        className="rounded p-1 text-muted-foreground/40 transition-colors hover:bg-accent hover:text-muted-foreground"
       >
         <FolderPlus className="size-3.5" />
       </button>
@@ -677,7 +677,7 @@ export function FileTreeActions({
         type="button"
         onClick={onExpandAll}
         title="Expand all"
-        className="rounded p-1 text-muted-foreground/40 transition-colors hover:bg-white/[0.06] hover:text-muted-foreground"
+        className="rounded p-1 text-muted-foreground/40 transition-colors hover:bg-accent hover:text-muted-foreground"
       >
         <ChevronsUpDown className="size-3.5" />
       </button>
@@ -685,7 +685,7 @@ export function FileTreeActions({
         type="button"
         onClick={onCollapseAll}
         title="Collapse all"
-        className="rounded p-1 text-muted-foreground/40 transition-colors hover:bg-white/[0.06] hover:text-muted-foreground"
+        className="rounded p-1 text-muted-foreground/40 transition-colors hover:bg-accent hover:text-muted-foreground"
       >
         <ChevronsDownUp className="size-3.5" />
       </button>

@@ -72,7 +72,7 @@ import { GitHubReposDialog } from "@/components/git/GitHubReposDialog";
 import { GitHubIcon } from "@/components/icons";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { createGhRepo } from "@/lib/git/github";
+import { createGhRepo, getGhViewer } from "@/lib/git/github";
 import {
   createPreReleaseBranch,
   renameMasterToMain,
@@ -299,6 +299,14 @@ export function RepoSidebar() {
   const dismissedSetupCards = useAppStore((s) => s.dismissedSetupCards);
   const githubFolder = useAppStore((s) => s.githubFolder);
   const queryClient = useQueryClient();
+  const { data: ghViewer } = useQuery({
+    queryKey: ["github", "viewer", repoCwd],
+    queryFn: () => getGhViewer(repoCwd!),
+    enabled: Boolean(repoCwd),
+    staleTime: 5 * 60_000,
+    gcTime: 10 * 60_000,
+    refetchInterval: false,
+  });
   const { data: status } = useQuery(gitStatusQueryOptions(repoCwd));
   const { data: branches = [] } = useQuery(gitBranchesQueryOptions(repoCwd));
 
@@ -492,7 +500,7 @@ export function RepoSidebar() {
             <SidebarGroupContent>
               <div className="flex flex-col gap-1.5 px-2">
                 {/* Branch */}
-                <div className="flex items-center gap-2 rounded-md bg-muted/40 px-2.5 py-1.5 text-xs">
+                <div className="flex items-center gap-2 rounded-md bg-sidebar-accent px-2.5 py-1.5 text-xs">
                   <HugeiconsIcon icon={GitBranchIcon} className="size-3 shrink-0 text-muted-foreground" />
                   <span className="truncate font-medium">
                     {status.branch ?? (status.isDetached ? "detached" : "unknown")}
@@ -501,7 +509,7 @@ export function RepoSidebar() {
 
                 {/* Quick stats */}
                 <div className="grid grid-cols-2 gap-1.5">
-                  <div className="flex items-center gap-1.5 rounded-md bg-muted/40 px-2.5 py-1.5 text-xs">
+                  <div className="flex items-center gap-1.5 rounded-md bg-sidebar-accent px-2.5 py-1.5 text-xs">
                     <span className={cn(
                       "size-1.5 rounded-full",
                       changeCount > 0 ? "bg-amber-500" : "bg-emerald-500",
@@ -511,22 +519,22 @@ export function RepoSidebar() {
                     </span>
                   </div>
                   {status.pr ? (
-                    <div className="flex items-center gap-1.5 rounded-md bg-muted/40 px-2.5 py-1.5 text-xs">
+                    <div className="flex items-center gap-1.5 rounded-md bg-sidebar-accent px-2.5 py-1.5 text-xs">
                       <span className="size-1.5 rounded-full bg-emerald-500" />
                       <span className="text-muted-foreground">PR #{status.pr.number}</span>
                     </div>
                   ) : !status.hasCommits ? (
-                    <div className="flex items-center gap-1.5 rounded-md bg-muted/40 px-2.5 py-1.5 text-xs">
+                    <div className="flex items-center gap-1.5 rounded-md bg-sidebar-accent px-2.5 py-1.5 text-xs">
                       <span className="size-1.5 rounded-full bg-muted-foreground/30" />
                       <span className="text-muted-foreground/50">No commits</span>
                     </div>
                   ) : !hasOriginRemote ? (
-                    <div className="flex items-center gap-1.5 rounded-md bg-muted/40 px-2.5 py-1.5 text-xs">
+                    <div className="flex items-center gap-1.5 rounded-md bg-sidebar-accent px-2.5 py-1.5 text-xs">
                       <span className="size-1.5 rounded-full bg-muted-foreground/30" />
                       <span className="text-muted-foreground/50">No remote</span>
                     </div>
                   ) : (
-                    <div className="flex items-center gap-1.5 rounded-md bg-muted/40 px-2.5 py-1.5 text-xs">
+                    <div className="flex items-center gap-1.5 rounded-md bg-sidebar-accent px-2.5 py-1.5 text-xs">
                       <span className="size-1.5 rounded-full bg-muted-foreground/30" />
                       <span className="text-muted-foreground/50">No PR</span>
                     </div>
@@ -709,8 +717,8 @@ export function RepoSidebar() {
         <div className="flex gap-1.5">
           <div className="flex flex-1 gap-0">
             <Button
-              variant="outline"
-              className="flex-1 justify-center gap-2 rounded-r-none"
+              variant="ghost"
+              className="flex-1 justify-center gap-2 rounded-r-none border border-sidebar-border bg-sidebar-accent hover:bg-black/[0.08] dark:hover:bg-white/[0.08]"
               onClick={handleOpen}
             >
               <HugeiconsIcon icon={Add01Icon} />
@@ -719,14 +727,14 @@ export function RepoSidebar() {
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button
-                  variant="outline"
-                  className="rounded-l-none border-l-0 px-1.5"
+                  variant="ghost"
+                  className="rounded-l-none border border-l-0 border-sidebar-border bg-sidebar-accent px-1.5 hover:bg-black/[0.08] dark:hover:bg-white/[0.08]"
                   size="icon"
                 >
                   <HugeiconsIcon icon={ArrowDown01Icon} className="size-3.5" />
                 </Button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-52">
+              <DropdownMenuContent align="start" side="top" className="w-52">
                 <DropdownMenuItem onClick={handleOpen}>
                   <HugeiconsIcon icon={Add01Icon} className="size-4" />
                   Add Existing
@@ -738,20 +746,41 @@ export function RepoSidebar() {
               </DropdownMenuContent>
             </DropdownMenu>
           </div>
-          <Button
-            variant="outline"
-            size="icon"
-            onClick={() => setSettingsOpen(true)}
-            className="relative shrink-0"
-          >
-            <HugeiconsIcon icon={Settings01Icon} className="size-4" />
-            {hasPendingDesktopUpdate(updateState) && (
-              <>
-                <span className="absolute right-2 top-2 size-2 rounded-full bg-blue-500/30" aria-hidden="true" />
-                <span className="absolute right-2 top-2 size-2 rounded-full bg-blue-500" aria-hidden="true" />
-              </>
-            )}
-          </Button>
+          {ghViewer ? (
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => setSettingsOpen(true)}
+              className="relative h-9 w-9 shrink-0 overflow-hidden rounded-xl p-0 hover:bg-transparent hover:opacity-80"
+            >
+              <img
+                src={ghViewer.avatarUrl}
+                alt={`${ghViewer.login} avatar`}
+                className="size-full object-cover"
+              />
+              {hasPendingDesktopUpdate(updateState) && (
+                <>
+                  <span className="absolute right-1.5 top-1.5 size-2 rounded-full bg-blue-500/30" aria-hidden="true" />
+                  <span className="absolute right-1.5 top-1.5 size-2 rounded-full bg-blue-500" aria-hidden="true" />
+                </>
+              )}
+            </Button>
+          ) : (
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => setSettingsOpen(true)}
+              className="relative shrink-0"
+            >
+              <HugeiconsIcon icon={Settings01Icon} className="size-4" />
+              {hasPendingDesktopUpdate(updateState) && (
+                <>
+                  <span className="absolute right-2 top-2 size-2 rounded-full bg-blue-500/30" aria-hidden="true" />
+                  <span className="absolute right-2 top-2 size-2 rounded-full bg-blue-500" aria-hidden="true" />
+                </>
+              )}
+            </Button>
+          )}
         </div>
         {isDevBuild && (
           <p className="text-center text-[10px] text-amber-400/70">

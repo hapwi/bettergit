@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import {
   Dialog,
   DialogContent,
@@ -9,7 +10,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
-import { getGhAuthStatus } from "@/lib/git/github";
+import { getGhAuthStatus, getGhViewer } from "@/lib/git/github";
 import { useAppStore } from "@/store";
 import { GitHubIcon, ClaudeIcon, CodexIcon } from "@/components/icons";
 import { ArrowLeft02Icon, AiMagicIcon, Folder01Icon, Cancel01Icon } from "@hugeicons/core-free-icons";
@@ -25,6 +26,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useNetworkStatus } from "@/hooks/useNetworkStatus";
+import { useTheme } from "@/components/theme-provider";
+import { Sun, Moon, Monitor } from "lucide-react";
 
 interface ServiceStatus {
   label: string;
@@ -192,11 +195,20 @@ export function SettingsDialog({
   const githubFolder = useAppStore((s) => s.githubFolder);
   const setGithubFolder = useAppStore((s) => s.setGithubFolder);
   const { online } = useNetworkStatus();
+  const { theme, setTheme } = useTheme();
   const [view, setView] = useState<"main" | "connections">("main");
   const [services, setServices] = useState<ServiceStatus[]>(cachedServices ?? []);
   const [selectedModel, setSelectedModel] = useState("claude-haiku-4-5");
   const [updateState, setUpdateState] = useState<DesktopUpdateState | null>(null);
   const checkedRef = useRef(false);
+  const { data: ghViewer } = useQuery({
+    queryKey: ["github", "viewer", repoCwd],
+    queryFn: () => getGhViewer(repoCwd!),
+    enabled: Boolean(repoCwd),
+    staleTime: 5 * 60_000,
+    gcTime: 10 * 60_000,
+    refetchInterval: false,
+  });
 
   const connectedCount = services.filter((s) => s.status === "connected").length;
   const totalCount = services.length || 3;
@@ -380,7 +392,7 @@ export function SettingsDialog({
   if (view === "connections") {
     return (
       <Dialog open={open} onOpenChange={onOpenChange}>
-        <DialogContent className="sm:max-w-sm" showCloseButton={false}>
+        <DialogContent className="sm:max-w-md" showCloseButton={false}>
           <DialogHeader>
             <div className="flex items-center gap-2">
               <button
@@ -429,13 +441,27 @@ export function SettingsDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-sm">
+      <DialogContent className="sm:max-w-md" showCloseButton={false}>
         <DialogHeader>
-          <DialogTitle>Settings</DialogTitle>
-          <DialogDescription>Connections and AI configuration</DialogDescription>
+          <div className="flex items-center justify-between">
+            <div>
+              <DialogTitle>Settings</DialogTitle>
+              <DialogDescription>Connections and AI configuration</DialogDescription>
+            </div>
+            {ghViewer ? (
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-muted-foreground">{ghViewer.login}</span>
+                <img
+                  src={ghViewer.avatarUrl}
+                  alt={`${ghViewer.login} avatar`}
+                  className="size-7 rounded-full border border-border/60 object-cover"
+                />
+              </div>
+            ) : null}
+          </div>
         </DialogHeader>
 
-        <div className="flex flex-col gap-4">
+        <div className="flex flex-col gap-3">
           {/* Connections card */}
           <button
             type="button"
@@ -455,12 +481,7 @@ export function SettingsDialog({
 
           {/* Model selector */}
           <div className="flex flex-col gap-2">
-            <div>
-              <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/50">Git</p>
-              <p className="text-xs text-muted-foreground">
-                Configure the model used for commit messages, PR titles, and branch names.
-              </p>
-            </div>
+            <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/50">Git</p>
             <div className="flex items-center gap-3 rounded-xl border bg-card/50 px-3 py-2.5">
               <HugeiconsIcon icon={AiMagicIcon} className="size-4 shrink-0 text-muted-foreground" />
               <p className="shrink-0 text-sm font-medium">Text model</p>
@@ -488,12 +509,7 @@ export function SettingsDialog({
 
           {/* GitHub folder */}
           <div className="flex flex-col gap-2">
-            <div>
-              <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/50">GitHub</p>
-              <p className="text-xs text-muted-foreground">
-                Where repos cloned from GitHub will be saved.
-              </p>
-            </div>
+            <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/50">GitHub</p>
             <div className="flex items-center gap-3 rounded-xl border bg-card/50 px-3 py-2.5">
               <HugeiconsIcon icon={Folder01Icon} className="size-4 shrink-0 text-muted-foreground" />
               <button
@@ -525,6 +541,36 @@ export function SettingsDialog({
                   <HugeiconsIcon icon={Cancel01Icon} className="size-3.5" />
                 </button>
               )}
+            </div>
+          </div>
+
+          <div className="flex flex-col gap-2">
+            <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/50">Appearance</p>
+            <div className="flex items-center justify-between rounded-xl border bg-card/40 px-3.5 py-2.5">
+              <p className="text-sm font-medium">Theme</p>
+              <div className="flex items-center gap-0.5 rounded-lg border bg-muted/50 p-0.5">
+                {([
+                  { value: "light" as const, icon: Sun, label: "Light" },
+                  { value: "dark" as const, icon: Moon, label: "Dark" },
+                  { value: "system" as const, icon: Monitor, label: "System" },
+                ] as const).map(({ value, icon: Icon, label }) => (
+                  <button
+                    key={value}
+                    type="button"
+                    onClick={() => setTheme(value)}
+                    title={label}
+                    className={cn(
+                      "flex items-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium transition-colors",
+                      theme === value
+                        ? "bg-background text-foreground shadow-sm"
+                        : "text-muted-foreground hover:text-foreground",
+                    )}
+                  >
+                    <Icon className="size-3" />
+                    {label}
+                  </button>
+                ))}
+              </div>
             </div>
           </div>
 

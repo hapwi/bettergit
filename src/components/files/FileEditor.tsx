@@ -1,14 +1,16 @@
-import { useRef, useCallback, useEffect } from "react"
+import { useRef, useCallback, useEffect, useMemo } from "react"
 import Editor, { type OnMount, type BeforeMount } from "@monaco-editor/react"
 import type { editor as MonacoEditor } from "monaco-editor"
+import { useTheme } from "@/components/theme-provider"
 
 // ---------------------------------------------------------------------------
-// Custom theme matching the app's dark palette
+// Custom themes matching the app's palette
 // ---------------------------------------------------------------------------
 
-const BETTERGIT_THEME = "bettergit-dark"
+const DARK_THEME = "bettergit-dark"
+const LIGHT_THEME = "bettergit-light"
 
-const defineTheme: BeforeMount = (monaco) => {
+const defineThemes: BeforeMount = (monaco) => {
   // Disable built-in diagnostics — Monaco doesn't know about project tsconfig,
   // path aliases, or installed types, so it shows false positives.
   monaco.languages.typescript.typescriptDefaults.setDiagnosticsOptions({
@@ -22,7 +24,7 @@ const defineTheme: BeforeMount = (monaco) => {
     noSuggestionDiagnostics: true,
   })
 
-  monaco.editor.defineTheme(BETTERGIT_THEME, {
+  monaco.editor.defineTheme(DARK_THEME, {
     base: "vs-dark",
     inherit: true,
     rules: [
@@ -56,6 +58,41 @@ const defineTheme: BeforeMount = (monaco) => {
       "scrollbarSlider.activeBackground": "#ffffff30",
     },
   })
+
+  monaco.editor.defineTheme(LIGHT_THEME, {
+    base: "vs",
+    inherit: true,
+    rules: [
+      { token: "comment", foreground: "6a737d", fontStyle: "italic" },
+      { token: "keyword", foreground: "af00db" },
+      { token: "string", foreground: "a31515" },
+      { token: "number", foreground: "098658" },
+      { token: "type", foreground: "267f99" },
+    ],
+    colors: {
+      "editor.background": "#ffffff",
+      "editor.foreground": "#1a1a1a",
+      "editorLineNumber.foreground": "#b0b0b0",
+      "editorLineNumber.activeForeground": "#6e6e6e",
+      "editor.lineHighlightBackground": "#00000006",
+      "editor.lineHighlightBorder": "#00000000",
+      "editor.selectionBackground": "#add6ff",
+      "editorCursor.foreground": "#1a1a1a",
+      "editorIndentGuide.background": "#0000000d",
+      "editorIndentGuide.activeBackground": "#0000001a",
+      "editorWidget.background": "#f5f5f5",
+      "editorWidget.border": "#e0e0e0",
+      "editorSuggestWidget.background": "#f5f5f5",
+      "editorHoverWidget.background": "#f5f5f5",
+      "editor.inactiveSelectionBackground": "#add6ff60",
+      "editorBracketMatch.background": "#00000010",
+      "editorBracketMatch.border": "#00000020",
+      "scrollbar.shadow": "#00000000",
+      "scrollbarSlider.background": "#00000012",
+      "scrollbarSlider.hoverBackground": "#00000020",
+      "scrollbarSlider.activeBackground": "#00000030",
+    },
+  })
 }
 
 // ---------------------------------------------------------------------------
@@ -78,6 +115,24 @@ export function FileEditor({
 }: FileEditorProps) {
   const editorRef = useRef<MonacoEditor.IStandaloneCodeEditor | null>(null)
   const onSaveRef = useRef(onSave)
+  const { theme } = useTheme()
+
+  const resolvedTheme = useMemo(() => {
+    if (theme === "system") {
+      return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light"
+    }
+    return theme
+  }, [theme])
+
+  const monacoTheme = resolvedTheme === "dark" ? DARK_THEME : LIGHT_THEME
+
+  // Update live editor theme when user toggles
+  useEffect(() => {
+    if (editorRef.current) {
+      const monaco = (window as Record<string, unknown>).monaco as typeof import("monaco-editor") | undefined
+      monaco?.editor.setTheme(monacoTheme)
+    }
+  }, [monacoTheme])
 
   useEffect(() => {
     onSaveRef.current = onSave
@@ -101,8 +156,8 @@ export function FileEditor({
       height="100%"
       language={language}
       defaultValue={defaultValue}
-      theme={BETTERGIT_THEME}
-      beforeMount={defineTheme}
+      theme={monacoTheme}
+      beforeMount={defineThemes}
       onChange={(value) => onContentChange(value ?? "")}
       onMount={handleMount}
       options={{
