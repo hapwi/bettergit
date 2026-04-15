@@ -17,6 +17,8 @@ export interface PrListItem {
   state: "open" | "closed" | "merged";
   author: string;
   updatedAt: string;
+  /** First tag containing this PR's head commit (e.g. "v0.3.3") */
+  tag?: string;
 }
 
 export interface GhAuthStatus {
