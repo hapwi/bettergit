@@ -2,8 +2,8 @@
  * GitHub CLI operations — PR management via `gh`.
  */
 import { serverFetch } from "../server";
-import type { PullRequestSummary, GhAuthStatus, GhRepo } from "../../../shared/github";
-export type { PullRequestSummary, GhAuthStatus, GhRepo } from "../../../shared/github";
+import type { PullRequestSummary, GhAuthStatus, GhRepo, GhViewer } from "../../../shared/github";
+export type { PullRequestSummary, GhAuthStatus, GhRepo, GhViewer } from "../../../shared/github";
 
 export async function listOpenPullRequests(
   cwd: string,
@@ -54,6 +54,10 @@ export async function getForkParent(cwd: string): Promise<string | null> {
 
 export async function getGhAuthStatus(cwd: string): Promise<GhAuthStatus> {
   return serverFetch("/api/github/auth-status", { cwd });
+}
+
+export async function getGhViewer(cwd: string): Promise<GhViewer | null> {
+  return serverFetch("/api/github/viewer", { cwd });
 }
 
 export async function listGhRepos(limit = 100): Promise<GhRepo[]> {

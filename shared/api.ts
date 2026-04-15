@@ -1,11 +1,11 @@
 import type { ExecInput, ExecResult } from "./exec";
 import type { GitStatus, Branch, CommitEntry } from "./git";
-import type { PullRequestSummary, PrListItem, GhAuthStatus, GhRepo } from "./github";
+import type { PullRequestSummary, PrListItem, GhAuthStatus, GhRepo, GhViewer } from "./github";
 import type { CommitMessageInput, CommitMessageResult, PrContentInput, PrContentResult, BranchNameInput, BranchNameResult } from "./ai";
 import type { FileEntry, FileContent, ListDirectoryInput, ReadFileInput, WriteFileInput } from "./files";
 import type { StackedActionInput, StackedActionResult } from "./stacked";
 import type { MergePullRequestsInput, MergePullRequestsResult, VersionBumpInput, VersionBumpResult, SemVer } from "./workflows";
-import type { RepoStats, RecentCommit } from "./stats";
+import type { RepoStats, RecentCommit, DashboardOverview, DashboardData } from "./stats";
 
 export interface ApiRoutes {
   // Health
@@ -49,6 +49,7 @@ export interface ApiRoutes {
   "/api/github/repo/default-branch": { input: { cwd: string }; output: string | null };
   "/api/github/repo/fork-parent": { input: { cwd: string }; output: string | null };
   "/api/github/auth-status": { input: { cwd: string }; output: GhAuthStatus };
+  "/api/github/viewer": { input: { cwd: string }; output: GhViewer | null };
   "/api/github/repos/list": { input: { limit?: number }; output: GhRepo[] };
   "/api/github/repos/clone": { input: { repo: string; destination: string }; output: { clonedPath: string } };
 
@@ -71,6 +72,8 @@ export interface ApiRoutes {
   "/api/git/release/create-pr": { input: { cwd: string }; output: PullRequestSummary };
 
   // Dashboard
+  "/api/git/dashboard/data": { input: { cwd: string; days?: number; recentCommitCount?: number; mergedPrLimit?: number }; output: DashboardData };
+  "/api/git/dashboard/overview": { input: { cwd: string; days?: number }; output: DashboardOverview };
   "/api/git/dashboard/recent-commits": { input: { cwd: string; count?: number }; output: RecentCommit[] };
   "/api/git/dashboard/open-prs": { input: { cwd: string }; output: PrListItem[] };
   "/api/git/dashboard/merged-prs": { input: { cwd: string; limit?: number }; output: PrListItem[] };
