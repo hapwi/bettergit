@@ -217,11 +217,12 @@ function AppContent() {
     return cleanup
   }, [addTerminalTab, ensureTerminalProject, repoCwd, terminalProjects])
 
-  useEffect(() => {
-    if (activeTab === "files") {
+  const handleTabChange = (tab: ActiveTab) => {
+    if (tab === "files") {
       setHasOpenedFilesTab(true)
     }
-  }, [activeTab])
+    setActiveTab(tab)
+  }
 
   const hasStartedTerminal = repoCwd ? Boolean(terminalProjects[repoCwd]) : false
   const activeTerminalProject = repoCwd ? terminalProjects[repoCwd] ?? null : null
@@ -230,7 +231,7 @@ function AppContent() {
     <>
       <Toolbar
         activeTab={activeTab}
-        onTabChange={setActiveTab}
+        onTabChange={handleTabChange}
         onDiffOpen={() => setIsDiffOpen(true)}
       />
       {!online && (

@@ -457,6 +457,12 @@ window.electronAPI?.settings.load().then((file) => {
       JSON.stringify(recentProjects.map((project) => project.path)),
     );
     if (fileTermApp) localStorage.setItem(TERMINAL_APP_STORAGE_KEY, fileTermApp);
+    if (fileGithubFolder) localStorage.setItem(GITHUB_FOLDER_STORAGE_KEY, fileGithubFolder);
     return;
+  }
+
+  if (!state.githubFolder && fileGithubFolder) {
+    useAppStore.setState({ githubFolder: fileGithubFolder });
+    localStorage.setItem(GITHUB_FOLDER_STORAGE_KEY, fileGithubFolder);
   }
 });
