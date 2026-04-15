@@ -161,7 +161,7 @@ function Toolbar({
 
 function AppContent() {
   const { online } = useNetworkStatus()
-  const [activeTab, setActiveTab] = useState<ActiveTab>("git")
+  const [activeTab, setActiveTab] = useState<ActiveTab>("dashboard")
   const [isDiffOpen, setIsDiffOpen] = useState(false)
   const [hasOpenedFilesTab, setHasOpenedFilesTab] = useState(false)
   const repoCwd = useAppStore((s) => s.repoCwd)
@@ -247,7 +247,7 @@ function AppContent() {
             activeTab === "dashboard" ? "z-10" : "hidden"
           )}>
             <Suspense fallback={null}>
-              {activeTab === "dashboard" ? <Dashboard isActive /> : null}
+              <Dashboard isActive={activeTab === "dashboard"} />
             </Suspense>
           </div>
           <div className={cn(
@@ -268,10 +268,8 @@ function AppContent() {
           </div>
           {activeTab === "terminal" && repoCwd && !hasStartedTerminal && !isDiffOpen ? (
             <div className="absolute inset-0 z-10 flex items-center justify-center p-6">
-              <div className="flex w-full max-w-md flex-col items-center gap-4 rounded-2xl border border-border/60 bg-card/80 p-8 text-center shadow-sm">
-                <div className="rounded-full border border-border/60 bg-muted/50 p-3 text-muted-foreground">
-                  <Terminal className="size-5" />
-                </div>
+              <div className="flex w-full max-w-md flex-col items-center gap-4 text-center">
+                <Terminal className="size-5 text-muted-foreground" />
                 <div className="space-y-1">
                   <h2 className="text-lg font-semibold">Start a terminal for this project</h2>
                   <p className="text-sm text-muted-foreground">
