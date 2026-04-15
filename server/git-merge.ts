@@ -1,5 +1,6 @@
 import { runProcess, type ExecResult } from "./env";
 import { listPrs } from "./git-pr";
+import { readOriginRepoSlug } from "./git-exec";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -76,25 +77,43 @@ async function resolveRevision(cwd: string, candidates: string[]): Promise<strin
   return null;
 }
 
-async function readBranchPresence(cwd: string, branchName: string) {
-  await gitRun(cwd, ["fetch", "--quiet", "--prune", "origin"]).catch(() => {});
-  const result = await gitRun(cwd, ["branch", "-a", "--list", branchName, `remotes/origin/${branchName}`]);
-  const lines = result.stdout.split("\n").map((l) => l.trim()).filter(Boolean);
-  return {
-    hasLocal: lines.some((l) => l === branchName || l === `* ${branchName}`),
-    hasRemote: lines.some((l) => l === `remotes/origin/${branchName}`),
-  };
+async function deleteRemoteBranch(cwd: string, branchName: string): Promise<boolean> {
+  // Try GitHub API first — more reliable than git push for branch deletion
+  const repo = await readOriginRepoSlug(cwd);
+  if (repo) {
+    const apiResult = await ghRun(cwd, [
+      "api", "-X", "DELETE", `repos/${repo}/git/refs/heads/${branchName}`,
+    ]);
+    if (apiResult.code === 0) return true;
+    // 422 = ref doesn't exist (already deleted) — treat as success
+    if (apiResult.stderr.includes("422") || apiResult.stderr.includes("Reference does not exist")) return true;
+    console.warn(`[merge] GitHub API delete of ${branchName} failed: ${apiResult.stderr.trim()}`);
+  }
+
+  // Fallback: git push --delete
+  const pushResult = await gitRun(cwd, ["push", "origin", "--delete", branchName]);
+  if (pushResult.code === 0) return true;
+  if (pushResult.stderr.includes("remote ref does not exist")) return true;
+
+  console.warn(`[merge] git push --delete ${branchName} failed: ${pushResult.stderr.trim()}`);
+  return false;
 }
 
 async function deleteBranchIfPresent(cwd: string, branchName: string) {
-  const presence = await readBranchPresence(cwd, branchName);
-  if (!presence.hasLocal && !presence.hasRemote) return;
-  if (presence.hasRemote) {
-    await gitRun(cwd, ["push", "origin", "--delete", branchName]).catch(() => {});
+  // Delete remote branch
+  await deleteRemoteBranch(cwd, branchName);
+
+  // Delete local branch
+  const localCheck = await gitRun(cwd, ["rev-parse", "--verify", `refs/heads/${branchName}`]);
+  if (localCheck.code === 0) {
+    const result = await gitRun(cwd, ["branch", "-D", "--", branchName]);
+    if (result.code !== 0) {
+      console.warn(`[merge] local delete of ${branchName} failed: ${result.stderr.trim()}`);
+    }
   }
-  if (presence.hasLocal) {
-    await gitRun(cwd, ["branch", "-D", "--", branchName]).catch(() => {});
-  }
+
+  // Prune stale remote tracking refs
+  await gitRun(cwd, ["fetch", "--quiet", "--prune", "origin"]).catch(() => {});
 }
 
 async function deleteMergedBranchesForBase(cwd: string, baseBranch: string) {
@@ -103,18 +122,29 @@ async function deleteMergedBranchesForBase(cwd: string, baseBranch: string) {
   for (const pr of mergedPrs) {
     if (!pr.headBranch || isProtectedBranch(pr.headBranch)) continue;
 
-    const mergedHeadSha = pr.headSha?.trim();
-    if (!mergedHeadSha) continue;
-
+    // Check if branch still exists anywhere
     const remoteSha = await resolveRevision(cwd, [
       `refs/remotes/origin/${pr.headBranch}`,
       `origin/${pr.headBranch}`,
     ]);
     const localSha = await resolveRevision(cwd, [pr.headBranch]);
-
-    if (remoteSha && remoteSha !== mergedHeadSha) continue;
-    if (localSha && localSha !== mergedHeadSha) continue;
     if (!remoteSha && !localSha) continue;
+
+    // If we have the merged PR's head SHA, only skip deletion when the
+    // branch has moved FORWARD (new commits after merge). A SHA mismatch
+    // from rebase/force-push should still be cleaned up — the PR is merged.
+    const mergedHeadSha = pr.headSha?.trim();
+    if (mergedHeadSha && remoteSha && remoteSha !== mergedHeadSha) {
+      // Check if the current branch tip is an ancestor of the merge base.
+      // If it is, the branch hasn't moved forward — safe to delete.
+      const mergeBaseResult = await gitRun(cwd, [
+        "merge-base", "--is-ancestor", remoteSha, `origin/${baseBranch}`,
+      ]);
+      if (mergeBaseResult.code !== 0) {
+        // Branch has commits not in baseBranch — someone pushed after merge, skip
+        continue;
+      }
+    }
 
     await deleteBranchIfPresent(cwd, pr.headBranch);
   }
