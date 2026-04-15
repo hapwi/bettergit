@@ -161,7 +161,7 @@ function Toolbar({
 
 function AppContent() {
   const { online } = useNetworkStatus()
-  const [activeTab, setActiveTab] = useState<ActiveTab>("git")
+  const [activeTab, setActiveTab] = useState<ActiveTab>("dashboard")
   const [isDiffOpen, setIsDiffOpen] = useState(false)
   const [hasOpenedFilesTab, setHasOpenedFilesTab] = useState(false)
   const repoCwd = useAppStore((s) => s.repoCwd)
@@ -180,7 +180,10 @@ function AppContent() {
     existing.current = handle
   }
 
-  // Cmd+W: close active tab in files/terminal first, then close window
+  // Cmd+W: close active split pane → then tab → then window
+  const closeSplitPane = useAppStore((s) => s.closeSplitPane)
+  const closeTerminalTab = useAppStore((s) => s.closeTerminalTab)
+
   useEffect(() => {
     const cleanup = window.electronAPI?.onClosePaneOrWindow(() => {
       if (activeTab === "files") {
@@ -188,34 +191,53 @@ function AppContent() {
         if (handled) return
       }
       if (activeTab === "terminal" && repoCwd) {
-        const ref = terminalRefs.current.get(repoCwd)
-        if (ref?.current) {
-          const handled = ref.current.closePaneOrTab()
-          if (handled) return
+        const project = terminalProjects[repoCwd]
+        if (project?.activeTabId && project?.activeTerminalId) {
+          const tree = project.splitTrees[project.activeTabId]
+          // Multiple panes → close active pane only
+          if (tree && tree.type === "branch") {
+            closeSplitPane(repoCwd, project.activeTerminalId)
+            return
+          }
+          // Single pane → close entire tab
+          closeTerminalTab(repoCwd, project.activeTabId)
+          return
         }
       }
       window.close()
     })
     return cleanup
-  }, [activeTab, repoCwd])
+  }, [activeTab, closeSplitPane, closeTerminalTab, repoCwd, terminalProjects])
 
   // Terminal shortcuts from the native menu
+  const splitTerminal = useAppStore((s) => s.splitTerminal)
+
   useEffect(() => {
     const cleanup = window.electronAPI?.onTerminalAction((action) => {
-      if (action !== "terminal:new-tab") return
       if (!repoCwd) return
 
-      setActiveTab("terminal")
-
-      if (!terminalProjects[repoCwd]) {
-        ensureTerminalProject(repoCwd)
+      if (action === "terminal:new-tab") {
+        setActiveTab("terminal")
+        if (!terminalProjects[repoCwd]) {
+          ensureTerminalProject(repoCwd)
+          return
+        }
+        addTerminalTab(repoCwd)
         return
       }
 
-      addTerminalTab(repoCwd)
+      if (action === "terminal:split-vertical" || action === "terminal:split-horizontal") {
+        setActiveTab("terminal")
+        if (!terminalProjects[repoCwd]) {
+          ensureTerminalProject(repoCwd)
+          return
+        }
+        const direction = action === "terminal:split-vertical" ? "vertical" : "horizontal"
+        splitTerminal(repoCwd, direction)
+      }
     })
     return cleanup
-  }, [addTerminalTab, ensureTerminalProject, repoCwd, terminalProjects])
+  }, [addTerminalTab, ensureTerminalProject, repoCwd, splitTerminal, terminalProjects])
 
   const handleTabChange = (tab: ActiveTab) => {
     if (tab === "files") {
@@ -247,7 +269,7 @@ function AppContent() {
             activeTab === "dashboard" ? "z-10" : "hidden"
           )}>
             <Suspense fallback={null}>
-              {activeTab === "dashboard" ? <Dashboard isActive /> : null}
+              <Dashboard isActive={activeTab === "dashboard"} />
             </Suspense>
           </div>
           <div className={cn(
@@ -268,10 +290,8 @@ function AppContent() {
           </div>
           {activeTab === "terminal" && repoCwd && !hasStartedTerminal && !isDiffOpen ? (
             <div className="absolute inset-0 z-10 flex items-center justify-center p-6">
-              <div className="flex w-full max-w-md flex-col items-center gap-4 rounded-2xl border border-border/60 bg-card/80 p-8 text-center shadow-sm">
-                <div className="rounded-full border border-border/60 bg-muted/50 p-3 text-muted-foreground">
-                  <Terminal className="size-5" />
-                </div>
+              <div className="flex w-full max-w-md flex-col items-center gap-4 text-center">
+                <Terminal className="size-5 text-muted-foreground" />
                 <div className="space-y-1">
                   <h2 className="text-lg font-semibold">Start a terminal for this project</h2>
                   <p className="text-sm text-muted-foreground">

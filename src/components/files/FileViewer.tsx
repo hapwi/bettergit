@@ -376,7 +376,7 @@ export const FileViewer = forwardRef<FileViewerHandle, { isActive?: boolean }>(f
     <div className={cn("flex h-full overflow-hidden", !isActive && "hidden")}>
       {/* File tree sidebar */}
       {sidebarCollapsed ? (
-        <div className="flex w-[36px] shrink-0 flex-col items-center border-r border-white/[0.06] bg-[#161616] pt-2">
+        <div className="flex w-[36px] shrink-0 flex-col items-center border-r border-border bg-card pt-2">
           <button
             type="button"
             onClick={() => setSidebarCollapsed(false)}
@@ -387,7 +387,7 @@ export const FileViewer = forwardRef<FileViewerHandle, { isActive?: boolean }>(f
           </button>
         </div>
       ) : (
-        <div className="flex w-[260px] shrink-0 flex-col overflow-hidden border-r border-white/[0.06] bg-[#161616]">
+        <div className="flex w-[260px] shrink-0 flex-col overflow-hidden border-r border-border bg-card">
           <div className="flex h-[35px] items-center justify-between px-3">
             <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/50">
               Files
@@ -441,14 +441,14 @@ export const FileViewer = forwardRef<FileViewerHandle, { isActive?: boolean }>(f
       )}
 
       {/* Editor area */}
-      <div className="flex min-w-0 flex-1 flex-col bg-[#1a1a1a]">
+      <div className="flex min-w-0 flex-1 flex-col bg-background">
         {/* Tab bar */}
         {openFiles.length > 0 && (
           <div
             ref={tabBarRef}
             role="tablist"
             aria-label="Open files"
-            className="flex h-[35px] shrink-0 items-end overflow-x-auto overflow-y-hidden bg-[#161616] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+            className="flex h-[35px] shrink-0 items-end overflow-x-auto overflow-y-hidden bg-card [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
           >
             {openFiles.map((file) => {
               const isDirty = file.isDirty
@@ -471,7 +471,7 @@ export const FileViewer = forwardRef<FileViewerHandle, { isActive?: boolean }>(f
                       className={cn(
                         "group relative flex h-[32px] shrink-0 items-center gap-1.5 px-3 text-[12px] transition-colors",
                         isFileActive
-                          ? "bg-[#1a1a1a] text-foreground"
+                          ? "bg-background text-foreground"
                           : "text-muted-foreground/60 hover:text-muted-foreground",
                       )}
                     >
@@ -517,12 +517,12 @@ export const FileViewer = forwardRef<FileViewerHandle, { isActive?: boolean }>(f
         )}
 
         {/* No tabs — blank header to match height */}
-        {openFiles.length === 0 && <div className="h-[35px] shrink-0 bg-[#161616]" />}
+        {openFiles.length === 0 && <div className="h-[35px] shrink-0 bg-card" />}
 
         {/* Editor content */}
         <div className="relative min-h-0 flex-1">
           {loading && (
-            <div className="absolute inset-0 z-20 flex items-center justify-center bg-[#1a1a1a]/90">
+            <div className="absolute inset-0 z-20 flex items-center justify-center bg-background/90">
               <span className="text-[12px] text-muted-foreground/50">Loading...</span>
             </div>
           )}
@@ -591,7 +591,7 @@ export const FileViewer = forwardRef<FileViewerHandle, { isActive?: boolean }>(f
 
         {/* Status bar */}
         {activeFile && !activeFile.isBinary && !activeFile.isTooLarge && (
-          <div className="flex h-[22px] items-center justify-between border-t border-white/[0.06] bg-[#161616] px-3 text-[11px] text-muted-foreground/40">
+          <div className="flex h-[22px] items-center justify-between border-t border-border bg-card px-3 text-[11px] text-muted-foreground/40">
             <span>{activeFile.path}</span>
             <div className="flex items-center gap-4">
               <span>{activeFile.language}</span>

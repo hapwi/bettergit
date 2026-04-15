@@ -1,13 +1,5 @@
 import { execGh, readOriginRepoSlug, requireOk } from "./git-exec";
-
-export interface PullRequestSummary {
-  number: number;
-  title: string;
-  url: string;
-  baseBranch: string;
-  headBranch: string;
-  state: "open" | "closed" | "merged";
-}
+import type { PullRequestSummary, PrListItem } from "../shared/github";
 
 export async function listOpenPullRequests(input: {
   cwd: string;
@@ -147,18 +139,6 @@ export async function mergePullRequest(input: {
   if (deleteBranch) args.push("--delete-branch");
   requireOk(await execGh({ cwd: input.cwd, args }), `merge PR ${input.reference}`);
   return { ok: true };
-}
-
-export interface PrListItem {
-  number: number;
-  title: string;
-  url: string;
-  baseBranch: string;
-  headBranch: string;
-  headSha?: string;
-  state: "open" | "closed" | "merged";
-  author: string;
-  updatedAt: string;
 }
 
 export async function listPrs(

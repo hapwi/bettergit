@@ -1,14 +1,5 @@
 import { runProcess, type ExecResult } from "./env";
-
-// ---------------------------------------------------------------------------
-// Low-level exec
-// ---------------------------------------------------------------------------
-
-export interface ExecInput {
-  cwd: string;
-  args: string[];
-  timeoutMs?: number;
-}
+import type { ExecInput } from "../shared/exec";
 
 export async function execGit(input: ExecInput): Promise<ExecResult> {
   return runProcess("git", input.args, input.cwd, input.timeoutMs);

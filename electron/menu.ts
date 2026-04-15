@@ -16,6 +16,16 @@ export function setupApplicationMenu(): void {
           accelerator: "CmdOrCtrl+T",
           click: () => sendToRenderer("terminal:new-tab"),
         },
+        {
+          label: "Split Pane Right",
+          accelerator: "CmdOrCtrl+D",
+          click: () => sendToRenderer("terminal:split-vertical"),
+        },
+        {
+          label: "Split Pane Down",
+          accelerator: "CmdOrCtrl+Shift+D",
+          click: () => sendToRenderer("terminal:split-horizontal"),
+        },
         { type: "separator" },
         {
           label: "Close",

@@ -201,19 +201,7 @@ async function runAi(prompt: string): Promise<string> {
 // Public API
 // ---------------------------------------------------------------------------
 
-export interface CommitMessageInput {
-  cwd: string;
-  branch: string | null;
-  stagedSummary: string;
-  stagedPatch: string;
-  includeBranch?: boolean;
-}
-
-export interface CommitMessageResult {
-  subject: string;
-  body: string;
-  branch?: string;
-}
+import type { CommitMessageInput, CommitMessageResult, PrContentInput, PrContentResult, BranchNameInput, BranchNameResult } from "../shared/ai";
 
 export async function generateCommitMessage(input: CommitMessageInput): Promise<CommitMessageResult> {
   const wantsBranch = input.includeBranch === true;
@@ -249,20 +237,6 @@ export async function generateCommitMessage(input: CommitMessageInput): Promise<
   };
 }
 
-export interface PrContentInput {
-  cwd: string;
-  baseBranch: string;
-  headBranch: string;
-  commitSummary: string;
-  diffSummary: string;
-  diffPatch: string;
-}
-
-export interface PrContentResult {
-  title: string;
-  body: string;
-}
-
 export async function generatePrContent(input: PrContentInput): Promise<PrContentResult> {
   const prompt = [
     "You write GitHub pull request content.",
@@ -292,14 +266,6 @@ export async function generatePrContent(input: PrContentInput): Promise<PrConten
 
   const title = (generated.title ?? "").trim().split(/\r?\n/g)[0]?.trim() ?? "Update";
   return { title, body: (generated.body ?? "").trim() };
-}
-
-export interface BranchNameInput {
-  message: string;
-}
-
-export interface BranchNameResult {
-  branch: string;
 }
 
 export async function generateBranchName(input: BranchNameInput): Promise<BranchNameResult> {

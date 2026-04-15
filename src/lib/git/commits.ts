@@ -2,16 +2,8 @@
  * Commit operations — log, commit, stage, diff.
  */
 import { serverFetch } from "../server";
-
-export interface CommitEntry {
-  sha: string;
-  shortSha: string;
-  subject: string;
-  body: string;
-  author: string;
-  date: string;
-  relativeDate: string;
-}
+import type { CommitEntry } from "../../../shared/git";
+export type { CommitEntry } from "../../../shared/git";
 
 export async function getLog(
   cwd: string,

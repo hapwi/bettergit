@@ -1,5 +1,6 @@
 import path from "node:path";
 import { execGh, readOriginRepoSlug, requireOk } from "./git-exec";
+import type { GhRepo, GhAuthStatus, GhViewer } from "../shared/github";
 
 export async function createGhRepo(input: {
   cwd: string;
@@ -52,14 +53,6 @@ export async function getForkParent(input: { cwd: string }): Promise<string | nu
   }
 }
 
-export interface GhRepo {
-  name: string;
-  nameWithOwner: string;
-  description: string;
-  isPrivate: boolean;
-  updatedAt: string;
-}
-
 export async function listGhRepos(input: {
   limit?: number;
 }): Promise<GhRepo[]> {
@@ -95,11 +88,6 @@ export async function cloneGhRepo(input: {
   return { clonedPath };
 }
 
-export interface GhAuthStatus {
-  connected: boolean;
-  detail: string;
-}
-
 export async function getGhAuthStatus(input: { cwd: string }): Promise<GhAuthStatus> {
   try {
     const result = await execGh({ cwd: input.cwd, args: ["auth", "status"] });
@@ -120,5 +108,24 @@ export async function getGhAuthStatus(input: { cwd: string }): Promise<GhAuthSta
       connected: false,
       detail: "gh CLI not found",
     };
+  }
+}
+
+export async function getGhViewer(input: { cwd: string }): Promise<GhViewer | null> {
+  try {
+    const result = await execGh({
+      cwd: input.cwd,
+      args: ["api", "user", "--jq", "{login: .login, avatarUrl: .avatar_url, url: .html_url}"],
+    });
+    if (result.code !== 0) return null;
+    const parsed = JSON.parse(result.stdout) as Partial<GhViewer>;
+    if (!parsed.login || !parsed.avatarUrl || !parsed.url) return null;
+    return {
+      login: parsed.login,
+      avatarUrl: parsed.avatarUrl,
+      url: parsed.url,
+    };
+  } catch {
+    return null;
   }
 }

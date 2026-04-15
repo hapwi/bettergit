@@ -1,6 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { runProcess, type ExecResult } from "./env";
+import type { VersionBumpInput, VersionBumpResult } from "../shared/workflows";
 
 const LONG_RUNNING_GIT_TIMEOUT_MS = 10 * 60_000;
 
@@ -11,17 +12,6 @@ async function gitRun(cwd: string, args: string[], timeout = LONG_RUNNING_GIT_TI
 function requireOk(result: ExecResult, label: string) {
   if (result.code !== 0) throw new Error(`${label} failed: ${result.stderr}`);
   return result.stdout;
-}
-
-export interface VersionBumpInput {
-  cwd: string;
-  bump: "patch" | "minor" | "major";
-}
-
-export interface VersionBumpResult {
-  tag: string;
-  version: string;
-  error: string | null;
 }
 
 async function computeBumpedVersion(cwd: string, bump: "patch" | "minor" | "major") {

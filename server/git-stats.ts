@@ -1,23 +1,8 @@
 import { execGit, execGh, readOriginRepoSlug } from "./git-exec";
+import type { DailyCommitStat, AuthorStat, RepoStats } from "../shared/stats";
 
-export interface DailyCommitStat {
-  date: string;
-  commits: number;
-  insertions: number;
-  deletions: number;
-}
-
-export interface AuthorStat {
-  name: string;
-  commits: number;
-}
-
-export interface RepoStats {
-  totalCommits: number;
-  totalBranches: number;
-  dailyActivity: DailyCommitStat[];
-  topAuthors: AuthorStat[];
-  recentTags: string[];
+function normalizeIdentity(value: string): string {
+  return value.toLowerCase().replace(/[^a-z0-9]/g, "");
 }
 
 export async function getRepoStats(input: { cwd: string; days?: number }): Promise<RepoStats> {
@@ -34,17 +19,26 @@ export async function getRepoStats(input: { cwd: string; days?: number }): Promi
     readOriginRepoSlug(cwd),
   ]);
 
-  const tagResult = repo
-    ? await execGh({
-        cwd,
-        args: [
-          "api",
-          `repos/${repo}/tags`,
-          "--jq",
-          `[.[].name] | sort_by(split(".") | map(ltrimstr("v") | tonumber)) | reverse | .[]`,
-        ],
-      })
-    : { code: 1, stdout: "", stderr: "" };
+  const [tagResult, contributorsResult] = repo
+    ? await Promise.all([
+        execGh({
+          cwd,
+          args: [
+            "api",
+            `repos/${repo}/tags`,
+            "--jq",
+            `[.[].name] | sort_by(split(".") | map(ltrimstr("v") | tonumber)) | reverse | .[]`,
+          ],
+        }),
+        execGh({
+          cwd,
+          args: ["api", `repos/${repo}/contributors?per_page=30`],
+        }),
+      ])
+    : [
+        { code: 1, stdout: "", stderr: "" },
+        { code: 1, stdout: "", stderr: "" },
+      ];
 
   const dateCounts = new Map<string, number>();
   if (commitLogResult.code === 0) {
@@ -103,6 +97,29 @@ export async function getRepoStats(input: { cwd: string; days?: number }): Promi
       if (match) {
         topAuthors.push({ name: match[2] ?? "", commits: parseInt(match[1] ?? "0", 10) });
       }
+    }
+  }
+
+  if (contributorsResult.code === 0 && topAuthors.length > 0) {
+    try {
+      const contributors = JSON.parse(contributorsResult.stdout) as Array<{
+        login?: string;
+        avatar_url?: string;
+      }>;
+      const contributorsByNormalizedLogin = new Map(
+        contributors
+          .filter((contributor) => contributor.login)
+          .map((contributor) => [normalizeIdentity(contributor.login ?? ""), contributor]),
+      );
+
+      for (const author of topAuthors) {
+        const matched = contributorsByNormalizedLogin.get(normalizeIdentity(author.name));
+        if (!matched?.login) continue;
+        author.login = matched.login;
+        author.avatarUrl = matched.avatar_url ?? undefined;
+      }
+    } catch {
+      // Ignore GitHub contributor mapping failures and keep git-derived authors.
     }
   }
 
