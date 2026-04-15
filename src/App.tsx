@@ -8,10 +8,11 @@ import {
   SidebarLeftIcon,
 } from "@hugeicons/core-free-icons"
 import { HugeiconsIcon } from "@hugeicons/react"
-import { Terminal, FileDiff, FolderOpen } from "lucide-react"
+import { Terminal, FileDiff, FolderOpen, WifiOff } from "lucide-react"
 import type { TerminalPanelHandle } from "@/components/terminal/TerminalPanel"
 import type { FileViewerHandle } from "@/components/files/FileViewer"
 import { GitHubIcon } from "@/components/icons"
+import { useNetworkStatus } from "@/hooks/useNetworkStatus"
 
 const DiffViewer = lazy(async () => {
   const mod = await import("@/components/git/DiffViewer")
@@ -159,8 +160,10 @@ function Toolbar({
 }
 
 function AppContent() {
+  const { online } = useNetworkStatus()
   const [activeTab, setActiveTab] = useState<ActiveTab>("git")
   const [isDiffOpen, setIsDiffOpen] = useState(false)
+  const [hasOpenedFilesTab, setHasOpenedFilesTab] = useState(false)
   const repoCwd = useAppStore((s) => s.repoCwd)
   const terminalProjects = useAppStore((s) => s.terminalProjects)
   const ensureTerminalProject = useAppStore((s) => s.ensureTerminalProject)
@@ -214,6 +217,12 @@ function AppContent() {
     return cleanup
   }, [addTerminalTab, ensureTerminalProject, repoCwd, terminalProjects])
 
+  useEffect(() => {
+    if (activeTab === "files") {
+      setHasOpenedFilesTab(true)
+    }
+  }, [activeTab])
+
   const hasStartedTerminal = repoCwd ? Boolean(terminalProjects[repoCwd]) : false
   const activeTerminalProject = repoCwd ? terminalProjects[repoCwd] ?? null : null
 
@@ -224,7 +233,13 @@ function AppContent() {
         onTabChange={setActiveTab}
         onDiffOpen={() => setIsDiffOpen(true)}
       />
-      <main className="flex min-h-0 flex-1 flex-col overflow-hidden pt-[52px]">
+      {!online && (
+        <div className="flex items-center gap-2 border-b border-amber-500/20 bg-amber-500/10 px-4 py-1.5 text-xs font-medium text-amber-600 dark:text-amber-400" style={{ marginTop: 52 }}>
+          <WifiOff className="size-3.5" />
+          Offline — push, pull, and GitHub features unavailable
+        </div>
+      )}
+      <main className={cn("flex min-h-0 flex-1 flex-col overflow-hidden", online ? "pt-[52px]" : "")}>
         <div className="relative min-h-0 flex-1">
           <div className={cn(
             "absolute inset-0 overflow-hidden",
@@ -247,7 +262,7 @@ function AppContent() {
             activeTab === "files" ? "z-10" : "hidden"
           )}>
             <Suspense fallback={null}>
-              <FileViewer ref={fileViewerRef} isActive={activeTab === "files"} />
+              {hasOpenedFilesTab ? <FileViewer ref={fileViewerRef} isActive={activeTab === "files"} /> : null}
             </Suspense>
           </div>
           {activeTab === "terminal" && repoCwd && !hasStartedTerminal && !isDiffOpen ? (

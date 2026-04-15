@@ -24,6 +24,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { useNetworkStatus } from "@/hooks/useNetworkStatus";
 
 interface ServiceStatus {
   label: string;
@@ -188,6 +189,7 @@ export function SettingsDialog({
   onOpenChange: (open: boolean) => void;
 }) {
   const repoCwd = useAppStore((s) => s.repoCwd);
+  const { online } = useNetworkStatus();
   const [view, setView] = useState<"main" | "connections">("main");
   const [services, setServices] = useState<ServiceStatus[]>(cachedServices ?? []);
   const [selectedModel, setSelectedModel] = useState("claude-haiku-4-5");
@@ -199,6 +201,17 @@ export function SettingsDialog({
   const allChecking = services.length === 0 || services.every((s) => s.status === "checking");
 
   const checkConnections = useCallback(async () => {
+    if (!online) {
+      const offlineServices: ServiceStatus[] = [
+        { label: "GitHub CLI", status: "disconnected", detail: "Offline", icon: GitHubIcon },
+        { label: "Claude Code", status: "disconnected", detail: "Offline", icon: ClaudeIcon },
+        { label: "Codex", status: "disconnected", detail: "Offline", icon: CodexIcon },
+      ];
+      setServices(offlineServices);
+      cachedServices = offlineServices;
+      return;
+    }
+
     const initial: ServiceStatus[] = [
       { label: "GitHub CLI", status: "checking", icon: GitHubIcon },
       { label: "Claude Code", status: "checking", icon: ClaudeIcon },
@@ -254,7 +267,7 @@ export function SettingsDialog({
     const result = [gh, claude, codex];
     setServices(result);
     cachedServices = result;
-  }, [repoCwd]);
+  }, [repoCwd, online]);
 
   useEffect(() => {
     if (!open) {

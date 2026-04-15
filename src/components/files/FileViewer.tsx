@@ -1,11 +1,18 @@
-import { useState, useCallback, useRef, useEffect, useImperativeHandle, forwardRef } from "react"
+import { useState, useCallback, useRef, useEffect, useImperativeHandle, forwardRef, lazy, Suspense } from "react"
+import { useQuery } from "@tanstack/react-query"
 import { cn } from "@/lib/utils"
 import { useAppStore } from "@/store"
 import { readFile, writeFile, type FileContent } from "@/lib/files"
 import { FileTree, FileTreeActions, type PendingAction } from "./FileTree"
-import { FileEditor } from "./FileEditor"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
+import {
+  gitStatusQueryOptions,
+} from "@/lib/git/queries"
+import {
+  getWorkingTreeDisplayStatusPriority,
+  type WorkingTreeStatusDecoration,
+} from "@/lib/git/status"
 import {
   ContextMenu,
   ContextMenuContent,
@@ -13,7 +20,7 @@ import {
   ContextMenuSeparator,
   ContextMenuTrigger,
 } from "@/components/ui/context-menu"
-import { X, FileCode2, AlertTriangle } from "lucide-react"
+import { X, FileCode2, AlertTriangle, PanelLeftClose, PanelLeftOpen } from "lucide-react"
 
 // ---------------------------------------------------------------------------
 // Types
@@ -32,6 +39,11 @@ interface OpenFile {
   isDirty: boolean
 }
 
+const FileEditor = lazy(async () => {
+  const mod = await import("./FileEditor")
+  return { default: mod.FileEditor }
+})
+
 // ---------------------------------------------------------------------------
 // FileViewer
 // ---------------------------------------------------------------------------
@@ -43,17 +55,19 @@ export interface FileViewerHandle {
 
 export const FileViewer = forwardRef<FileViewerHandle, { isActive?: boolean }>(function FileViewer({ isActive }, ref) {
   const repoCwd = useAppStore((s) => s.repoCwd)
+  const { data: gitStatus } = useQuery(
+    gitStatusQueryOptions(repoCwd, { enabled: Boolean(repoCwd) }),
+  )
   const [openFiles, setOpenFiles] = useState<OpenFile[]>([])
   const [activeFilePath, setActiveFilePath] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
-  const [treeWidth, setTreeWidth] = useState(220)
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const [pendingClosePath, setPendingClosePath] = useState<string | null>(null)
   const [expandAllVersion, setExpandAllVersion] = useState(0)
   const [collapseAllVersion, setCollapseAllVersion] = useState(0)
   const [pendingTreeAction, setPendingTreeAction] = useState<PendingAction | null>(null)
-  const resizing = useRef(false)
   const tabBarRef = useRef<HTMLDivElement>(null)
   const requestCloseFileRef = useRef<(path: string) => void>(() => {})
   const draftContentsRef = useRef(new Map<string, string>())
@@ -332,89 +346,99 @@ export const FileViewer = forwardRef<FileViewerHandle, { isActive?: boolean }>(f
     tab?.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "nearest" })
   }, [activeFilePath])
 
-  // ---------------------------------------------------------------------------
-  // Resize
-  // ---------------------------------------------------------------------------
-
-  const handleMouseDown = useCallback(() => {
-    resizing.current = true
-    document.body.style.cursor = "col-resize"
-    document.body.style.userSelect = "none"
-  }, [])
-
-  useEffect(() => {
-    const handleMouseMove = (e: MouseEvent) => {
-      if (!resizing.current) return
-      setTreeWidth(Math.max(140, Math.min(450, e.clientX - 64)))
-    }
-    const handleMouseUp = () => {
-      if (!resizing.current) return
-      resizing.current = false
-      document.body.style.cursor = ""
-      document.body.style.userSelect = ""
-    }
-    document.addEventListener("mousemove", handleMouseMove)
-    document.addEventListener("mouseup", handleMouseUp)
-    return () => {
-      document.removeEventListener("mousemove", handleMouseMove)
-      document.removeEventListener("mouseup", handleMouseUp)
-    }
-  }, [])
-
   if (!repoCwd) return null
+
+  const gitDecorations = new Map<string, WorkingTreeStatusDecoration>()
+  for (const file of gitStatus?.workingTree.files ?? []) {
+    gitDecorations.set(file.path, {
+      displayStatus: file.displayStatus,
+      rawStatus: file.rawStatus,
+    })
+
+    const segments = file.path.split("/")
+    for (let depth = 1; depth < segments.length; depth += 1) {
+      const directoryPath = segments.slice(0, depth).join("/")
+      const existing = gitDecorations.get(directoryPath)
+      if (
+        !existing ||
+        getWorkingTreeDisplayStatusPriority(file.displayStatus) >
+          getWorkingTreeDisplayStatusPriority(existing.displayStatus)
+      ) {
+        gitDecorations.set(directoryPath, {
+          displayStatus: file.displayStatus,
+          rawStatus: file.rawStatus,
+        })
+      }
+    }
+  }
 
   return (
     <div className={cn("flex h-full overflow-hidden", !isActive && "hidden")}>
       {/* File tree sidebar */}
-      <div
-        className="flex shrink-0 flex-col bg-[#161616]"
-        style={{ width: treeWidth }}
-      >
-        <div className="flex h-[35px] items-center justify-between px-3">
-          <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/50">
-            Files
-          </span>
-          <FileTreeActions
-            onNewFile={() => setPendingTreeAction({ type: "new-file", parentPath: "" })}
-            onNewFolder={() => setPendingTreeAction({ type: "new-folder", parentPath: "" })}
-            onExpandAll={() => setExpandAllVersion((v) => v + 1)}
-            onCollapseAll={() => setCollapseAllVersion((v) => v + 1)}
-          />
+      {sidebarCollapsed ? (
+        <div className="flex w-[36px] shrink-0 flex-col items-center border-r border-white/[0.06] bg-[#161616] pt-2">
+          <button
+            type="button"
+            onClick={() => setSidebarCollapsed(false)}
+            title="Show file tree"
+            className="rounded p-1 text-muted-foreground/40 transition-colors hover:bg-white/[0.06] hover:text-muted-foreground"
+          >
+            <PanelLeftOpen className="size-3.5" />
+          </button>
         </div>
-        <ContextMenu>
-          <ContextMenuTrigger asChild>
-            <ScrollArea className="flex-1 overflow-auto">
-              <FileTree
-                cwd={repoCwd}
-                selectedPath={activeFilePath}
-                onSelect={openFile}
-                expandAllVersion={expandAllVersion}
-                collapseAllVersion={collapseAllVersion}
-                refreshVersion={0}
-                pendingAction={pendingTreeAction}
-                onPendingAction={setPendingTreeAction}
-                onDelete={handleFileDeleted}
-                onRename={handleFileRenamed}
-                getDeleteWarning={getDeleteWarning}
+      ) : (
+        <div className="flex w-[260px] shrink-0 flex-col overflow-hidden border-r border-white/[0.06] bg-[#161616]">
+          <div className="flex h-[35px] items-center justify-between px-3">
+            <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/50">
+              Files
+            </span>
+            <div className="flex items-center gap-0.5">
+              <FileTreeActions
+                onNewFile={() => setPendingTreeAction({ type: "new-file", parentPath: "" })}
+                onNewFolder={() => setPendingTreeAction({ type: "new-folder", parentPath: "" })}
+                onExpandAll={() => setExpandAllVersion((v) => v + 1)}
+                onCollapseAll={() => setCollapseAllVersion((v) => v + 1)}
               />
-            </ScrollArea>
-          </ContextMenuTrigger>
-          <ContextMenuContent>
-            <ContextMenuItem onClick={() => setPendingTreeAction({ type: "new-file", parentPath: "" })}>
-              New File
-            </ContextMenuItem>
-            <ContextMenuItem onClick={() => setPendingTreeAction({ type: "new-folder", parentPath: "" })}>
-              New Folder
-            </ContextMenuItem>
-          </ContextMenuContent>
-        </ContextMenu>
-      </div>
-
-      {/* Resize handle */}
-      <div
-        className="w-px shrink-0 cursor-col-resize bg-white/[0.06] transition-colors hover:bg-white/[0.15]"
-        onMouseDown={handleMouseDown}
-      />
+              <button
+                type="button"
+                onClick={() => setSidebarCollapsed(true)}
+                title="Hide file tree"
+                className="rounded p-1 text-muted-foreground/40 transition-colors hover:bg-white/[0.06] hover:text-muted-foreground"
+              >
+                <PanelLeftClose className="size-3.5" />
+              </button>
+            </div>
+          </div>
+          <ContextMenu>
+            <ContextMenuTrigger asChild>
+              <ScrollArea className="flex-1 overflow-auto">
+                <FileTree
+                  cwd={repoCwd}
+                  selectedPath={activeFilePath}
+                  gitDecorations={gitDecorations}
+                  onSelect={openFile}
+                  expandAllVersion={expandAllVersion}
+                  collapseAllVersion={collapseAllVersion}
+                  refreshVersion={0}
+                  pendingAction={pendingTreeAction}
+                  onPendingAction={setPendingTreeAction}
+                  onDelete={handleFileDeleted}
+                  onRename={handleFileRenamed}
+                  getDeleteWarning={getDeleteWarning}
+                />
+              </ScrollArea>
+            </ContextMenuTrigger>
+            <ContextMenuContent>
+              <ContextMenuItem onClick={() => setPendingTreeAction({ type: "new-file", parentPath: "" })}>
+                New File
+              </ContextMenuItem>
+              <ContextMenuItem onClick={() => setPendingTreeAction({ type: "new-folder", parentPath: "" })}>
+                New Folder
+              </ContextMenuItem>
+            </ContextMenuContent>
+          </ContextMenu>
+        </div>
+      )}
 
       {/* Editor area */}
       <div className="flex min-w-0 flex-1 flex-col bg-[#1a1a1a]">
@@ -539,13 +563,21 @@ export const FileViewer = forwardRef<FileViewerHandle, { isActive?: boolean }>(f
                 </div>
               </div>
             ) : (
-              <FileEditor
-                key={activeFile.path}
-                defaultValue={getCurrentContent(activeFile)}
-                language={activeFile.language}
-                onContentChange={(value) => updateContent(activeFile.path, value)}
-                onSave={saveFile}
-              />
+              <Suspense
+                fallback={
+                  <div className="flex h-full items-center justify-center text-[12px] text-muted-foreground/50">
+                    Loading editor...
+                  </div>
+                }
+              >
+                <FileEditor
+                  key={activeFile.path}
+                  defaultValue={getCurrentContent(activeFile)}
+                  language={activeFile.language}
+                  onContentChange={(value) => updateContent(activeFile.path, value)}
+                  onSave={saveFile}
+                />
+              </Suspense>
             )
           ) : (
             <div className="flex h-full items-center justify-center">

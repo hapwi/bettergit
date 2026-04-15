@@ -7,6 +7,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
 import { Spinner } from "@/components/ui/spinner";
+import { cn } from "@/lib/utils";
 import {
   Dialog,
   DialogContent,
@@ -15,7 +16,28 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import type { WorkingTreeFile } from "@/lib/git/status";
+import {
+  getWorkingTreeDisplayStatusLabel,
+  type WorkingTreeDisplayStatus,
+  type WorkingTreeFile,
+} from "@/lib/git/status";
+
+function gitStatusBadgeClasses(status: WorkingTreeDisplayStatus): string {
+  switch (status) {
+    case "A":
+      return "border-emerald-500/20 bg-emerald-500/10 text-emerald-400";
+    case "C":
+      return "border-orange-500/20 bg-orange-500/10 text-orange-400";
+    case "D":
+      return "border-red-500/20 bg-red-500/10 text-red-400";
+    case "M":
+      return "border-amber-500/20 bg-amber-500/10 text-amber-400";
+    case "R":
+      return "border-violet-500/20 bg-violet-500/10 text-violet-400";
+    case "U":
+      return "border-sky-500/20 bg-sky-500/10 text-sky-400";
+  }
+}
 
 interface CommitDialogProps {
   open: boolean;
@@ -150,6 +172,15 @@ export function CommitDialog({
                             }}
                           />
                         )}
+                        <span
+                          title={`${getWorkingTreeDisplayStatusLabel(file.displayStatus)} (${file.rawStatus})`}
+                          className={cn(
+                            "inline-flex min-w-5 shrink-0 items-center justify-center rounded border px-1 text-[10px] font-semibold leading-4",
+                            gitStatusBadgeClasses(file.displayStatus),
+                          )}
+                        >
+                          {file.displayStatus}
+                        </span>
                         <span className="flex-1 truncate">{file.path}</span>
                         <span className="shrink-0 text-muted-foreground">
                           {file.insertions > 0 && (

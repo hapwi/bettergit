@@ -9,6 +9,11 @@ import {
   type FileEntry,
 } from "@/lib/files"
 import {
+  getWorkingTreeDisplayStatusLabel,
+  type WorkingTreeDisplayStatus,
+  type WorkingTreeStatusDecoration,
+} from "@/lib/git/status"
+import {
   ChevronRight,
   ChevronDown,
   Folder,
@@ -121,7 +126,7 @@ function InlineInput({
   return (
     <div
       className="flex items-center py-[1px]"
-      style={{ paddingLeft: depth * 12 + 8 + 14 + 5 }}
+      style={{ paddingLeft: depth * 6 + 8 + 14 + 5 }}
     >
       <input
         ref={ref}
@@ -145,11 +150,43 @@ type PendingAction =
   | { type: "new-folder"; parentPath: string }
   | { type: "rename"; entryPath: string; currentName: string }
 
+function gitStatusBadgeClasses(status: WorkingTreeDisplayStatus): string {
+  switch (status) {
+    case "A":
+      return "text-emerald-400"
+    case "C":
+      return "text-orange-400"
+    case "D":
+      return "text-red-400"
+    case "M":
+      return "text-amber-400"
+    case "R":
+      return "text-violet-400"
+    case "U":
+      return "text-sky-400"
+  }
+}
+
+function GitStatusBadge({ decoration }: { decoration: WorkingTreeStatusDecoration }) {
+  return (
+    <span
+      title={`${getWorkingTreeDisplayStatusLabel(decoration.displayStatus)} (${decoration.rawStatus})`}
+      className={cn(
+        "pointer-events-none absolute right-2 top-1/2 inline-flex w-4 -translate-y-1/2 items-center justify-center font-mono text-[11px] font-semibold leading-none",
+        gitStatusBadgeClasses(decoration.displayStatus),
+      )}
+    >
+      {decoration.displayStatus}
+    </span>
+  )
+}
+
 interface TreeNodeProps {
   entry: FileEntry
   cwd: string
   depth: number
   selectedPath: string | null
+  gitDecorations: ReadonlyMap<string, WorkingTreeStatusDecoration>
   onSelect: (path: string) => void
   expandAllVersion: number
   collapseAllVersion: number
@@ -169,6 +206,7 @@ function TreeNode({
   cwd,
   depth,
   selectedPath,
+  gitDecorations,
   onSelect,
   expandAllVersion,
   collapseAllVersion,
@@ -191,6 +229,7 @@ function TreeNode({
   const isDir = entry.type === "directory"
   const dotfile = isDotfile(entry.name)
   const extDot = !isDir ? getExtDot(entry.name) : null
+  const gitDecoration = gitDecorations.get(entry.path)
 
   // Pending action for this directory's children
   const hasPendingChild =
@@ -350,13 +389,13 @@ function TreeNode({
       type="button"
       onClick={toggle}
       className={cn(
-        "group flex w-full items-center gap-[5px] py-[2px] pr-2 text-left text-[13px] leading-[22px] transition-colors",
+        "group relative flex w-full items-center gap-[5px] overflow-hidden py-[2px] pr-7 text-left text-[13px] leading-[22px] transition-colors",
         isSelected
           ? "bg-white/[0.08] text-foreground"
           : "text-foreground/70 hover:bg-white/[0.04] hover:text-foreground/90",
         dotfile && !isSelected && "text-foreground/40",
       )}
-      style={{ paddingLeft: depth * 12 + 8 }}
+      style={{ paddingLeft: depth * 6 + 8 }}
     >
       {isDir ? (
         expanded ? (
@@ -380,7 +419,8 @@ function TreeNode({
         <span className="size-[6px] shrink-0 rounded-full bg-muted-foreground/30" />
       )}
 
-      <span className="truncate">{entry.name}</span>
+      <span className="min-w-0 flex-1 truncate">{entry.name}</span>
+      {gitDecoration && <GitStatusBadge decoration={gitDecoration} />}
     </button>
   )
 
@@ -418,7 +458,7 @@ function TreeNode({
           {loading && (
             <div
               className="py-0.5 text-[11px] text-muted-foreground/30"
-              style={{ paddingLeft: (depth + 1) * 12 + 30 }}
+              style={{ paddingLeft: (depth + 1) * 6 + 30 }}
             >
               ...
             </div>
@@ -430,6 +470,7 @@ function TreeNode({
               cwd={cwd}
               depth={depth + 1}
               selectedPath={selectedPath}
+              gitDecorations={gitDecorations}
               onSelect={onSelect}
               expandAllVersion={expandAllVersion}
               collapseAllVersion={collapseAllVersion}
@@ -475,6 +516,7 @@ function TreeNode({
 interface FileTreeProps {
   cwd: string
   selectedPath: string | null
+  gitDecorations: ReadonlyMap<string, WorkingTreeStatusDecoration>
   onSelect: (path: string) => void
   expandAllVersion: number
   collapseAllVersion: number
@@ -495,6 +537,7 @@ export type { PendingAction }
 export function FileTree({
   cwd,
   selectedPath,
+  gitDecorations,
   onSelect,
   expandAllVersion,
   collapseAllVersion,
@@ -581,6 +624,7 @@ export function FileTree({
           cwd={cwd}
           depth={0}
           selectedPath={selectedPath}
+          gitDecorations={gitDecorations}
           onSelect={onSelect}
           expandAllVersion={expandAllVersion}
           collapseAllVersion={collapseAllVersion}
