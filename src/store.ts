@@ -4,6 +4,7 @@ const LEGACY_RECENT_REPOS_STORAGE_KEY = "bettergit:recent-repos";
 const TERMINAL_APP_STORAGE_KEY = "bettergit:terminal-app";
 const TERMINAL_PROJECTS_STORAGE_KEY = "bettergit:terminal-projects";
 const DISMISSED_CARDS_STORAGE_KEY = "bettergit:dismissed-setup-cards";
+const GITHUB_FOLDER_STORAGE_KEY = "bettergit:github-folder";
 
 export interface RecentProject {
   path: string;
@@ -115,6 +116,7 @@ function loadFromLocalStorage(): {
   terminalApp: string | null;
   terminalProjects: Record<string, TerminalProjectState>;
   dismissedSetupCards: Record<string, string[]>;
+  githubFolder: string | null;
 } {
   try {
     const recentProjects = parseStoredProjects(
@@ -124,6 +126,7 @@ function loadFromLocalStorage(): {
       JSON.parse(localStorage.getItem(LEGACY_RECENT_REPOS_STORAGE_KEY) ?? "[]"),
     );
     const terminalApp = localStorage.getItem(TERMINAL_APP_STORAGE_KEY);
+    const githubFolder = localStorage.getItem(GITHUB_FOLDER_STORAGE_KEY);
     const dismissedSetupCards = parseDismissedCards(
       JSON.parse(localStorage.getItem(DISMISSED_CARDS_STORAGE_KEY) ?? "{}"),
     );
@@ -132,9 +135,10 @@ function loadFromLocalStorage(): {
       terminalApp,
       terminalProjects: {},
       dismissedSetupCards,
+      githubFolder,
     };
   } catch {
-    return { projects: [], terminalApp: null, terminalProjects: {}, dismissedSetupCards: {} };
+    return { projects: [], terminalApp: null, terminalProjects: {}, dismissedSetupCards: {}, githubFolder: null };
   }
 }
 
@@ -143,6 +147,7 @@ function saveSettings(
   terminalApp: string | null,
   _terminalProjects: Record<string, TerminalProjectState>,
   dismissedSetupCards?: Record<string, string[]>,
+  githubFolder?: string | null,
 ) {
   const normalizedProjects = normalizeProjects(projects);
   const recentRepos = normalizedProjects.map((project) => project.path);
@@ -156,8 +161,12 @@ function saveSettings(
   if (dismissedSetupCards !== undefined) {
     localStorage.setItem(DISMISSED_CARDS_STORAGE_KEY, JSON.stringify(dismissedSetupCards));
   }
+  if (githubFolder !== undefined) {
+    if (githubFolder) localStorage.setItem(GITHUB_FOLDER_STORAGE_KEY, githubFolder);
+    else localStorage.removeItem(GITHUB_FOLDER_STORAGE_KEY);
+  }
 
-  persistToFile({ recentProjects: normalizedProjects, recentRepos, terminalApp, dismissedSetupCards });
+  persistToFile({ recentProjects: normalizedProjects, recentRepos, terminalApp, dismissedSetupCards, githubFolder });
 }
 
 // ---------------------------------------------------------------------------
@@ -186,6 +195,8 @@ interface AppStore {
   dismissSetupCard: (cwd: string, cardId: string) => void;
   restoreSetupCard: (cwd: string, cardId: string) => void;
   isSetupCardDismissed: (cwd: string, cardId: string) => boolean;
+  githubFolder: string | null;
+  setGithubFolder: (folder: string | null) => void;
   setGitBusy: (cwd: string, busy: boolean) => void;
   flashGitResult: (cwd: string, result: "success" | "error") => void;
 }
@@ -202,6 +213,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
   gitBusyMap: {},
   gitResultMap: {},
   dismissedSetupCards: initial.dismissedSetupCards,
+  githubFolder: initial.githubFolder,
 
   setRepoCwd: (cwd) => {
     if (!cwd) {
@@ -404,6 +416,11 @@ export const useAppStore = create<AppStore>((set, get) => ({
     return (get().dismissedSetupCards[cwd] ?? []).includes(cardId);
   },
 
+  setGithubFolder: (folder) => {
+    set({ githubFolder: folder });
+    saveSettings(get().recentProjects, get().terminalApp, get().terminalProjects, undefined, folder);
+  },
+
   setGitBusy: (cwd, busy) => set((s) => ({
     gitBusyMap: { ...s.gitBusyMap, [cwd]: busy },
   })),
@@ -422,6 +439,8 @@ window.electronAPI?.settings.load().then((file) => {
   const recentProjects = fileProjects.length > 0 ? fileProjects : fallbackFileRepos;
   const fileTermApp = (file.terminalApp as string | null) ?? null;
 
+  const fileGithubFolder = (file.githubFolder as string | null) ?? null;
+
   // If localStorage was empty but file has data, restore from file
   if (state.recentProjects.length === 0 && recentProjects.length > 0) {
     useAppStore.setState({
@@ -429,6 +448,7 @@ window.electronAPI?.settings.load().then((file) => {
       repoCwd: recentProjects[0]?.path ?? null,
       terminalApp: fileTermApp,
       terminalProjects: {},
+      githubFolder: fileGithubFolder,
     });
     // Sync back to localStorage
     localStorage.setItem(RECENT_PROJECTS_STORAGE_KEY, JSON.stringify(recentProjects));

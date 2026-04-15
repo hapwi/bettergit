@@ -12,7 +12,7 @@ import { cn } from "@/lib/utils";
 import { getGhAuthStatus } from "@/lib/git/github";
 import { useAppStore } from "@/store";
 import { GitHubIcon, ClaudeIcon, CodexIcon } from "@/components/icons";
-import { ArrowLeft02Icon, AiMagicIcon } from "@hugeicons/core-free-icons";
+import { ArrowLeft02Icon, AiMagicIcon, Folder01Icon, Cancel01Icon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { toast } from "sonner";
 import {
@@ -189,6 +189,8 @@ export function SettingsDialog({
   onOpenChange: (open: boolean) => void;
 }) {
   const repoCwd = useAppStore((s) => s.repoCwd);
+  const githubFolder = useAppStore((s) => s.githubFolder);
+  const setGithubFolder = useAppStore((s) => s.setGithubFolder);
   const { online } = useNetworkStatus();
   const [view, setView] = useState<"main" | "connections">("main");
   const [services, setServices] = useState<ServiceStatus[]>(cachedServices ?? []);
@@ -481,6 +483,48 @@ export function SettingsDialog({
                   </SelectGroup>
                 </SelectContent>
               </Select>
+            </div>
+          </div>
+
+          {/* GitHub folder */}
+          <div className="flex flex-col gap-2">
+            <div>
+              <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/50">GitHub</p>
+              <p className="text-xs text-muted-foreground">
+                Where repos cloned from GitHub will be saved.
+              </p>
+            </div>
+            <div className="flex items-center gap-3 rounded-xl border bg-card/50 px-3 py-2.5">
+              <HugeiconsIcon icon={Folder01Icon} className="size-4 shrink-0 text-muted-foreground" />
+              <button
+                type="button"
+                className="min-w-0 flex-1 text-left text-sm"
+                onClick={async () => {
+                  const path = await window.electronAPI?.dialog.openDirectory();
+                  if (path) setGithubFolder(path);
+                }}
+              >
+                {githubFolder ? (
+                  <span className="block truncate font-medium" title={githubFolder}>
+                    {(() => {
+                      const parts = githubFolder.split("/").filter(Boolean);
+                      if (parts.length <= 3) return githubFolder;
+                      return "…/" + parts.slice(-3).join("/");
+                    })()}
+                  </span>
+                ) : (
+                  <span className="text-muted-foreground">Choose folder…</span>
+                )}
+              </button>
+              {githubFolder && (
+                <button
+                  type="button"
+                  className="rounded-md p-1 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                  onClick={() => setGithubFolder(null)}
+                >
+                  <HugeiconsIcon icon={Cancel01Icon} className="size-3.5" />
+                </button>
+              )}
             </div>
           </div>
 
