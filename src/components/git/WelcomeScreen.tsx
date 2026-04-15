@@ -1,15 +1,35 @@
-import { FolderOpenIcon, Folder01Icon } from "@hugeicons/core-free-icons";
+import { useState } from "react";
+import { FolderOpenIcon, Folder01Icon, ArrowDown01Icon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { useAppStore } from "@/store";
+import { GitHubIcon } from "@/components/icons";
+import { GitHubReposDialog } from "./GitHubReposDialog";
+import { toast } from "sonner";
 
 export function WelcomeScreen() {
   const setRepoCwd = useAppStore((s) => s.setRepoCwd);
   const recentProjects = useAppStore((s) => s.recentProjects);
+  const githubFolder = useAppStore((s) => s.githubFolder);
+  const [ghDialogOpen, setGhDialogOpen] = useState(false);
 
-  const handleOpenRepo = async () => {
+  const handleOpenExisting = async () => {
     const path = await window.electronAPI?.dialog.openDirectory();
     if (path) setRepoCwd(path);
+  };
+
+  const handleAddFromGithub = () => {
+    if (!githubFolder) {
+      toast.error("Set a GitHub destination folder in Settings before adding from GitHub.");
+      return;
+    }
+    setGhDialogOpen(true);
   };
 
   return (
@@ -45,10 +65,36 @@ export function WelcomeScreen() {
 
         {/* Actions */}
         <div className="flex w-full flex-col gap-3">
-          <Button size="lg" onClick={handleOpenRepo} className="w-full">
-            <HugeiconsIcon icon={FolderOpenIcon} data-icon="inline-start" />
-            Open Repository
-          </Button>
+          <div className="flex w-full gap-0">
+            <Button
+              size="lg"
+              onClick={handleOpenExisting}
+              className="flex-1 rounded-r-none"
+            >
+              <HugeiconsIcon icon={FolderOpenIcon} data-icon="inline-start" />
+              Open Repository
+            </Button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  size="lg"
+                  className="rounded-l-none border-l border-primary-foreground/20 px-2.5"
+                >
+                  <HugeiconsIcon icon={ArrowDown01Icon} className="size-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-52">
+                <DropdownMenuItem onClick={handleOpenExisting}>
+                  <HugeiconsIcon icon={FolderOpenIcon} className="size-4" />
+                  Add Existing
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={handleAddFromGithub}>
+                  <GitHubIcon className="size-4" />
+                  Add from GitHub
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
         </div>
 
         {/* Recent repos */}
@@ -83,6 +129,8 @@ export function WelcomeScreen() {
           </div>
         )}
       </div>
+
+      <GitHubReposDialog open={ghDialogOpen} onOpenChange={setGhDialogOpen} />
     </div>
   );
 }

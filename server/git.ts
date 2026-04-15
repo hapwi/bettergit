@@ -35,7 +35,7 @@ export {
   type PullRequestSummary,
   type PrListItem,
 } from "./git-pr";
-export { createGhRepo, getGhDefaultBranch, getForkParent, getGhAuthStatus, type GhAuthStatus } from "./git-github";
+export { createGhRepo, getGhDefaultBranch, getForkParent, getGhAuthStatus, listGhRepos, cloneGhRepo, type GhAuthStatus, type GhRepo } from "./git-github";
 export { push, pull, fetch, hasOriginRemote, getOriginRepoSlugValue } from "./git-remote";
 export { getRecentCommits, getOpenPrs, getMergedPrs, type RecentCommit } from "./git-dashboard";
 export { switchToMain, setupRepository, renameMasterToMain, createPreReleaseBranch } from "./git-setup";
