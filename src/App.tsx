@@ -161,6 +161,7 @@ function Toolbar({
 function AppContent() {
   const [activeTab, setActiveTab] = useState<ActiveTab>("git")
   const [isDiffOpen, setIsDiffOpen] = useState(false)
+  const [hasOpenedFilesTab, setHasOpenedFilesTab] = useState(false)
   const repoCwd = useAppStore((s) => s.repoCwd)
   const terminalProjects = useAppStore((s) => s.terminalProjects)
   const ensureTerminalProject = useAppStore((s) => s.ensureTerminalProject)
@@ -214,6 +215,12 @@ function AppContent() {
     return cleanup
   }, [addTerminalTab, ensureTerminalProject, repoCwd, terminalProjects])
 
+  useEffect(() => {
+    if (activeTab === "files") {
+      setHasOpenedFilesTab(true)
+    }
+  }, [activeTab])
+
   const hasStartedTerminal = repoCwd ? Boolean(terminalProjects[repoCwd]) : false
   const activeTerminalProject = repoCwd ? terminalProjects[repoCwd] ?? null : null
 
@@ -247,7 +254,7 @@ function AppContent() {
             activeTab === "files" ? "z-10" : "hidden"
           )}>
             <Suspense fallback={null}>
-              <FileViewer ref={fileViewerRef} isActive={activeTab === "files"} />
+              {hasOpenedFilesTab ? <FileViewer ref={fileViewerRef} isActive={activeTab === "files"} /> : null}
             </Suspense>
           </div>
           {activeTab === "terminal" && repoCwd && !hasStartedTerminal && !isDiffOpen ? (
