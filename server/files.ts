@@ -39,16 +39,34 @@ const ALWAYS_HIDDEN = new Set([".git", ".DS_Store", "Thumbs.db"]);
 const BINARY_CHECK_BYTES = 8 * 1024;
 const MAX_EDITABLE_FILE_BYTES = 2 * 1024 * 1024;
 
-function resolveWithin(baseDir: string, relativePath = ""): string {
-  const resolvedBase = path.resolve(baseDir);
-  const resolvedTarget = path.resolve(resolvedBase, relativePath);
-  const relative = path.relative(resolvedBase, resolvedTarget);
+function isPathOutside(baseDir: string, candidatePath: string): boolean {
+  const relative = path.relative(baseDir, candidatePath);
+  return relative.startsWith("..") || path.isAbsolute(relative);
+}
 
-  if (relative.startsWith("..") || path.isAbsolute(relative)) {
+async function resolveWithin(baseDir: string, relativePath = ""): Promise<string> {
+  const resolvedBase = await fs.realpath(baseDir);
+  const resolvedTarget = path.resolve(resolvedBase, relativePath);
+
+  if (isPathOutside(resolvedBase, resolvedTarget)) {
     throw new Error("Path traversal not allowed");
   }
 
-  return resolvedTarget;
+  let probe = resolvedTarget;
+  while (true) {
+    try {
+      const realProbe = await fs.realpath(probe);
+      if (isPathOutside(resolvedBase, realProbe)) {
+        throw new Error("Path traversal not allowed");
+      }
+      return resolvedTarget;
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException)?.code;
+      if (code !== "ENOENT") throw error;
+      if (probe === resolvedBase) return resolvedTarget;
+      probe = path.dirname(probe);
+    }
+  }
 }
 
 async function readSample(fullPath: string, size: number): Promise<Buffer> {
@@ -105,7 +123,7 @@ export async function listDirectory(
   input: ListDirectoryInput,
 ): Promise<FileEntry[]> {
   const { cwd, relativePath = "" } = input;
-  const targetDir = resolveWithin(cwd, relativePath);
+  const targetDir = await resolveWithin(cwd, relativePath);
 
   const dirents = await fs.readdir(targetDir, { withFileTypes: true });
 
@@ -159,7 +177,7 @@ export async function readFile(input: ReadFileInput): Promise<{
   mtimeMs: number;
 }> {
   const { cwd, relativePath } = input;
-  const fullPath = resolveWithin(cwd, relativePath);
+  const fullPath = await resolveWithin(cwd, relativePath);
 
   const stat = await fs.stat(fullPath);
   const language = detectLanguage(relativePath);
@@ -201,7 +219,7 @@ export async function readFile(input: ReadFileInput): Promise<{
 }
 
 export async function createFile(input: { cwd: string; relativePath: string }): Promise<{ ok: true }> {
-  const fullPath = resolveWithin(input.cwd, input.relativePath);
+  const fullPath = await resolveWithin(input.cwd, input.relativePath);
   // Ensure parent directory exists
   await fs.mkdir(path.dirname(fullPath), { recursive: true });
   // Create empty file (fail if exists)
@@ -210,20 +228,20 @@ export async function createFile(input: { cwd: string; relativePath: string }): 
 }
 
 export async function createDirectory(input: { cwd: string; relativePath: string }): Promise<{ ok: true }> {
-  const fullPath = resolveWithin(input.cwd, input.relativePath);
+  const fullPath = await resolveWithin(input.cwd, input.relativePath);
   await fs.mkdir(fullPath, { recursive: true });
   return { ok: true };
 }
 
 export async function deleteEntry(input: { cwd: string; relativePath: string }): Promise<{ ok: true }> {
-  const fullPath = resolveWithin(input.cwd, input.relativePath);
+  const fullPath = await resolveWithin(input.cwd, input.relativePath);
   await fs.rm(fullPath, { recursive: true });
   return { ok: true };
 }
 
 export async function renameEntry(input: { cwd: string; oldPath: string; newPath: string }): Promise<{ ok: true }> {
-  const fullOld = resolveWithin(input.cwd, input.oldPath);
-  const fullNew = resolveWithin(input.cwd, input.newPath);
+  const fullOld = await resolveWithin(input.cwd, input.oldPath);
+  const fullNew = await resolveWithin(input.cwd, input.newPath);
   // Ensure parent of new path exists
   await fs.mkdir(path.dirname(fullNew), { recursive: true });
   await fs.rename(fullOld, fullNew);
@@ -232,7 +250,7 @@ export async function renameEntry(input: { cwd: string; oldPath: string; newPath
 
 export async function writeFile(input: WriteFileInput): Promise<{ ok: true; mtimeMs: number }> {
   const { cwd, relativePath, content, expectedMtimeMs } = input;
-  const fullPath = resolveWithin(cwd, relativePath);
+  const fullPath = await resolveWithin(cwd, relativePath);
   const currentStat = await fs.stat(fullPath);
 
   if (
