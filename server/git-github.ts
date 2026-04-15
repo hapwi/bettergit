@@ -1,3 +1,4 @@
+import path from "node:path";
 import { execGh, readOriginRepoSlug, requireOk } from "./git-exec";
 
 export async function createGhRepo(input: {
@@ -49,6 +50,49 @@ export async function getForkParent(input: { cwd: string }): Promise<string | nu
   } catch {
     return null;
   }
+}
+
+export interface GhRepo {
+  name: string;
+  nameWithOwner: string;
+  description: string;
+  isPrivate: boolean;
+  updatedAt: string;
+}
+
+export async function listGhRepos(input: {
+  limit?: number;
+}): Promise<GhRepo[]> {
+  const limit = input.limit ?? 100;
+  const result = await execGh({
+    cwd: ".",
+    args: [
+      "repo", "list",
+      "--json", "name,nameWithOwner,description,isPrivate,updatedAt",
+      "--limit", String(limit),
+    ],
+  });
+  if (result.code !== 0) throw new Error(`Failed to list repos: ${result.stderr}`);
+  try {
+    return JSON.parse(result.stdout) as GhRepo[];
+  } catch {
+    throw new Error("Failed to parse repo list");
+  }
+}
+
+export async function cloneGhRepo(input: {
+  repo: string;
+  destination: string;
+}): Promise<{ clonedPath: string }> {
+  const repoName = input.repo.split("/").pop() ?? input.repo;
+  const clonedPath = path.join(input.destination, repoName);
+  const result = await execGh({
+    cwd: input.destination,
+    args: ["repo", "clone", input.repo],
+    timeoutMs: 120_000,
+  });
+  if (result.code !== 0) throw new Error(`Clone failed: ${result.stderr}`);
+  return { clonedPath };
 }
 
 export interface GhAuthStatus {

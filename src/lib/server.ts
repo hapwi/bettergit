@@ -21,7 +21,8 @@ function getRequestOptions(path: string): ServerRequestOptions {
     // Release PR creation can include AI generation before `gh pr create`.
     path === "/api/git/release/create-pr" ||
     path === "/api/git/merge-prs" ||
-    path === "/api/github/pr/merge"
+    path === "/api/github/pr/merge" ||
+    path === "/api/github/repos/clone"
   ) {
     return {
       timeoutMs: LONG_RUNNING_FETCH_TIMEOUT_MS,

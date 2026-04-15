@@ -67,3 +67,22 @@ export async function getForkParent(cwd: string): Promise<string | null> {
 export async function getGhAuthStatus(cwd: string): Promise<GhAuthStatus> {
   return serverFetch("/api/github/auth-status", { cwd });
 }
+
+export interface GhRepo {
+  name: string;
+  nameWithOwner: string;
+  description: string;
+  isPrivate: boolean;
+  updatedAt: string;
+}
+
+export async function listGhRepos(limit = 100): Promise<GhRepo[]> {
+  return serverFetch("/api/github/repos/list", { limit });
+}
+
+export async function cloneGhRepo(
+  repo: string,
+  destination: string,
+): Promise<{ clonedPath: string }> {
+  return serverFetch("/api/github/repos/clone", { repo, destination });
+}

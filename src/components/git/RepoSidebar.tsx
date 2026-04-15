@@ -60,8 +60,16 @@ import {
   ContextMenuSeparator,
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { SettingsDialog } from "@/components/git/SettingsDialog";
 import { ProjectSettingsDialog } from "@/components/git/ProjectSettingsDialog";
+import { GitHubReposDialog } from "@/components/git/GitHubReposDialog";
+import { GitHubIcon } from "@/components/icons";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { createGhRepo } from "@/lib/git/github";
@@ -289,6 +297,7 @@ export function RepoSidebar() {
   const gitResultMap = useAppStore((s) => s.gitResultMap);
   const dismissSetupCard = useAppStore((s) => s.dismissSetupCard);
   const dismissedSetupCards = useAppStore((s) => s.dismissedSetupCards);
+  const githubFolder = useAppStore((s) => s.githubFolder);
   const queryClient = useQueryClient();
   const { data: status } = useQuery(gitStatusQueryOptions(repoCwd));
   const { data: branches = [] } = useQuery(gitBranchesQueryOptions(repoCwd));
@@ -317,6 +326,14 @@ export function RepoSidebar() {
     if (path) setRepoCwd(path);
   };
 
+  const handleAddFromGithub = () => {
+    if (!githubFolder) {
+      toast.error("Set a GitHub destination folder in Settings before adding from GitHub.");
+      return;
+    }
+    setGhDialogOpen(true);
+  };
+
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
@@ -330,6 +347,7 @@ export function RepoSidebar() {
 
   const [renameDialogOpen, setRenameDialogOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [ghDialogOpen, setGhDialogOpen] = useState(false);
   const [isSettingUpRepository, setIsSettingUpRepository] = useState(false);
   const [isCreatingRemote, setIsCreatingRemote] = useState(false);
   const [pendingRenameRepo, setPendingRenameRepo] = useState<string | null>(null);
@@ -689,14 +707,37 @@ export function RepoSidebar() {
 
       <SidebarFooter className="p-2">
         <div className="flex gap-1.5">
-          <Button
-            variant="outline"
-            className="flex-1 justify-center gap-2"
-            onClick={handleOpen}
-          >
-            <HugeiconsIcon icon={Add01Icon} />
-            Open Project
-          </Button>
+          <div className="flex flex-1 gap-0">
+            <Button
+              variant="outline"
+              className="flex-1 justify-center gap-2 rounded-r-none"
+              onClick={handleOpen}
+            >
+              <HugeiconsIcon icon={Add01Icon} />
+              Open Project
+            </Button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="outline"
+                  className="rounded-l-none border-l-0 px-1.5"
+                  size="icon"
+                >
+                  <HugeiconsIcon icon={ArrowDown01Icon} className="size-3.5" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-52">
+                <DropdownMenuItem onClick={handleOpen}>
+                  <HugeiconsIcon icon={Add01Icon} className="size-4" />
+                  Add Existing
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={handleAddFromGithub}>
+                  <GitHubIcon className="size-4" />
+                  Add from GitHub
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
           <Button
             variant="outline"
             size="icon"
@@ -729,6 +770,7 @@ export function RepoSidebar() {
       />
 
       <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
+      <GitHubReposDialog open={ghDialogOpen} onOpenChange={setGhDialogOpen} />
 
       {projectSettingsPath && (
         <ProjectSettingsDialog
