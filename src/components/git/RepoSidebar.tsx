@@ -250,8 +250,8 @@ function SidebarSetupCard({
     : {
         border: "border-amber-500/30",
         bg: "bg-amber-500/5",
-        text: "text-amber-500/85",
-        button: "text-amber-500 hover:text-amber-400 border-amber-500/30 bg-amber-500/10",
+        text: "text-amber-700 dark:text-amber-500/85",
+        button: "text-amber-700 hover:text-amber-800 dark:text-amber-500 dark:hover:text-amber-400 border-amber-500/30 bg-amber-500/10",
       };
 
   return (
@@ -552,7 +552,7 @@ export function RepoSidebar() {
                     )}
                     {status.behindCount > 0 && (
                       <span className="flex items-center gap-0.5">
-                        <HugeiconsIcon icon={ArrowDown01Icon} className="size-3 text-amber-500" />
+                        <HugeiconsIcon icon={ArrowDown01Icon} className="size-3 text-amber-700 dark:text-amber-500" />
                         {status.behindCount}
                       </span>
                     )}
@@ -783,7 +783,7 @@ export function RepoSidebar() {
           )}
         </div>
         {isDevBuild && (
-          <p className="text-center text-[10px] text-amber-400/70">
+          <p className="text-center text-[10px] text-amber-700 dark:text-amber-400/70">
             development build
           </p>
         )}

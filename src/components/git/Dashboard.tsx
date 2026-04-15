@@ -629,7 +629,7 @@ export function Dashboard({ isActive }: { isActive: boolean }) {
                           file.displayStatus === "D"
                             ? "text-rose-300"
                             : file.rawStatus === "??"
-                              ? "text-amber-300"
+                              ? "text-amber-700 dark:text-amber-300"
                               : "text-emerald-400"
                         }`}
                       >
@@ -864,7 +864,7 @@ export function Dashboard({ isActive }: { isActive: boolean }) {
                     <div key={branch.name} className="flex items-center gap-3 py-3">
                       <HugeiconsIcon
                         icon={GitBranchIcon}
-                        className={`size-4 shrink-0 ${branch.merged ? "text-muted-foreground" : "text-amber-300"}`}
+                        className={`size-4 shrink-0 ${branch.merged ? "text-muted-foreground" : "text-amber-700 dark:text-amber-300"}`}
                       />
                       <div className="min-w-0 flex-1">
                         <div className="truncate text-sm font-medium">{branch.name}</div>

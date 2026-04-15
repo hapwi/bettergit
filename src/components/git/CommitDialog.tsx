@@ -31,7 +31,7 @@ function gitStatusBadgeClasses(status: WorkingTreeDisplayStatus): string {
     case "D":
       return "border-red-500/20 bg-red-500/10 text-red-400";
     case "M":
-      return "border-amber-500/20 bg-amber-500/10 text-amber-400";
+      return "border-amber-500/20 bg-amber-500/10 text-amber-700 dark:text-amber-400";
     case "R":
       return "border-violet-500/20 bg-violet-500/10 text-violet-400";
     case "U":
