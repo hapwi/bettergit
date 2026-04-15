@@ -5,10 +5,52 @@ import { serverFetch } from "../server";
 import { execGit } from "./exec";
 import type { PullRequestSummary } from "./github";
 
+export type WorkingTreeDisplayStatus = "M" | "A" | "D" | "R" | "C" | "U";
+
 export interface WorkingTreeFile {
   path: string;
   insertions: number;
   deletions: number;
+  rawStatus: string;
+  indexStatus: string;
+  workingTreeStatus: string;
+  displayStatus: WorkingTreeDisplayStatus;
+  originalPath?: string;
+}
+
+export interface WorkingTreeStatusDecoration {
+  displayStatus: WorkingTreeDisplayStatus;
+  rawStatus: string;
+}
+
+const WORKING_TREE_STATUS_PRIORITY: Record<WorkingTreeDisplayStatus, number> = {
+  C: 5,
+  D: 4,
+  R: 3,
+  A: 2,
+  M: 1,
+  U: 0,
+};
+
+export function getWorkingTreeDisplayStatusPriority(status: WorkingTreeDisplayStatus): number {
+  return WORKING_TREE_STATUS_PRIORITY[status];
+}
+
+export function getWorkingTreeDisplayStatusLabel(status: WorkingTreeDisplayStatus): string {
+  switch (status) {
+    case "A":
+      return "Added";
+    case "C":
+      return "Conflict";
+    case "D":
+      return "Deleted";
+    case "M":
+      return "Modified";
+    case "R":
+      return "Renamed";
+    case "U":
+      return "Untracked";
+  }
 }
 
 export interface GitStatus {
