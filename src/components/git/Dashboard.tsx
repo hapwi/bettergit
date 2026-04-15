@@ -129,12 +129,6 @@ function displayAuthorName(value?: string | null): string {
   return trimmed && trimmed.length > 0 ? trimmed : "Unknown";
 }
 
-function describeMergeTarget(baseBranch: string, headBranch: string): string {
-  if (baseBranch === "main") return "Merged into main";
-  if (baseBranch === "pre-release") return "Merged into pre-release";
-  return `${headBranch} -> ${baseBranch}`;
-}
-
 function getCommitStreak(status: { date: string; commits: number }[]): number {
   let streak = 0;
   for (let i = status.length - 1; i >= 0; i -= 1) {
@@ -168,22 +162,6 @@ function getWorkingTreeSummary(status: GitStatus | undefined) {
   };
 }
 
-function resolveBranchStatus(status: GitStatus | undefined): string {
-  if (!status?.branch) {
-    return status?.isDetached ? "Detached HEAD" : "No active branch";
-  }
-  if (!status.hasUpstream) {
-    return "No upstream tracking";
-  }
-  if (status.aheadCount === 0 && status.behindCount === 0) {
-    return "Up to date with origin";
-  }
-
-  const parts: string[] = [];
-  if (status.aheadCount > 0) parts.push(`${status.aheadCount} ahead`);
-  if (status.behindCount > 0) parts.push(`${status.behindCount} behind`);
-  return parts.join(" · ");
-}
 
 function SectionHeader({
   title,
@@ -210,33 +188,6 @@ function SectionHeader({
         ) : null}
       </div>
       {action}
-    </div>
-  );
-}
-
-function DetailRow({
-  label,
-  value,
-  tone = "default",
-}: {
-  label: string;
-  value: ReactNode;
-  tone?: "default" | "positive" | "muted";
-}) {
-  return (
-    <div className="flex items-start justify-between gap-4 border-t border-border/50 py-3 text-sm">
-      <span className="text-muted-foreground">{label}</span>
-      <span
-        className={
-          tone === "positive"
-            ? "text-foreground"
-            : tone === "muted"
-              ? "text-muted-foreground"
-              : "text-foreground"
-        }
-      >
-        {value}
-      </span>
     </div>
   );
 }
@@ -363,24 +314,10 @@ export function Dashboard({ isActive }: { isActive: boolean }) {
     [stats],
   );
 
-  const mostActiveDay = useMemo(() => {
-    if (!stats?.dailyActivity.length) return null;
-    return stats.dailyActivity.reduce((best, day) => {
-      if (!best || day.commits > best.commits) return day;
-      return best;
-    }, stats.dailyActivity[0]);
-  }, [stats]);
-
   const activeStreak = useMemo(
     () => getCommitStreak(stats?.dailyActivity ?? []),
     [stats],
   );
-
-  const topContributor = stats?.topAuthors[0] ?? null;
-  const topContributorShare =
-    topContributor && stats?.totalCommits
-      ? Math.round((topContributor.commits / stats.totalCommits) * 100)
-      : 0;
 
   const workingTree = useMemo(
     () => getWorkingTreeSummary(status),
@@ -645,7 +582,6 @@ export function Dashboard({ isActive }: { isActive: boolean }) {
 
             <div className="space-y-4">
               <SectionHeader
-                icon={GitCommitIcon}
                 title="File hotspots"
                 description="Files with the most churn over the last 30 days."
               />

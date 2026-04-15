@@ -129,7 +129,7 @@ export function FileEditor({
   // Update live editor theme when user toggles
   useEffect(() => {
     if (editorRef.current) {
-      const monaco = (window as Record<string, unknown>).monaco as typeof import("monaco-editor") | undefined
+      const monaco = (window as unknown as Record<string, unknown>).monaco as typeof import("monaco-editor") | undefined
       monaco?.editor.setTheme(monacoTheme)
     }
   }, [monacoTheme])
