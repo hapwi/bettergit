@@ -11,9 +11,87 @@ export interface RecentProject {
   pinned: boolean;
 }
 
+// ---------------------------------------------------------------------------
+// Split pane tree types
+// ---------------------------------------------------------------------------
+
+export type SplitDirection = "horizontal" | "vertical";
+
+export interface SplitLeaf {
+  type: "leaf";
+  terminalId: string;
+}
+
+export interface SplitBranch {
+  type: "branch";
+  direction: SplitDirection; // "vertical" = side-by-side, "horizontal" = stacked
+  children: [SplitNode, SplitNode];
+}
+
+export type SplitNode = SplitLeaf | SplitBranch;
+
+const MAX_PANES_PER_TAB = 4;
+
+function countLeaves(node: SplitNode): number {
+  if (node.type === "leaf") return 1;
+  return countLeaves(node.children[0]) + countLeaves(node.children[1]);
+}
+
+function collectTerminalIds(node: SplitNode): string[] {
+  if (node.type === "leaf") return [node.terminalId];
+  return [...collectTerminalIds(node.children[0]), ...collectTerminalIds(node.children[1])];
+}
+
+function replaceLeaf(node: SplitNode, targetId: string, replacement: SplitNode): SplitNode {
+  if (node.type === "leaf") {
+    return node.terminalId === targetId ? replacement : node;
+  }
+  return {
+    ...node,
+    children: [
+      replaceLeaf(node.children[0], targetId, replacement),
+      replaceLeaf(node.children[1], targetId, replacement),
+    ],
+  };
+}
+
+function removeLeaf(node: SplitNode, targetId: string): SplitNode | null {
+  if (node.type === "leaf") {
+    return node.terminalId === targetId ? null : node;
+  }
+  const left = removeLeaf(node.children[0], targetId);
+  const right = removeLeaf(node.children[1], targetId);
+  if (!left && !right) return null;
+  if (!left) return right;
+  if (!right) return left;
+  return { ...node, children: [left, right] };
+}
+
+function firstLeafId(node: SplitNode): string {
+  if (node.type === "leaf") return node.terminalId;
+  return firstLeafId(node.children[0]);
+}
+
+function findSiblingLeafId(root: SplitNode, targetId: string): string | null {
+  if (root.type === "leaf") return null;
+  const leftIds = collectTerminalIds(root.children[0]);
+  const rightIds = collectTerminalIds(root.children[1]);
+  if (leftIds.includes(targetId)) {
+    return firstLeafId(root.children[1]);
+  }
+  if (rightIds.includes(targetId)) {
+    return firstLeafId(root.children[0]);
+  }
+  // Recurse
+  return findSiblingLeafId(root.children[0], targetId)
+    ?? findSiblingLeafId(root.children[1], targetId);
+}
+
 export interface TerminalProjectState {
   tabIds: string[];
   activeTabId: string | null;
+  splitTrees: Record<string, SplitNode>;
+  activeTerminalId: string | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -74,6 +152,8 @@ function createDefaultTerminalProjectState(): TerminalProjectState {
   return {
     tabIds: [tabId],
     activeTabId: tabId,
+    splitTrees: { [tabId]: { type: "leaf", terminalId: tabId } },
+    activeTerminalId: tabId,
   };
 }
 
@@ -133,12 +213,12 @@ function loadFromLocalStorage(): {
     return {
       projects: recentProjects.length > 0 ? recentProjects : fallbackRepos,
       terminalApp,
-      terminalProjects: {},
+      terminalProjects: {} as Record<string, TerminalProjectState>,
       dismissedSetupCards,
       githubFolder,
     };
   } catch {
-    return { projects: [], terminalApp: null, terminalProjects: {}, dismissedSetupCards: {}, githubFolder: null };
+    return { projects: [], terminalApp: null, terminalProjects: {} as Record<string, TerminalProjectState>, dismissedSetupCards: {}, githubFolder: null };
   }
 }
 
@@ -190,6 +270,9 @@ interface AppStore {
   addTerminalTab: (cwd: string) => string;
   closeTerminalTab: (cwd: string, tabId: string) => void;
   setActiveTerminalTab: (cwd: string, tabId: string) => void;
+  splitTerminal: (cwd: string, direction: SplitDirection) => void;
+  closeSplitPane: (cwd: string, terminalId: string) => void;
+  setActiveTerminal: (cwd: string, terminalId: string) => void;
   removeTerminalProject: (cwd: string) => void;
   dismissedSetupCards: Record<string, string[]>;
   dismissSetupCard: (cwd: string, cardId: string) => void;
@@ -339,6 +422,8 @@ export const useAppStore = create<AppStore>((set, get) => ({
       [cwd]: {
         tabIds: [...existing.tabIds, nextTabId],
         activeTabId: nextTabId,
+        splitTrees: { ...existing.splitTrees, [nextTabId]: { type: "leaf" as const, terminalId: nextTabId } },
+        activeTerminalId: nextTabId,
       },
     };
     set({ terminalProjects: nextTerminalProjects, repoCwd: cwd });
@@ -350,37 +435,132 @@ export const useAppStore = create<AppStore>((set, get) => ({
     const existing = get().terminalProjects[cwd];
     if (!existing || !existing.tabIds.includes(tabId)) return;
 
+    // Close all PTY sessions for terminals in this tab's split tree
+    const tree = existing.splitTrees[tabId];
+    const terminalIds = tree ? collectTerminalIds(tree) : [tabId];
+    for (const tid of terminalIds) {
+      void window.electronAPI?.terminal.closeSession({ projectPath: cwd, tabId: tid, deleteHistory: true });
+    }
+
     const nextTabIds = existing.tabIds.filter((id) => id !== tabId);
+    const nextSplitTrees = { ...existing.splitTrees };
+    delete nextSplitTrees[tabId];
+
     const nextTerminalProjects = { ...get().terminalProjects };
     if (nextTabIds.length === 0) {
       delete nextTerminalProjects[cwd];
     } else {
+      const nextActiveTabId = existing.activeTabId === tabId
+        ? (nextTabIds[nextTabIds.length - 1] ?? null)
+        : existing.activeTabId;
+      const nextActiveTerminalId = nextActiveTabId
+        ? firstLeafId(nextSplitTrees[nextActiveTabId] ?? { type: "leaf", terminalId: nextActiveTabId })
+        : null;
       nextTerminalProjects[cwd] = {
         tabIds: nextTabIds,
-        activeTabId:
-          existing.activeTabId === tabId
-            ? (nextTabIds[nextTabIds.length - 1] ?? null)
-            : existing.activeTabId,
+        activeTabId: nextActiveTabId,
+        splitTrees: nextSplitTrees,
+        activeTerminalId: nextActiveTerminalId,
       };
     }
 
     set({ terminalProjects: nextTerminalProjects });
-    void window.electronAPI?.terminal.closeSession({ projectPath: cwd, tabId, deleteHistory: true });
     saveSettings(get().recentProjects, get().terminalApp, nextTerminalProjects);
   },
 
   setActiveTerminalTab: (cwd, tabId) => {
     const existing = get().terminalProjects[cwd];
     if (!existing || !existing.tabIds.includes(tabId) || existing.activeTabId === tabId) return;
+    const tree = existing.splitTrees[tabId];
     const nextTerminalProjects = {
       ...get().terminalProjects,
       [cwd]: {
         ...existing,
         activeTabId: tabId,
+        activeTerminalId: tree ? firstLeafId(tree) : tabId,
       },
     };
     set({ terminalProjects: nextTerminalProjects });
     saveSettings(get().recentProjects, get().terminalApp, nextTerminalProjects);
+  },
+
+  splitTerminal: (cwd, direction) => {
+    const existing = get().terminalProjects[cwd];
+    if (!existing || !existing.activeTabId) return;
+
+    const tree = existing.splitTrees[existing.activeTabId];
+    if (!tree) return;
+
+    const activeTermId = existing.activeTerminalId;
+    if (!activeTermId) return;
+
+    if (countLeaves(tree) >= MAX_PANES_PER_TAB) return;
+
+    const newTerminalId = createTerminalTabId();
+    const newTree = replaceLeaf(tree, activeTermId, {
+      type: "branch",
+      direction,
+      children: [
+        { type: "leaf", terminalId: activeTermId },
+        { type: "leaf", terminalId: newTerminalId },
+      ],
+    });
+
+    const nextTerminalProjects = {
+      ...get().terminalProjects,
+      [cwd]: {
+        ...existing,
+        splitTrees: { ...existing.splitTrees, [existing.activeTabId]: newTree },
+        activeTerminalId: newTerminalId,
+      },
+    };
+    set({ terminalProjects: nextTerminalProjects });
+    saveSettings(get().recentProjects, get().terminalApp, nextTerminalProjects);
+  },
+
+  closeSplitPane: (cwd, terminalId) => {
+    const existing = get().terminalProjects[cwd];
+    if (!existing || !existing.activeTabId) return;
+
+    const tabId = existing.activeTabId;
+    const tree = existing.splitTrees[tabId];
+    if (!tree) return;
+
+    // Close PTY session for this terminal
+    void window.electronAPI?.terminal.closeSession({ projectPath: cwd, tabId: terminalId, deleteHistory: true });
+
+    const remaining = removeLeaf(tree, terminalId);
+    if (!remaining) {
+      // Last pane in tab — close entire tab
+      get().closeTerminalTab(cwd, tabId);
+      return;
+    }
+
+    // Pick new active terminal
+    const nextActive = terminalId === existing.activeTerminalId
+      ? (findSiblingLeafId(tree, terminalId) ?? firstLeafId(remaining))
+      : existing.activeTerminalId;
+
+    const nextTerminalProjects = {
+      ...get().terminalProjects,
+      [cwd]: {
+        ...existing,
+        splitTrees: { ...existing.splitTrees, [tabId]: remaining },
+        activeTerminalId: nextActive,
+      },
+    };
+    set({ terminalProjects: nextTerminalProjects });
+    saveSettings(get().recentProjects, get().terminalApp, nextTerminalProjects);
+  },
+
+  setActiveTerminal: (cwd, terminalId) => {
+    const existing = get().terminalProjects[cwd];
+    if (!existing || existing.activeTerminalId === terminalId) return;
+    const nextTerminalProjects = {
+      ...get().terminalProjects,
+      [cwd]: { ...existing, activeTerminalId: terminalId },
+    };
+    set({ terminalProjects: nextTerminalProjects });
   },
 
   removeTerminalProject: (cwd) => {

@@ -180,7 +180,10 @@ function AppContent() {
     existing.current = handle
   }
 
-  // Cmd+W: close active tab in files/terminal first, then close window
+  // Cmd+W: close active split pane → then tab → then window
+  const closeSplitPane = useAppStore((s) => s.closeSplitPane)
+  const closeTerminalTab = useAppStore((s) => s.closeTerminalTab)
+
   useEffect(() => {
     const cleanup = window.electronAPI?.onClosePaneOrWindow(() => {
       if (activeTab === "files") {
@@ -188,34 +191,53 @@ function AppContent() {
         if (handled) return
       }
       if (activeTab === "terminal" && repoCwd) {
-        const ref = terminalRefs.current.get(repoCwd)
-        if (ref?.current) {
-          const handled = ref.current.closePaneOrTab()
-          if (handled) return
+        const project = terminalProjects[repoCwd]
+        if (project?.activeTabId && project?.activeTerminalId) {
+          const tree = project.splitTrees[project.activeTabId]
+          // Multiple panes → close active pane only
+          if (tree && tree.type === "branch") {
+            closeSplitPane(repoCwd, project.activeTerminalId)
+            return
+          }
+          // Single pane → close entire tab
+          closeTerminalTab(repoCwd, project.activeTabId)
+          return
         }
       }
       window.close()
     })
     return cleanup
-  }, [activeTab, repoCwd])
+  }, [activeTab, closeSplitPane, closeTerminalTab, repoCwd, terminalProjects])
 
   // Terminal shortcuts from the native menu
+  const splitTerminal = useAppStore((s) => s.splitTerminal)
+
   useEffect(() => {
     const cleanup = window.electronAPI?.onTerminalAction((action) => {
-      if (action !== "terminal:new-tab") return
       if (!repoCwd) return
 
-      setActiveTab("terminal")
-
-      if (!terminalProjects[repoCwd]) {
-        ensureTerminalProject(repoCwd)
+      if (action === "terminal:new-tab") {
+        setActiveTab("terminal")
+        if (!terminalProjects[repoCwd]) {
+          ensureTerminalProject(repoCwd)
+          return
+        }
+        addTerminalTab(repoCwd)
         return
       }
 
-      addTerminalTab(repoCwd)
+      if (action === "terminal:split-vertical" || action === "terminal:split-horizontal") {
+        setActiveTab("terminal")
+        if (!terminalProjects[repoCwd]) {
+          ensureTerminalProject(repoCwd)
+          return
+        }
+        const direction = action === "terminal:split-vertical" ? "vertical" : "horizontal"
+        splitTerminal(repoCwd, direction)
+      }
     })
     return cleanup
-  }, [addTerminalTab, ensureTerminalProject, repoCwd, terminalProjects])
+  }, [addTerminalTab, ensureTerminalProject, repoCwd, splitTerminal, terminalProjects])
 
   const handleTabChange = (tab: ActiveTab) => {
     if (tab === "files") {

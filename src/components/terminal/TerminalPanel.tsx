@@ -4,7 +4,11 @@ import { Plus, X } from "lucide-react"
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef } from "react"
 import "@xterm/xterm/css/xterm.css"
 
-import { type TerminalProjectState, useAppStore } from "@/store"
+import {
+  type SplitNode,
+  type TerminalProjectState,
+  useAppStore,
+} from "@/store"
 import { cn } from "@/lib/utils"
 
 function normalizeComputedColor(value: string | null | undefined, fallback: string): string {
@@ -100,14 +104,20 @@ function writeTerminalSnapshot(terminal: XTermTerminal, history: string): void {
   }
 }
 
+// ---------------------------------------------------------------------------
+// TerminalViewport — one xterm instance per split pane
+// ---------------------------------------------------------------------------
+
 interface TerminalViewportProps {
   projectPath: string
   cwd: string
-  tabId: string
+  terminalId: string
   isActive: boolean
+  isVisible: boolean
+  onFocus: (terminalId: string) => void
 }
 
-function TerminalViewport({ projectPath, cwd, tabId, isActive }: TerminalViewportProps) {
+function TerminalViewport({ projectPath, cwd, terminalId, isActive, isVisible, onFocus }: TerminalViewportProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const terminalRef = useRef<XTermTerminal | null>(null)
   const fitAddonRef = useRef<FitAddon | null>(null)
@@ -135,11 +145,11 @@ function TerminalViewport({ projectPath, cwd, tabId, isActive }: TerminalViewpor
 
     void window.electronAPI?.terminal.resizeSession({
       projectPath,
-      tabId,
+      tabId: terminalId,
       cols: terminal.cols,
       rows: terminal.rows,
     }).catch(() => undefined)
-  }, [projectPath, tabId])
+  }, [projectPath, terminalId])
 
   useEffect(() => {
     const mount = containerRef.current
@@ -163,7 +173,7 @@ function TerminalViewport({ projectPath, cwd, tabId, isActive }: TerminalViewpor
     sessionReadyRef.current = false
 
     const unsubscribeEvents = terminalApi.onEvent((event) => {
-      if (event.projectPath !== projectPath || event.tabId !== tabId) return
+      if (event.projectPath !== projectPath || event.tabId !== terminalId) return
       if (event.type === "output" && event.data) {
         terminal.write(event.data)
         return
@@ -187,7 +197,7 @@ function TerminalViewport({ projectPath, cwd, tabId, isActive }: TerminalViewpor
     })
 
     const inputDisposable = terminal.onData((data) => {
-      void terminalApi.writeToSession({ projectPath, tabId, data }).catch((error) => {
+      void terminalApi.writeToSession({ projectPath, tabId: terminalId, data }).catch((error) => {
         writeSystemMessage(
           terminal,
           error instanceof Error ? error.message : "Terminal write failed",
@@ -220,7 +230,7 @@ function TerminalViewport({ projectPath, cwd, tabId, isActive }: TerminalViewpor
       void terminalApi
         .openSession({
           projectPath,
-          tabId,
+          tabId: terminalId,
           cwd,
           cols: terminal.cols,
           rows: terminal.rows,
@@ -253,10 +263,10 @@ function TerminalViewport({ projectPath, cwd, tabId, isActive }: TerminalViewpor
       sessionReadyRef.current = false
       terminal.dispose()
     }
-  }, [cwd, fitAndResize, projectPath, tabId])
+  }, [cwd, fitAndResize, projectPath, terminalId])
 
   useEffect(() => {
-    if (!isActive) return
+    if (!isActive || !isVisible) return
     const frame = window.requestAnimationFrame(() => {
       fitAndResize()
       terminalRef.current?.focus()
@@ -264,18 +274,91 @@ function TerminalViewport({ projectPath, cwd, tabId, isActive }: TerminalViewpor
     return () => {
       window.cancelAnimationFrame(frame)
     }
-  }, [fitAndResize, isActive])
+  }, [fitAndResize, isActive, isVisible])
 
   return (
     <div
       ref={containerRef}
-      className={cn(
-        "absolute left-4 right-0 top-1 bottom-4 overflow-hidden [&>.xterm]:h-full [&>.xterm]:bg-transparent [&_.xterm-viewport]:!bg-transparent [&_.xterm-screen]:bg-transparent [&_.xterm-helpers]:bg-transparent",
-        !isActive && "pointer-events-none invisible",
-      )}
+      onMouseDown={() => onFocus(terminalId)}
+      className="h-full w-full overflow-hidden pl-4 pt-1 pb-4 [&>.xterm]:h-full [&>.xterm]:bg-transparent [&_.xterm-viewport]:!bg-transparent [&_.xterm-screen]:bg-transparent [&_.xterm-helpers]:bg-transparent"
     />
   )
 }
+
+// ---------------------------------------------------------------------------
+// SplitContainer — recursive renderer for split tree
+// ---------------------------------------------------------------------------
+
+interface SplitContainerProps {
+  node: SplitNode
+  projectPath: string
+  cwd: string
+  activeTerminalId: string | null
+  isVisible: boolean
+  isSinglePane: boolean
+  onFocus: (terminalId: string) => void
+}
+
+function SplitContainer({ node, projectPath, cwd, activeTerminalId, isVisible, isSinglePane, onFocus }: SplitContainerProps) {
+  if (node.type === "leaf") {
+    const isActive = activeTerminalId === node.terminalId
+    const showBorder = !isSinglePane && isActive
+    return (
+      <div className={cn(
+        "relative min-h-0 min-w-0 flex-1 overflow-hidden rounded-lg border transition-colors duration-150",
+        showBorder ? "border-primary/50" : "border-transparent",
+      )}>
+        <div className="absolute inset-0 overflow-hidden rounded-lg">
+          <TerminalViewport
+            projectPath={projectPath}
+            cwd={cwd}
+            terminalId={node.terminalId}
+            isActive={isActive}
+            isVisible={isVisible}
+            onFocus={onFocus}
+          />
+        </div>
+        {!isSinglePane && !isActive && (
+          <div className="pointer-events-none absolute inset-0 bg-background/30 transition-opacity duration-150" />
+        )}
+      </div>
+    )
+  }
+
+  return (
+    <div className={cn(
+      "flex min-h-0 min-w-0 flex-1 overflow-hidden",
+      node.direction === "vertical" ? "flex-row" : "flex-col",
+    )}>
+      <SplitContainer
+        node={node.children[0]}
+        projectPath={projectPath}
+        cwd={cwd}
+        activeTerminalId={activeTerminalId}
+        isVisible={isVisible}
+        isSinglePane={false}
+        onFocus={onFocus}
+      />
+      <div className={cn(
+        "shrink-0 bg-border/20",
+        node.direction === "vertical" ? "w-px" : "h-px",
+      )} />
+      <SplitContainer
+        node={node.children[1]}
+        projectPath={projectPath}
+        cwd={cwd}
+        activeTerminalId={activeTerminalId}
+        isVisible={isVisible}
+        isSinglePane={false}
+        onFocus={onFocus}
+      />
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// TerminalPanel — tabs + split panes
+// ---------------------------------------------------------------------------
 
 export interface TerminalPanelHandle {
   closePaneOrTab: () => boolean
@@ -306,9 +389,13 @@ export const TerminalPanel = forwardRef<TerminalPanelHandle, TerminalPanelProps>
   const addTerminalTab = useAppStore((s) => s.addTerminalTab)
   const closeTerminalTab = useAppStore((s) => s.closeTerminalTab)
   const setActiveTerminalTab = useAppStore((s) => s.setActiveTerminalTab)
+  const splitTerminal = useAppStore((s) => s.splitTerminal)
+  const closeSplitPane = useAppStore((s) => s.closeSplitPane)
+  const setActiveTerminal = useAppStore((s) => s.setActiveTerminal)
   const hadTabsRef = useRef(Boolean(panelState && panelState.tabIds.length > 0))
 
   const activeTabId = activeTabIdFromPanel(panelState)
+  const activeTree = activeTabId ? panelState?.splitTrees[activeTabId] ?? null : null
 
   useEffect(() => {
     const hasTabs = Boolean(panelState && panelState.tabIds.length > 0)
@@ -322,24 +409,36 @@ export const TerminalPanel = forwardRef<TerminalPanelHandle, TerminalPanelProps>
   }, [onAllTabsClosed, panelState])
 
   const closePaneOrTab = useCallback((): boolean => {
-    if (!activeTabId) return false
-    closeTerminalTab(cwd, activeTabId)
+    if (!panelState?.activeTerminalId) return false
+    closeSplitPane(cwd, panelState.activeTerminalId)
     return true
-  }, [activeTabId, closeTerminalTab, cwd])
+  }, [closeSplitPane, cwd, panelState?.activeTerminalId])
 
   const addTab = useCallback(() => {
     addTerminalTab(cwd)
   }, [addTerminalTab, cwd])
 
+  const handleSplitVertical = useCallback(() => {
+    splitTerminal(cwd, "vertical")
+  }, [cwd, splitTerminal])
+
+  const handleSplitHorizontal = useCallback(() => {
+    splitTerminal(cwd, "horizontal")
+  }, [cwd, splitTerminal])
+
+  const handleFocus = useCallback((terminalId: string) => {
+    setActiveTerminal(cwd, terminalId)
+  }, [cwd, setActiveTerminal])
+
   useImperativeHandle(
     ref,
     () => ({
       closePaneOrTab,
-      splitVertical: () => undefined,
-      splitHorizontal: () => undefined,
+      splitVertical: handleSplitVertical,
+      splitHorizontal: handleSplitHorizontal,
       addTab,
     }),
-    [addTab, closePaneOrTab],
+    [addTab, closePaneOrTab, handleSplitHorizontal, handleSplitVertical],
   )
 
   if (!panelState || panelState.tabIds.length === 0) {
@@ -358,7 +457,7 @@ export const TerminalPanel = forwardRef<TerminalPanelHandle, TerminalPanelProps>
   }
 
   return (
-    <div className="flex h-full min-h-0 flex-col overflow-hidden rounded-4xl bg-card shadow-md ring-1 ring-foreground/5 dark:ring-foreground/10">
+    <div className="flex h-full min-h-0 flex-col overflow-hidden rounded-lg bg-card shadow-md ring-1 ring-foreground/5 dark:ring-foreground/10">
       <div className="flex h-10 shrink-0 items-center gap-1 px-4 pt-1">
         <div className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto">
           {panelState.tabIds.map((tabId, index) => {
@@ -408,15 +507,52 @@ export const TerminalPanel = forwardRef<TerminalPanelHandle, TerminalPanelProps>
         data-terminal-panel-body
         className="relative min-h-0 flex-1 overflow-hidden bg-card"
       >
-        {panelState.tabIds.map((tabId) => (
-          <TerminalViewport
-            key={tabId}
-            projectPath={cwd}
-            cwd={cwd}
-            tabId={tabId}
-            isActive={isVisible && activeTabId === tabId}
-          />
-        ))}
+        {panelState.tabIds.map((tabId) => {
+          const tree = panelState.splitTrees[tabId]
+          const isTabVisible = isVisible && activeTabId === tabId
+
+          if (!tree) {
+            // Fallback: tab without split tree (shouldn't happen, but be safe)
+            return (
+              <div
+                key={tabId}
+                className={cn(
+                  "absolute inset-1.5 overflow-hidden",
+                  !isTabVisible && "pointer-events-none invisible",
+                )}
+              >
+                <TerminalViewport
+                  projectPath={cwd}
+                  cwd={cwd}
+                  terminalId={tabId}
+                  isActive={panelState.activeTerminalId === tabId}
+                  isVisible={isTabVisible}
+                  onFocus={handleFocus}
+                />
+              </div>
+            )
+          }
+
+          return (
+            <div
+              key={tabId}
+              className={cn(
+                "absolute inset-1.5 flex overflow-hidden",
+                !isTabVisible && "pointer-events-none invisible",
+              )}
+            >
+              <SplitContainer
+                node={tree}
+                projectPath={cwd}
+                cwd={cwd}
+                activeTerminalId={panelState.activeTerminalId}
+                isVisible={isTabVisible}
+                isSinglePane={tree.type === "leaf"}
+                onFocus={handleFocus}
+              />
+            </div>
+          )
+        })}
       </div>
     </div>
   )
