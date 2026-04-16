@@ -1,4 +1,4 @@
-import { useMemo, type ReactNode } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
   Area,
@@ -274,6 +274,7 @@ export function Dashboard({ isActive }: { isActive: boolean }) {
   const recentCommits = dashboardData?.recentCommits ?? [];
   const openPrs = dashboardData?.openPrs ?? [];
   const mergedPrs = dashboardData?.mergedPrs ?? [];
+  const [releaseRunwayNow] = useState(() => Date.now());
 
   const weeklyActivity = useMemo(() => {
     if (!stats) return [];
@@ -931,7 +932,7 @@ export function Dashboard({ isActive }: { isActive: boolean }) {
               {(() => {
                 const commits = overview.release.commitsSinceLatestTag;
                 const daysSince = overview.release.latestTagDate
-                  ? Math.floor((Date.now() - new Date(overview.release.latestTagDate).getTime()) / (1000 * 60 * 60 * 24))
+                  ? Math.floor((releaseRunwayNow - new Date(overview.release.latestTagDate).getTime()) / (1000 * 60 * 60 * 24))
                   : null;
                 const hasTag = Boolean(overview.release.latestTag);
 

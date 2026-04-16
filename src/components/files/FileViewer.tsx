@@ -56,7 +56,7 @@ export interface FileViewerHandle {
 export const FileViewer = forwardRef<FileViewerHandle, { isActive?: boolean }>(function FileViewer({ isActive }, ref) {
   const repoCwd = useAppStore((s) => s.repoCwd)
   const { data: gitStatus } = useQuery(
-    gitStatusQueryOptions(repoCwd, { enabled: Boolean(repoCwd) }),
+    gitStatusQueryOptions(repoCwd, { enabled: Boolean(repoCwd) && Boolean(isActive) }),
   )
   const [openFiles, setOpenFiles] = useState<OpenFile[]>([])
   const [activeFilePath, setActiveFilePath] = useState<string | null>(null)
