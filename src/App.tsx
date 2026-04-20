@@ -170,6 +170,7 @@ function AppContent() {
   const { online } = useNetworkStatus()
   const [activeTab, setActiveTab] = useState<ActiveTab>("dashboard")
   const [isDiffOpen, setIsDiffOpen] = useState(false)
+  const [hasOpenedFilesTab, setHasOpenedFilesTab] = useState(false)
   const repoCwd = useAppStore((s) => s.repoCwd)
   const terminalProjects = useAppStore((s) => s.terminalProjects)
   const ensureTerminalProject = useAppStore((s) => s.ensureTerminalProject)
@@ -246,6 +247,9 @@ function AppContent() {
   }, [addTerminalTab, ensureTerminalProject, repoCwd, splitTerminal, terminalProjects])
 
   const handleTabChange = (tab: ActiveTab) => {
+    if (tab === "files") {
+      setHasOpenedFilesTab(true)
+    }
     setActiveTab(tab)
   }
 
@@ -280,7 +284,7 @@ function AppContent() {
             activeTab === "git" ? "z-10" : "hidden"
           )}>
             <Suspense fallback={null}>
-              <GitPanel isActive={activeTab === "git"} />
+              {activeTab === "git" ? <GitPanel isActive /> : null}
             </Suspense>
           </div>
           <div className={cn(
@@ -288,7 +292,7 @@ function AppContent() {
             activeTab === "files" ? "z-10" : "hidden"
           )}>
             <Suspense fallback={null}>
-              <FileViewer ref={fileViewerRef} isActive={activeTab === "files"} />
+              {hasOpenedFilesTab ? <FileViewer ref={fileViewerRef} isActive={activeTab === "files"} /> : null}
             </Suspense>
           </div>
           {activeTab === "terminal" && repoCwd && !hasStartedTerminal && !isDiffOpen ? (
