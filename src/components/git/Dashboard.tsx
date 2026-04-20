@@ -1,4 +1,4 @@
-import { useMemo, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
   Area,
@@ -239,6 +239,65 @@ function AvatarBadge({
   return (
     <div className={`${sizeClasses} flex items-center justify-center rounded-full border border-border/60 bg-muted/30 font-medium text-muted-foreground`}>
       {initials}
+    </div>
+  );
+}
+
+function getMsUntilNextLocalDay() {
+  const now = new Date();
+  const next = new Date(now);
+  next.setHours(24, 0, 0, 0);
+  return Math.max(1, next.getTime() - now.getTime());
+}
+
+function ReleaseRunwayMessage({
+  latestTag,
+  latestTagDate,
+  commitsSinceLatestTag,
+  isActive,
+}: {
+  latestTag?: string | null;
+  latestTagDate?: string | null;
+  commitsSinceLatestTag: number;
+  isActive: boolean;
+}) {
+  const [now, setNow] = useState(() => Date.now());
+
+  useEffect(() => {
+    setNow(Date.now());
+
+    if (!isActive) {
+      return;
+    }
+
+    let timeoutId: number | undefined;
+
+    const scheduleNextUpdate = () => {
+      timeoutId = window.setTimeout(() => {
+        setNow(Date.now());
+        scheduleNextUpdate();
+      }, getMsUntilNextLocalDay());
+    };
+
+    scheduleNextUpdate();
+
+    return () => {
+      if (timeoutId !== undefined) {
+        window.clearTimeout(timeoutId);
+      }
+    };
+  }, [isActive, latestTagDate]);
+
+  const { label, tone } = getReleaseRunwayState({
+    latestTag,
+    latestTagDate,
+    commitsSinceLatestTag,
+    now,
+  });
+
+  return (
+    <div className="py-3">
+      <p className={`text-xs font-medium ${tone}`}>{label}</p>
     </div>
   );
 }
@@ -929,20 +988,12 @@ export function Dashboard({ isActive }: { isActive: boolean }) {
                   {overview.release.commitsSinceLatestTag}
                 </span>
               </div>
-              {(() => {
-                const { label, tone } = getReleaseRunwayState({
-                  latestTag: overview.release.latestTag,
-                  latestTagDate: overview.release.latestTagDate,
-                  commitsSinceLatestTag: overview.release.commitsSinceLatestTag,
-                  now: Date.now(),
-                });
-
-                return (
-                  <div className="py-3">
-                    <p className={`text-xs font-medium ${tone}`}>{label}</p>
-                  </div>
-                );
-              })()}
+              <ReleaseRunwayMessage
+                latestTag={overview.release.latestTag}
+                latestTagDate={overview.release.latestTagDate}
+                commitsSinceLatestTag={overview.release.commitsSinceLatestTag}
+                isActive={isActive}
+              />
             </div>
           </div>
         </section>

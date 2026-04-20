@@ -1,4 +1,5 @@
 import { execGit, requireOk } from "./git-exec";
+import { setGhDefaultBranch } from "./git-github";
 import { getStatus } from "./git-status";
 import { hasOriginRemote } from "./git-remote";
 
@@ -62,9 +63,21 @@ export async function setupRepository(input: {
 export async function renameMasterToMain(input: { cwd: string }): Promise<{ ok: true }> {
   const { cwd } = input;
   requireOk(await execGit({ cwd, args: ["branch", "-m", "master", "main"] }), "rename master to main");
+  if (!await hasOriginRemote({ cwd })) return { ok: true };
+
   requireOk(await execGit({ cwd, args: ["push", "-u", "origin", "main"] }), "push main");
+  await setGhDefaultBranch({ cwd, branch: "main" });
   requireOk(await execGit({ cwd, args: ["remote", "set-head", "origin", "main"] }), "set origin head");
-  requireOk(await execGit({ cwd, args: ["push", "origin", "--delete", "master"] }), "delete remote master");
+
+  const remoteMasterExists = (await execGit({
+    cwd,
+    args: ["ls-remote", "--exit-code", "--heads", "origin", "master"],
+  })).code === 0;
+
+  if (remoteMasterExists) {
+    requireOk(await execGit({ cwd, args: ["push", "origin", "--delete", "master"] }), "delete remote master");
+  }
+
   return { ok: true };
 }
 
