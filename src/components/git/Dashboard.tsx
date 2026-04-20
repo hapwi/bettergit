@@ -1,4 +1,4 @@
-import { useMemo, useState, type ReactNode } from "react";
+import { useMemo, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
   Area,
@@ -22,6 +22,7 @@ import { useAppStore } from "@/store";
 import {
   getDashboardData,
 } from "@/lib/git/stats";
+import { getReleaseRunwayState } from "@/lib/git/release-runway";
 import { gitStatusQueryOptions } from "@/lib/git/queries";
 import { getGhViewer } from "@/lib/git/github";
 import type { GitStatus } from "@/lib/git/status";
@@ -274,7 +275,6 @@ export function Dashboard({ isActive }: { isActive: boolean }) {
   const recentCommits = dashboardData?.recentCommits ?? [];
   const openPrs = dashboardData?.openPrs ?? [];
   const mergedPrs = dashboardData?.mergedPrs ?? [];
-  const [releaseRunwayNow] = useState(() => Date.now());
 
   const weeklyActivity = useMemo(() => {
     if (!stats) return [];
@@ -930,34 +930,12 @@ export function Dashboard({ isActive }: { isActive: boolean }) {
                 </span>
               </div>
               {(() => {
-                const commits = overview.release.commitsSinceLatestTag;
-                const daysSince = overview.release.latestTagDate
-                  ? Math.floor((releaseRunwayNow - new Date(overview.release.latestTagDate).getTime()) / (1000 * 60 * 60 * 24))
-                  : null;
-                const hasTag = Boolean(overview.release.latestTag);
-
-                let label: string;
-                let tone: string;
-
-                if (!hasTag) {
-                  label = "No releases yet — consider tagging your first version.";
-                  tone = "text-muted-foreground";
-                } else if (commits === 0) {
-                  label = "Fully released — no unreleased changes.";
-                  tone = "text-emerald-600 dark:text-emerald-400";
-                } else if (commits <= 3 && (daysSince === null || daysSince < 7)) {
-                  label = "A few changes — no rush, but a patch release could be cut soon.";
-                  tone = "text-muted-foreground";
-                } else if (commits <= 10 || (daysSince !== null && daysSince < 14)) {
-                  label = `${commits} unreleased commits — consider a patch release.`;
-                  tone = "text-amber-700 dark:text-amber-400";
-                } else if (commits <= 30) {
-                  label = `${commits} commits over ${daysSince ?? "?"}d — a minor release is recommended.`;
-                  tone = "text-amber-700 dark:text-amber-400";
-                } else {
-                  label = `${commits} commits over ${daysSince ?? "?"}d — a minor or major release is overdue.`;
-                  tone = "text-rose-600 dark:text-rose-400";
-                }
+                const { label, tone } = getReleaseRunwayState({
+                  latestTag: overview.release.latestTag,
+                  latestTagDate: overview.release.latestTagDate,
+                  commitsSinceLatestTag: overview.release.commitsSinceLatestTag,
+                  now: Date.now(),
+                });
 
                 return (
                   <div className="py-3">

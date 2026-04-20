@@ -204,7 +204,7 @@ export function SettingsDialog({
   const { data: ghViewer } = useQuery({
     queryKey: ["github", "viewer", repoCwd],
     queryFn: () => getGhViewer(repoCwd!),
-    enabled: Boolean(repoCwd),
+    enabled: open && Boolean(repoCwd),
     staleTime: 5 * 60_000,
     gcTime: 10 * 60_000,
     refetchInterval: false,

@@ -45,12 +45,6 @@ const FileViewer = lazy(async () => {
   return { default: mod.FileViewer }
 })
 
-// Prefetch all tab chunks so switching tabs is instant
-void import("@/components/git/Dashboard")
-void import("@/components/git/GitPanel")
-void import("@/components/files/FileViewer")
-void import("@/components/terminal/TerminalPanel")
-
 type ActiveTab = "dashboard" | "git" | "files" | "terminal"
 
 function Toolbar({
