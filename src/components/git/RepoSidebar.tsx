@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { CheckmarkCircle02Icon } from "@hugeicons/core-free-icons";
 import { useQuery } from "@tanstack/react-query";
 import {
@@ -309,6 +309,22 @@ export function RepoSidebar() {
   });
   const { data: status } = useQuery(gitStatusQueryOptions(repoCwd));
   const { data: branches = [] } = useQuery(gitBranchesQueryOptions(repoCwd));
+  const pinnedProjects = useMemo(
+    () => recentProjects.filter((project) => project.pinned),
+    [recentProjects],
+  );
+  const unpinnedProjects = useMemo(
+    () => recentProjects.filter((project) => !project.pinned),
+    [recentProjects],
+  );
+  const pinnedProjectPaths = useMemo(
+    () => pinnedProjects.map((project) => project.path),
+    [pinnedProjects],
+  );
+  const unpinnedProjectPaths = useMemo(
+    () => unpinnedProjects.map((project) => project.path),
+    [unpinnedProjects],
+  );
 
   const changeCount = status?.workingTree.files.length ?? 0;
   const hasOriginRemote = status?.hasOriginRemote ?? false;
@@ -639,7 +655,7 @@ export function RepoSidebar() {
         )}
 
         {/* Pinned */}
-        {recentProjects.some((p) => p.pinned) && (
+        {pinnedProjects.length > 0 && (
           <SidebarGroup>
             <SidebarGroupLabel className="flex items-center gap-1.5">
               <HugeiconsIcon icon={PinIcon} className="size-3" />
@@ -651,9 +667,9 @@ export function RepoSidebar() {
                 collisionDetection={closestCenter}
                 onDragEnd={handleDragEnd}
               >
-                <SortableContext items={recentProjects.filter((p) => p.pinned).map((p) => p.path)} strategy={verticalListSortingStrategy}>
+                <SortableContext items={pinnedProjectPaths} strategy={verticalListSortingStrategy}>
                   <SidebarMenu>
-                    {recentProjects.filter((p) => p.pinned).map((project) => (
+                    {pinnedProjects.map((project) => (
                       <ProjectItem
                         key={project.path}
                         path={project.path}
@@ -684,9 +700,9 @@ export function RepoSidebar() {
               collisionDetection={closestCenter}
               onDragEnd={handleDragEnd}
             >
-              <SortableContext items={recentProjects.filter((p) => !p.pinned).map((p) => p.path)} strategy={verticalListSortingStrategy}>
+              <SortableContext items={unpinnedProjectPaths} strategy={verticalListSortingStrategy}>
                 <SidebarMenu>
-                  {recentProjects.filter((p) => !p.pinned).map((project) => (
+                  {unpinnedProjects.map((project) => (
                     <ProjectItem
                       key={project.path}
                       path={project.path}

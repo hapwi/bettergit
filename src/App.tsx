@@ -270,7 +270,7 @@ function AppContent() {
             activeTab === "dashboard" ? "z-10" : "hidden"
           )}>
             <Suspense fallback={null}>
-              <Dashboard isActive={activeTab === "dashboard"} />
+              {activeTab === "dashboard" ? <Dashboard isActive /> : null}
             </Suspense>
           </div>
           <div className={cn(
@@ -322,9 +322,11 @@ function AppContent() {
           </Suspense>
         </div>
       </main>
-      <Suspense fallback={null}>
-        <DiffViewer open={isDiffOpen} onOpenChange={setIsDiffOpen} />
-      </Suspense>
+      {isDiffOpen ? (
+        <Suspense fallback={null}>
+          <DiffViewer open={isDiffOpen} onOpenChange={setIsDiffOpen} />
+        </Suspense>
+      ) : null}
     </>
   )
 }
