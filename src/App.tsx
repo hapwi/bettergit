@@ -3,6 +3,7 @@ import { useAppStore } from "@/store"
 import { WelcomeScreen } from "@/components/git/WelcomeScreen"
 import { SidebarProvider, useSidebar } from "@/components/ui/sidebar"
 import { cn } from "@/lib/utils"
+import { Button } from "@/components/ui/button"
 import {
   LayoutDashboard,
   SidebarLeftIcon,
@@ -269,7 +270,7 @@ function AppContent() {
             activeTab === "dashboard" ? "z-10" : "hidden"
           )}>
             <Suspense fallback={null}>
-              <Dashboard isActive={activeTab === "dashboard"} />
+              {activeTab === "dashboard" ? <Dashboard isActive /> : null}
             </Suspense>
           </div>
           <div className={cn(
@@ -290,21 +291,17 @@ function AppContent() {
           </div>
           {activeTab === "terminal" && repoCwd && !hasStartedTerminal && !isDiffOpen ? (
             <div className="absolute inset-0 z-10 flex items-center justify-center p-6">
-              <div className="flex w-full max-w-md flex-col items-center gap-4 text-center">
-                <Terminal className="size-5 text-muted-foreground" />
-                <div className="space-y-1">
-                  <h2 className="text-lg font-semibold">Start a terminal for this project</h2>
-                  <p className="text-sm text-muted-foreground">
-                    Terminal sessions now start explicitly and stay alive until you close them.
-                  </p>
+              <div className="flex w-full max-w-sm flex-col items-center gap-5 text-center">
+                <div className="flex size-11 items-center justify-center rounded-xl border border-border/60 bg-muted/40">
+                  <Terminal className="size-5 text-muted-foreground" />
                 </div>
-                <button
-                  type="button"
+                <p className="text-sm text-muted-foreground">No active terminal sessions</p>
+                <Button
+                  size="sm"
                   onClick={() => repoCwd && ensureTerminalProject(repoCwd)}
-                  className="rounded-lg bg-foreground px-4 py-2 text-sm font-medium text-background transition-opacity hover:opacity-90"
                 >
                   Start Terminal
-                </button>
+                </Button>
               </div>
             </div>
           ) : null}
@@ -325,9 +322,11 @@ function AppContent() {
           </Suspense>
         </div>
       </main>
-      <Suspense fallback={null}>
-        <DiffViewer open={isDiffOpen} onOpenChange={setIsDiffOpen} />
-      </Suspense>
+      {isDiffOpen ? (
+        <Suspense fallback={null}>
+          <DiffViewer open={isDiffOpen} onOpenChange={setIsDiffOpen} />
+        </Suspense>
+      ) : null}
     </>
   )
 }

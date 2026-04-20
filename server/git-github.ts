@@ -33,6 +33,24 @@ export async function getGhDefaultBranch(input: {
   }
 }
 
+export async function setGhDefaultBranch(input: {
+  cwd: string;
+  branch: string;
+}): Promise<boolean> {
+  const repo = await readOriginRepoSlug(input.cwd);
+  if (!repo) return false;
+
+  requireOk(
+    await execGh({
+      cwd: input.cwd,
+      args: ["api", "-X", "PATCH", `repos/${repo}`, "-f", `default_branch=${input.branch}`],
+    }),
+    `set GitHub default branch to ${input.branch}`,
+  );
+
+  return true;
+}
+
 export async function getForkParent(input: { cwd: string }): Promise<string | null> {
   const repo = await readOriginRepoSlug(input.cwd);
   if (!repo) return null;

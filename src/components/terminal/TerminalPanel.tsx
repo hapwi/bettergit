@@ -395,6 +395,7 @@ export const TerminalPanel = forwardRef<TerminalPanelHandle, TerminalPanelProps>
   const hadTabsRef = useRef(Boolean(panelState && panelState.tabIds.length > 0))
 
   const activeTabId = activeTabIdFromPanel(panelState)
+  const activeTerminalId = panelState?.activeTerminalId ?? null
   useEffect(() => {
     const hasTabs = Boolean(panelState && panelState.tabIds.length > 0)
     if (hasTabs) {
@@ -407,10 +408,10 @@ export const TerminalPanel = forwardRef<TerminalPanelHandle, TerminalPanelProps>
   }, [onAllTabsClosed, panelState])
 
   const closePaneOrTab = useCallback((): boolean => {
-    if (!panelState?.activeTerminalId) return false
-    closeSplitPane(cwd, panelState.activeTerminalId)
+    if (!activeTerminalId) return false
+    closeSplitPane(cwd, activeTerminalId)
     return true
-  }, [closeSplitPane, cwd, panelState?.activeTerminalId])
+  }, [activeTerminalId, closeSplitPane, cwd])
 
   const addTab = useCallback(() => {
     addTerminalTab(cwd)

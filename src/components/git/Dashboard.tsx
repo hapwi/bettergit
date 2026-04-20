@@ -1,4 +1,4 @@
-import { useMemo, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
   Area,
@@ -22,6 +22,7 @@ import { useAppStore } from "@/store";
 import {
   getDashboardData,
 } from "@/lib/git/stats";
+import { getReleaseRunwayState } from "@/lib/git/release-runway";
 import { gitStatusQueryOptions } from "@/lib/git/queries";
 import { getGhViewer } from "@/lib/git/github";
 import type { GitStatus } from "@/lib/git/status";
@@ -238,6 +239,65 @@ function AvatarBadge({
   return (
     <div className={`${sizeClasses} flex items-center justify-center rounded-full border border-border/60 bg-muted/30 font-medium text-muted-foreground`}>
       {initials}
+    </div>
+  );
+}
+
+function getMsUntilNextLocalDay() {
+  const now = new Date();
+  const next = new Date(now);
+  next.setHours(24, 0, 0, 0);
+  return Math.max(1, next.getTime() - now.getTime());
+}
+
+function ReleaseRunwayMessage({
+  latestTag,
+  latestTagDate,
+  commitsSinceLatestTag,
+  isActive,
+}: {
+  latestTag?: string | null;
+  latestTagDate?: string | null;
+  commitsSinceLatestTag: number;
+  isActive: boolean;
+}) {
+  const [now, setNow] = useState(() => Date.now());
+
+  useEffect(() => {
+    setNow(Date.now());
+
+    if (!isActive) {
+      return;
+    }
+
+    let timeoutId: number | undefined;
+
+    const scheduleNextUpdate = () => {
+      timeoutId = window.setTimeout(() => {
+        setNow(Date.now());
+        scheduleNextUpdate();
+      }, getMsUntilNextLocalDay());
+    };
+
+    scheduleNextUpdate();
+
+    return () => {
+      if (timeoutId !== undefined) {
+        window.clearTimeout(timeoutId);
+      }
+    };
+  }, [isActive, latestTagDate]);
+
+  const { label, tone } = getReleaseRunwayState({
+    latestTag,
+    latestTagDate,
+    commitsSinceLatestTag,
+    now,
+  });
+
+  return (
+    <div className="py-3">
+      <p className={`text-xs font-medium ${tone}`}>{label}</p>
     </div>
   );
 }
@@ -928,42 +988,12 @@ export function Dashboard({ isActive }: { isActive: boolean }) {
                   {overview.release.commitsSinceLatestTag}
                 </span>
               </div>
-              {(() => {
-                const commits = overview.release.commitsSinceLatestTag;
-                const daysSince = overview.release.latestTagDate
-                  ? Math.floor((Date.now() - new Date(overview.release.latestTagDate).getTime()) / (1000 * 60 * 60 * 24))
-                  : null;
-                const hasTag = Boolean(overview.release.latestTag);
-
-                let label: string;
-                let tone: string;
-
-                if (!hasTag) {
-                  label = "No releases yet — consider tagging your first version.";
-                  tone = "text-muted-foreground";
-                } else if (commits === 0) {
-                  label = "Fully released — no unreleased changes.";
-                  tone = "text-emerald-600 dark:text-emerald-400";
-                } else if (commits <= 3 && (daysSince === null || daysSince < 7)) {
-                  label = "A few changes — no rush, but a patch release could be cut soon.";
-                  tone = "text-muted-foreground";
-                } else if (commits <= 10 || (daysSince !== null && daysSince < 14)) {
-                  label = `${commits} unreleased commits — consider a patch release.`;
-                  tone = "text-amber-700 dark:text-amber-400";
-                } else if (commits <= 30) {
-                  label = `${commits} commits over ${daysSince ?? "?"}d — a minor release is recommended.`;
-                  tone = "text-amber-700 dark:text-amber-400";
-                } else {
-                  label = `${commits} commits over ${daysSince ?? "?"}d — a minor or major release is overdue.`;
-                  tone = "text-rose-600 dark:text-rose-400";
-                }
-
-                return (
-                  <div className="py-3">
-                    <p className={`text-xs font-medium ${tone}`}>{label}</p>
-                  </div>
-                );
-              })()}
+              <ReleaseRunwayMessage
+                latestTag={overview.release.latestTag}
+                latestTagDate={overview.release.latestTagDate}
+                commitsSinceLatestTag={overview.release.commitsSinceLatestTag}
+                isActive={isActive}
+              />
             </div>
           </div>
         </section>
